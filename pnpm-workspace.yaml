@@ -1,0 +1,19 @@
+packages:
+  - .
+
+onlyBuiltDependencies:
+  - better-sqlite3
+  - esbuild
+
+overrides:
+  '@electron/get': 5.1.0
+allowBuilds:
+  better-sqlite3: true
+  esbuild: true
+
+ignoredBuiltDependencies:
+  - electron-winstaller
+
+minimumReleaseAgeExclude:
+  - '@codemirror/commands@6.11.0'
+  - '@codemirror/view@6.43.9'

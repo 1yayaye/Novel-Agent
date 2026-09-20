@@ -1,0 +1,6 @@
+CREATE TABLE IF NOT EXISTS book_outline (id TEXT PRIMARY KEY, content TEXT NOT NULL DEFAULT '', source_versions_json TEXT NOT NULL DEFAULT '{}', version INTEGER NOT NULL CHECK(version >= 1), state TEXT NOT NULL CHECK(state IN ('draft','confirmed','current','stale')), created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL);
+CREATE TABLE IF NOT EXISTS volume_outline (id TEXT PRIMARY KEY, title TEXT NOT NULL, position INTEGER NOT NULL, content TEXT NOT NULL DEFAULT '', version INTEGER NOT NULL CHECK(version >= 1), state TEXT NOT NULL CHECK(state IN ('draft','confirmed','current','stale')), created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL);
+CREATE TABLE IF NOT EXISTS chapter_outline (id TEXT PRIMARY KEY, chapter_id TEXT NOT NULL REFERENCES chapter(id) ON DELETE RESTRICT, volume_id TEXT REFERENCES volume_outline(id) ON DELETE SET NULL, chapter_version INTEGER NOT NULL, content TEXT NOT NULL DEFAULT '', version INTEGER NOT NULL CHECK(version >= 1), state TEXT NOT NULL CHECK(state IN ('draft','confirmed','current','stale')), created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL);
+CREATE INDEX IF NOT EXISTS idx_volume_outline_position ON volume_outline(position);
+CREATE INDEX IF NOT EXISTS idx_chapter_outline_chapter_id ON chapter_outline(chapter_id);
+CREATE INDEX IF NOT EXISTS idx_chapter_outline_volume_id ON chapter_outline(volume_id);

@@ -1,0 +1,12 @@
+ALTER TABLE context_package ADD COLUMN task_type TEXT NOT NULL DEFAULT 'continue';
+ALTER TABLE context_package ADD COLUMN connection_id TEXT;
+ALTER TABLE context_package ADD COLUMN excluded_items_json TEXT NOT NULL DEFAULT '[]';
+ALTER TABLE context_package ADD COLUMN target_json TEXT;
+ALTER TABLE context_item ADD COLUMN title TEXT;
+ALTER TABLE context_item ADD COLUMN content TEXT;
+ALTER TABLE context_item ADD COLUMN slot_id TEXT;
+ALTER TABLE context_item ADD COLUMN role TEXT;
+ALTER TABLE context_item ADD COLUMN position_type TEXT;
+ALTER TABLE context_item ADD COLUMN depth INTEGER;
+ALTER TABLE context_item ADD COLUMN slot_order INTEGER;
+ALTER TABLE context_item ADD COLUMN activation_key TEXT;

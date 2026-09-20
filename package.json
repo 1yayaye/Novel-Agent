@@ -1,0 +1,83 @@
+{
+  "name": "novel-agent",
+  "version": "0.1.0",
+  "description": "Local-first novel writing workbench",
+  "main": "out/main/index.js",
+  "private": true,
+  "packageManager": "pnpm@11.21.0",
+  "scripts": {
+    "dev": "electron-vite dev",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run --exclude tests/e2e/** --exclude .agents/**",
+    "build": "electron-vite build && node scripts/copy-worker.mjs",
+    "probe:native": "pnpm build && node scripts/run-native-probe.mjs",
+    "test:e2e": "pnpm build && playwright test",
+    "package:dir": "pnpm build && electron-builder --win --x64 --dir",
+    "package:zip": "pnpm build && electron-builder --win zip --x64",
+    "package:portable": "pnpm build && electron-builder --win portable --x64",
+    "package": "pnpm build && electron-builder --win portable --x64",
+    "verify:release": "pnpm package:zip && node scripts/verify-release.mjs",
+    "verify": "pnpm typecheck && pnpm test && pnpm probe:native && pnpm test:e2e && pnpm verify:release"
+  },
+  "dependencies": {
+    "better-sqlite3": "13.0.3",
+    "sqlite-vec": "0.1.9"
+  },
+  "devDependencies": {
+    "@codemirror/commands": "6.11.0",
+    "@codemirror/search": "6.7.1",
+    "@codemirror/state": "6.7.1",
+    "@codemirror/view": "6.43.9",
+    "@playwright/test": "1.62.1",
+    "@testing-library/react": "^16.3.3",
+    "@types/better-sqlite3": "7.6.13",
+    "@types/node": "22.17.2",
+    "@types/react": "19.2.2",
+    "@types/react-dom": "19.2.2",
+    "@vitejs/plugin-react": "5.2.0",
+    "electron": "43.4.0",
+    "electron-builder": "26.15.3",
+    "electron-vite": "5.0.0",
+    "jsdom": "^30.0.1",
+    "lucide-react": "1.31.0",
+    "motion": "13.1.0",
+    "react": "19.2.8",
+    "react-dom": "19.2.8",
+    "typescript": "7.0.2",
+    "vite": "7.3.6",
+    "vitest": "4.1.10",
+    "zod": "4.4.3"
+  },
+  "build": {
+    "appId": "com.novelagent.app",
+    "productName": "Novel Agent by matsuri",
+    "electronDist": "node_modules/electron/dist",
+    "asar": true,
+    "npmRebuild": false,
+    "asarUnpack": [
+      "node_modules/better-sqlite3/**",
+      "node_modules/sqlite-vec/**",
+      "node_modules/sqlite-vec-windows-x64/**"
+    ],
+    "files": [
+      "out/**",
+      "package.json",
+      "!node_modules/better-sqlite3/deps/**",
+      "!node_modules/better-sqlite3/src/**",
+      "!node_modules/better-sqlite3/prebuilds/darwin*/**",
+      "!node_modules/better-sqlite3/prebuilds/darwin*",
+      "!node_modules/better-sqlite3/prebuilds/linux*/**",
+      "!node_modules/better-sqlite3/prebuilds/linux*",
+      "!node_modules/better-sqlite3/prebuilds/win32-arm64*/**",
+      "!node_modules/better-sqlite3/prebuilds/win32-arm64*",
+      "!node_modules/node-addon-api/**"
+    ],
+    "win": {
+      "target": [
+        "portable",
+        "zip"
+      ],
+      "artifactName": "Novel-Agent-by-matsuri-${version}-win-${arch}.${ext}"
+    }
+  }
+}

@@ -1,0 +1,48 @@
+# Dependencies
+node_modules/
+
+# Build & packager output
+out/
+dist/
+release/
+*.exe
+*.zip
+
+# User data (never publish manuscripts, keys, or local caches)
+data/
+*.novelproj
+*.novelproj-*
+secrets/
+
+# Test & coverage artifacts
+coverage/
+test-results/
+playwright-report/
+blob-report/
+playwright/.cache/
+
+# Local agent / editor working files
+.agents/
+.claude/
+.scratch/
+.grok/
+skills-lock.json
+
+# Generated architecture diagrams (local only)
+diagrams/
+
+# Logs & env
+*.log
+logs/
+.env
+.env.*
+!.env.example
+
+# OS & editors
+.DS_Store
+Thumbs.db
+Desktop.ini
+.idea/
+.vscode/
+*.swp
+*.swo
