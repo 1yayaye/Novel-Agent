@@ -10,8 +10,15 @@
 - 混合检索：FTS5 中文全文检索，向量检索不可用时自动降级
 - AI 流水线：续写、重写、润色、全书问答；外发前预览上下文并确认目标接口
 - 差异审阅：字符级对比，按段勾选合并，版本冲突时拒绝覆盖
+- 温润拿铁视觉系统：针对小说作者量身打造的卡片叙事流（Warm Latte），14px 圆角书房质感，内置明亮纸张、羊皮手稿、夜幕写作三套主题
+- 交互分层与 Action Dock：底部悬浮胶囊工具坞（大纲速查/人物卡/一键润色/字数环），右侧无干扰滑入式抽屉（故事节拍、大纲、知识库、后台任务）
 
 当前打包目标为 Windows x64 便携版。
+
+## 前端技术栈与架构
+
+- **渲染层技术栈**：React 19 + TypeScript + Vite + Tailwind CSS v4 + Zustand
+- **前端架构文档**：详见 [docs/frontend-architecture.md](docs/frontend-architecture.md)
 
 ## 环境
 
@@ -54,6 +61,10 @@ pnpm verify             # 发布前全量检查
 - [0001 分析资产软失效与快照绑定](docs/adr/0001-soft-invalidation-and-report-snapshot-binding.md)
 - [0002 两阶段 LCS 差异](docs/adr/0002-two-tier-lcs-diff-optimization.md)
 - [0003 共享契约分包与门面](docs/adr/0003-shared-contract-modularization-facade.md)
+- [0004 前端重构架构与状态流解耦 (React 19 + Tailwind v4 + Zustand)](docs/adr/0004-frontend-refactor-stack-and-state-architecture.md)
+- [0005 渲染层组件体系与工作台交互分层 (shadcn + Drawer + Popover)](docs/adr/0005-renderer-component-and-workspace-interaction-hierarchy.md)
+- [0006 视觉设计语言与领域切片重塑 (温润拿铁与故事节拍流)](docs/adr/0006-visual-direction-and-renderer-reconstruction.md)
+
 
 ## 许可证
 
