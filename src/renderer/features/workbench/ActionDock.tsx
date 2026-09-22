@@ -90,7 +90,7 @@ export function ActionDock({
   ]
 
   return (
-    <div className="absolute bottom-6 left-1/2 -translate-x-1/2 z-30 select-none">
+    <div data-tour="ai-actions" className="absolute bottom-6 left-1/2 -translate-x-1/2 z-30 select-none">
       <div className="flex items-center gap-1.5 px-3.5 py-1.5 bg-[#faf8f5]/95 backdrop-blur-md border border-[#e5ddd3] shadow-lg shadow-stone-300/30 rounded-full transition-all">
         {dockButtons.map((btn) => {
           const Icon = btn.icon

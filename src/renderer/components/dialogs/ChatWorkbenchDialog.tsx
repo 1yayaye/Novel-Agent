@@ -57,12 +57,14 @@ export function ChatWorkbenchDialog({
   onOpenOutlineEditor,
   onOpenCandidateReview,
   onOpenContextPreview,
-  onChapterCreated
+  onChapterCreated,
+  initialPrompt
 }: {
   sessionId: string
   chapters?: ChapterHeader[]
   activeChapterId?: string
   isReadOnly: boolean
+  initialPrompt?: string
   onClose: () => void
   onNavigateChapter?: (chapterId: string, offset?: number) => void
   onInspectContext?: (contextPackageId: string) => void
@@ -83,7 +85,13 @@ export function ChatWorkbenchDialog({
   const [selectedSessionId, setSelectedSessionId] = useState<string | null>(null)
   const [messages, setMessages] = useState<ChatMessage[]>([])
   const [summary, setSummary] = useState<ChatSummary | null>(null)
-  const [inputContent, setInputContent] = useState('')
+  const [inputContent, setInputContent] = useState(initialPrompt || '')
+
+  useEffect(() => {
+    if (initialPrompt) {
+      setInputContent(initialPrompt)
+    }
+  }, [initialPrompt])
   const [loadingSessions, setLoadingSessions] = useState(true)
   const [loadingMessages, setLoadingMessages] = useState(false)
   const [actionLoading, setActionLoading] = useState(false)

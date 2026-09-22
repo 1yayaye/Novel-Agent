@@ -18,6 +18,7 @@ import { ConsistencyIssuesDialog } from '../../components/dialogs/ConsistencyIss
 import { SuggestionReviewDialog } from '../../components/dialogs/SuggestionReviewDialog'
 import { ContextPreviewDialog } from '../../components/dialogs/ContextPreviewDialog'
 import { StartAnalysisDialog } from '../../components/dialogs/StartAnalysisDialog'
+import { ConfirmActionDialog } from '../../components/dialogs/ConfirmActionDialog'
 
 export interface DialogHostProps {
   onChapterCreated?: (chapter: any) => void
@@ -88,7 +89,7 @@ export function DialogHost({
         />
       )}
 
-      {activeDialog === 'candidate' && (
+      {(activeDialog === 'candidate' || (activeDialog as any) === 'candidateReview') && (
         <CandidateReviewDialog
           sessionId={sessionId}
           chapters={chapters}
@@ -110,7 +111,13 @@ export function DialogHost({
         <ChatWorkbenchDialog
           sessionId={sessionId}
           chapters={chapters}
+          activeChapterId={selectedChapterId || undefined}
           isReadOnly={isReadOnly}
+          initialPrompt={
+            typeof dialogPayload === 'object' && dialogPayload && 'initialPrompt' in dialogPayload
+              ? (dialogPayload as any).initialPrompt
+              : undefined
+          }
           onClose={closeDialog}
           onChapterCreated={(chap) => {
             onChapterCreated?.(chap)
@@ -165,7 +172,7 @@ export function DialogHost({
         />
       )}
 
-      {activeDialog === 'issues' && (
+      {(activeDialog === 'issues' || (activeDialog as any) === 'consistency') && (
         <ConsistencyIssuesDialog
           sessionId={sessionId}
           chapters={chapters}
@@ -178,7 +185,7 @@ export function DialogHost({
         />
       )}
 
-      {activeDialog === 'suggestion' && (
+      {(activeDialog === 'suggestion' || (activeDialog as any) === 'suggestions') && (
         <SuggestionReviewDialog
           sessionId={sessionId}
           isReadOnly={isReadOnly}
@@ -204,6 +211,20 @@ export function DialogHost({
           isReadOnly={isReadOnly}
           onClose={closeDialog}
           onStarted={() => closeDialog()}
+        />
+      )}
+
+      {activeDialog === 'confirm' && Boolean(dialogPayload) && (
+        <ConfirmActionDialog
+          {...(dialogPayload as any)}
+          onCancel={() => {
+            ;(dialogPayload as any)?.onCancel?.()
+            closeDialog()
+          }}
+          onConfirm={async () => {
+            await (dialogPayload as any)?.onConfirm?.()
+            closeDialog()
+          }}
         />
       )}
     </>

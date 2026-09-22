@@ -6,12 +6,15 @@ import {
   Edit2,
   Maximize2,
   Minimize2,
+  Moon,
   Search,
   Sparkles,
+  Sun,
   Type
 } from 'lucide-react'
 import type { Chapter } from '../../../shared/project'
-import type { EditorPreferences } from '../../types/editor'
+import type { EditorPreferences, WritingTheme } from '../../types/editor'
+import { WindowControls } from '../../components/common/WindowControls'
 
 export interface EditorHeaderProps {
   chapter: Chapter | null
@@ -145,6 +148,43 @@ export function EditorHeader({
           </button>
         )}
 
+        {/* Theme toggle chips */}
+        <div className="flex items-center gap-0.5 bg-[#efe6da]/60 p-0.5 rounded-lg border border-[#dacdbe]/60">
+          <button
+            type="button"
+            onClick={() => onPreferencesChange?.({ theme: 'light' })}
+            className={`p-1 rounded-md transition-colors ${
+              preferences.theme === 'light' ? 'bg-white text-[#2c2523] shadow-xs' : 'text-[#7d6b59] hover:text-[#2c2523]'
+            }`}
+            title="明亮模式 (Light)"
+            aria-label="明亮模式"
+          >
+            <Sun size={12} />
+          </button>
+          <button
+            type="button"
+            onClick={() => onPreferencesChange?.({ theme: 'sepia' })}
+            className={`p-1 rounded-md transition-colors ${
+              preferences.theme === 'sepia' ? 'bg-[#f4ecd8] text-[#433422] shadow-xs' : 'text-[#7d6b59] hover:text-[#2c2523]'
+            }`}
+            title="羊皮纸护眼模式 (Sepia)"
+            aria-label="羊皮纸模式"
+          >
+            <BookOpen size={12} />
+          </button>
+          <button
+            type="button"
+            onClick={() => onPreferencesChange?.({ theme: 'dark' })}
+            className={`p-1 rounded-md transition-colors ${
+              preferences.theme === 'dark' ? 'bg-[#26262d] text-[#f3f4f6] shadow-xs' : 'text-[#7d6b59] hover:text-[#2c2523]'
+            }`}
+            title="深夜暗黑模式 (Dark)"
+            aria-label="暗黑模式"
+          >
+            <Moon size={12} />
+          </button>
+        </div>
+
         <div className="h-4 w-px bg-[#e5ddd3] mx-1" />
 
         {/* Zen Mode Button */}
@@ -160,6 +200,12 @@ export function EditorHeader({
         >
           {isZenMode ? <Minimize2 size={14} /> : <Maximize2 size={14} />}
         </button>
+
+        {isZenMode && (
+          <div className="zen-window-controls ml-2" data-testid="zen-window-controls">
+            <WindowControls />
+          </div>
+        )}
       </div>
     </div>
   )

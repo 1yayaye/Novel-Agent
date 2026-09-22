@@ -1,12 +1,54 @@
-import React from 'react'
-import { ListOrdered, CheckCircle2, XCircle, AlertCircle, Loader2, Trash2 } from 'lucide-react'
+import React, { useEffect } from 'react'
+import { ListOrdered, CheckCircle2, XCircle, AlertCircle, Loader2, Trash2, StopCircle } from 'lucide-react'
 import { Card } from '../../components/ui/card'
 import { Button } from '../../components/ui/button'
 import { Badge } from '../../components/ui/badge'
 import { useTaskStore } from '../../stores/useTaskStore'
+import { useProjectStore } from '../../stores/useProjectStore'
+import { taskTypeLabel } from '../../utils/constants'
 
 export function TaskCenterDrawer() {
-  const { tasks, clearCompleted } = useTaskStore()
+  const { project } = useProjectStore()
+  const { tasks, setTasks, updateTask, clearCompleted } = useTaskStore()
+
+  useEffect(() => {
+    if (!project) return
+    let active = true
+    window.novelAgent.task
+      .list({ sessionId: project.sessionId })
+      .then((list: any[]) => {
+        if (active && Array.isArray(list)) {
+          setTasks(
+            list.map((t) => ({
+              id: t.id,
+              type: t.type || 'task',
+              title: t.title || taskTypeLabel[t.type as keyof typeof taskTypeLabel] || '后台任务',
+              progress: t.progress ?? (t.state === 'completed' ? 1 : 0),
+              status: t.state || 'running',
+              stage: t.stage || '',
+              message: t.error || '',
+              createdAt: t.createdAt || Date.now()
+            }))
+          )
+        }
+      })
+      .catch(() => {})
+
+    return () => {
+      active = false
+    }
+  }, [project, setTasks])
+
+  const handleCancelTask = async (taskId: string) => {
+    if (!project) return
+    try {
+      await window.novelAgent.analysis?.cancel?.({
+        sessionId: project.sessionId,
+        taskId
+      })
+      updateTask(taskId, { status: 'cancelled' })
+    } catch {}
+  }
 
   const getStatusBadge = (status: string) => {
     switch (status) {
@@ -73,7 +115,20 @@ export function TaskCenterDrawer() {
                 <span className="text-xs font-bold text-[#2c2523] truncate font-serif">
                   {task.title}
                 </span>
-                {getStatusBadge(task.status)}
+                <div className="flex items-center gap-1.5">
+                  {getStatusBadge(task.status)}
+                  {task.status === 'running' && (
+                    <button
+                      type="button"
+                      onClick={() => void handleCancelTask(task.id)}
+                      className="p-1 text-red-500 hover:text-red-700 hover:bg-red-50 rounded transition-colors"
+                      title="取消正在执行的任务"
+                      aria-label="取消任务"
+                    >
+                      <StopCircle size={13} />
+                    </button>
+                  )}
+                </div>
               </div>
 
               {task.status === 'running' && (

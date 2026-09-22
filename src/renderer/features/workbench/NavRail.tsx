@@ -71,12 +71,12 @@ export function NavRail({
           isActive: (d) => d === 'chat'
         },
         {
-          id: 'candidateReview',
+          id: 'candidate',
           label: '差异审阅',
           miniLabel: '审阅',
           icon: GitCompare,
           title: 'AI 创作候选比对与写回正文',
-          isActive: (d) => d === 'candidateReview'
+          isActive: (d) => d === 'candidate' || d === 'candidateReview'
         }
       ]
     },
@@ -113,20 +113,20 @@ export function NavRail({
           isActive: (d) => d === 'reports'
         },
         {
-          id: 'consistency',
+          id: 'issues',
           label: '逻辑一致性',
           miniLabel: '质检',
           icon: AlertTriangle,
           title: '剧情矛盾与时间线一致性检测',
-          isActive: (d) => d === 'consistency'
+          isActive: (d) => d === 'issues' || d === 'consistency'
         },
         {
-          id: 'suggestions',
+          id: 'suggestion',
           label: '设定事实建议',
           miniLabel: '建议',
           icon: Sparkles,
           title: 'AI 建议审阅 (待确认的设定事实)',
-          isActive: (d) => d === 'suggestions'
+          isActive: (d) => d === 'suggestion' || d === 'suggestions'
         },
         {
           id: 'tasks',

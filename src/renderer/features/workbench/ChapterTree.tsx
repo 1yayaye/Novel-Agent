@@ -31,6 +31,8 @@ export function ChapterTree({
   onMoveChapter
 }: ChapterTreeProps) {
   const [filterQuery, setFilterQuery] = useState('')
+  const [editingId, setEditingId] = useState<string | null>(null)
+  const [editingTitle, setEditingTitle] = useState('')
 
   const filteredChapters = chapters.filter((c) =>
     c.title.toLowerCase().includes(filterQuery.toLowerCase())
@@ -39,7 +41,7 @@ export function ChapterTree({
   const totalWords = chapters.reduce((acc, c) => acc + (c.characterCount || 0), 0)
 
   return (
-    <div className="flex flex-col h-full bg-[#faf8f5] border-r border-[#e5ddd3] w-64 select-none shrink-0">
+    <div data-tour="chapter-panel" className="flex flex-col h-full bg-[#faf8f5] border-r border-[#e5ddd3] w-64 select-none shrink-0">
       {/* Header with Title and Add Button */}
       <div className="p-3 border-b border-[#e5ddd3] flex items-center justify-between">
         <div>
@@ -99,7 +101,35 @@ export function ChapterTree({
                     {chapterNum !== undefined ? chapterNum : '•'}
                   </span>
                   <div className="truncate flex-1">
-                    <span className="truncate">{chapter.title || numLabel}</span>
+                    {editingId === chapter.id ? (
+                      <input
+                        autoFocus
+                        value={editingTitle}
+                        onChange={(e) => setEditingTitle(e.target.value)}
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter') {
+                            const trimmed = editingTitle.trim()
+                            if (trimmed && trimmed !== chapter.title) {
+                              onRenameChapter(chapter.id, trimmed)
+                            }
+                            setEditingId(null)
+                          } else if (e.key === 'Escape') {
+                            setEditingId(null)
+                          }
+                        }}
+                        onBlur={() => {
+                          const trimmed = editingTitle.trim()
+                          if (trimmed && trimmed !== chapter.title) {
+                            onRenameChapter(chapter.id, trimmed)
+                          }
+                          setEditingId(null)
+                        }}
+                        onClick={(e) => e.stopPropagation()}
+                        className="w-full px-1.5 py-0.5 text-xs bg-white border border-[#2d6a4f] rounded text-[#2c2523] focus:outline-none"
+                      />
+                    ) : (
+                      <span className="truncate">{chapter.title || numLabel}</span>
+                    )}
                   </div>
                 </div>
 
@@ -120,7 +150,12 @@ export function ChapterTree({
                       </button>
                     </DropdownMenuTrigger>
                     <DropdownMenuContent align="end" className="w-36">
-                      <DropdownMenuItem onClick={() => onRenameChapter(chapter.id, chapter.title)}>
+                      <DropdownMenuItem
+                        onClick={() => {
+                          setEditingId(chapter.id)
+                          setEditingTitle(chapter.title || '')
+                        }}
+                      >
                         <Edit3 size={13} className="mr-2" />
                         <span>重命名</span>
                       </DropdownMenuItem>

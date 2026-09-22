@@ -6,6 +6,7 @@ import { errorText } from '../../utils/formatters'
 import { count } from '../../../shared/text-counter'
 import { getChapterNumber } from '../../utils/chapter-numbering'
 import { Button } from '../../components/ui/button'
+import { useDialogDismiss } from '../../hooks/useDialogDismiss'
 
 type PreviewChapter = { id: string; title: string; content: string }
 
@@ -18,6 +19,10 @@ export function ImportPreviewModal({
   onClose: () => void
   onImported: (opened: OpenProjectResult) => void
 }) {
+  const { dialogRef, backdropProps } = useDialogDismiss<HTMLDivElement>({
+    isOpen: true,
+    onClose
+  })
   const [title, setTitle] = useState(preview.suggestedTitle)
   const [chapters, setChapters] = useState<PreviewChapter[]>(() =>
     preview.chapters.map((chapter, index) => ({
@@ -131,8 +136,15 @@ export function ImportPreviewModal({
   }
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm p-4">
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm p-4"
+      {...backdropProps}
+    >
       <motion.div
+        ref={dialogRef}
+        role="dialog"
+        aria-modal="true"
+        aria-label="导入小说原文预览"
         initial={{ opacity: 0, scale: 0.96 }}
         animate={{ opacity: 1, scale: 1 }}
         exit={{ opacity: 0, scale: 0.96 }}

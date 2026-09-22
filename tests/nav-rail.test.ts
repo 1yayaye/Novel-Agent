@@ -95,4 +95,39 @@ describe('NavRail (Lifecycle 4-Section Workspaces & Expandable Label Support)', 
     expect(htmlConn).toContain('rail-active')
     expect(htmlConn).toContain('aria-label="模型连接配置"')
   })
+
+  it('correctly activates candidate review, issues, and suggestion nav items', () => {
+    const htmlCandidate = renderToStaticMarkup(
+      React.createElement(NavRail, {
+        activeDialog: 'candidate',
+        isExpanded: true,
+        onToggleExpanded: vi.fn(),
+        onSelectAction: vi.fn()
+      })
+    )
+    expect(htmlCandidate).toContain('aria-label="差异审阅"')
+    expect(htmlCandidate).toContain('rail-active')
+
+    const htmlIssues = renderToStaticMarkup(
+      React.createElement(NavRail, {
+        activeDialog: 'issues',
+        isExpanded: true,
+        onToggleExpanded: vi.fn(),
+        onSelectAction: vi.fn()
+      })
+    )
+    expect(htmlIssues).toContain('aria-label="逻辑一致性"')
+    expect(htmlIssues).toContain('rail-active')
+
+    const htmlSuggestion = renderToStaticMarkup(
+      React.createElement(NavRail, {
+        activeDialog: 'suggestion',
+        isExpanded: true,
+        onToggleExpanded: vi.fn(),
+        onSelectAction: vi.fn()
+      })
+    )
+    expect(htmlSuggestion).toContain('aria-label="设定事实建议"')
+    expect(htmlSuggestion).toContain('rail-active')
+  })
 })

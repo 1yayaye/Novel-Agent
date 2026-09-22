@@ -51,6 +51,7 @@ export function TopBar({
 
         <button
           type="button"
+          data-tour="connection-badge"
           onClick={() => openDialog('connection')}
           className="flex items-center gap-1.5 px-2 py-0.5 rounded-full text-[11px] bg-[#efe6da] hover:bg-[#e5ddd3] text-[#54473b] transition-colors border border-[#dacdbe]/60"
           title="点击配置模型连接与任务路由"

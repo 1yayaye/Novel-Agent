@@ -1,6 +1,7 @@
 import { create } from 'zustand'
 import type { Chapter, ChapterHeader, OpenProjectResult, RecentProject } from '../../shared/project'
 import { errorText } from '../utils/formatters'
+import { useEditorStore } from './useEditorStore'
 
 export interface ProjectState {
   project: OpenProjectResult | null
@@ -168,6 +169,12 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
       })
       const list = await window.novelAgent.chapter.list({ sessionId: project.sessionId })
       set({ chapters: list })
+      const active = useEditorStore.getState().activeChapter
+      if (active && active.id === id) {
+        useEditorStore.setState({
+          activeChapter: { ...active, title }
+        })
+      }
     } catch (err) {
       set({ error: errorText(err, '重命名章节失败') })
     }

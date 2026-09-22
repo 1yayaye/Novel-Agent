@@ -10,6 +10,7 @@ import { formatNovelParagraphs, cleanRedundantBlankLines } from './novel-typeset
 import { EditorHeader } from './EditorHeader'
 import { EditorStatusBar } from './EditorStatusBar'
 import { EditorFloatingMenu } from './EditorFloatingMenu'
+import { useEditorStore } from '../../stores/useEditorStore'
 
 export interface EditorHostProps {
   sessionId: string
@@ -76,6 +77,7 @@ export function EditorHost({
         const content = viewRef.current?.state.doc.toString() ?? saved.current
         if (content === saved.current) break
         setSaveState('saving')
+        useEditorStore.setState({ saveState: 'saving' })
         try {
           const updated = await window.novelAgent.chapter.update({
             sessionId,
@@ -85,6 +87,12 @@ export function EditorHost({
           })
           version.current = updated.version
           saved.current = updated.content
+          useEditorStore.setState({
+            activeChapter: updated,
+            saveState: 'saved',
+            content: updated.content,
+            wordCount: count(updated.content)
+          })
           onSaved(updated)
         } catch (error: any) {
           blocked.current =
@@ -92,10 +100,12 @@ export function EditorHost({
               ? 'conflict'
               : 'error'
           setSaveState(blocked.current)
+          useEditorStore.setState({ saveState: blocked.current })
           return false
         }
       } while (queued.current || viewRef.current?.state.doc.toString() !== saved.current)
       setSaveState('saved')
+      useEditorStore.setState({ saveState: 'saved' })
       return true
     })().finally(() => {
       writing.current = null
@@ -151,9 +161,15 @@ export function EditorHost({
     version.current = chapter.version
     saved.current = chapter.content
     blocked.current = null
-    queued.current = false
+    const initialWords = count(chapter.content)
     window.clearTimeout(countTimer.current)
-    setDocLength(count(chapter.content))
+    setDocLength(initialWords)
+    useEditorStore.setState({
+      activeChapter: chapter,
+      content: chapter.content,
+      wordCount: initialWords,
+      saveState: isReadOnly ? 'read_only' : 'saved'
+    })
 
     const customShortcuts = Prec.highest(
       keymap.of([
@@ -162,7 +178,13 @@ export function EditorHost({
           run: (view) => {
             window.clearTimeout(timer.current)
             window.clearTimeout(countTimer.current)
-            setDocLength(count(view.state.doc.toString()))
+            const currentDoc = view.state.doc.toString()
+            const words = count(currentDoc)
+            setDocLength(words)
+            useEditorStore.setState({
+              content: currentDoc,
+              wordCount: words
+            })
             void persist()
             return true
           }
@@ -175,11 +197,19 @@ export function EditorHost({
         window.clearTimeout(countTimer.current)
         countTimer.current = window.setTimeout(() => {
           if (viewRef.current) {
-            setDocLength(count(viewRef.current.state.doc.toString()))
+            const currentDoc = viewRef.current.state.doc.toString()
+            const words = count(currentDoc)
+            setDocLength(words)
+            useEditorStore.setState({
+              content: currentDoc,
+              wordCount: words,
+              saveState: blocked.current ?? (writing.current ? 'saving' : 'dirty')
+            })
           }
         }, 300)
         if (!isReadOnly && !applying.current && !blocked.current) {
           setSaveState('dirty')
+          useEditorStore.setState({ saveState: 'dirty' })
           window.clearTimeout(timer.current)
           timer.current = window.setTimeout(() => {
             void persist()
@@ -225,6 +255,7 @@ export function EditorHost({
 
         selectionInfoRef.current = info
         setSelectionInfo(info)
+        useEditorStore.setState({ selection: info })
       }
     })
 
@@ -336,7 +367,10 @@ export function EditorHost({
       : 'max-w-2xl'
 
   return (
-    <div className={`chapter-editor-container flex flex-col flex-1 h-full overflow-hidden bg-[#faf8f5] relative font-${preferences.fontFamily} theme-${preferences.theme}`}>
+    <div
+      data-tour="editor-area"
+      className={`chapter-editor-container flex flex-col flex-1 h-full overflow-hidden bg-[#faf8f5] relative font-${preferences.fontFamily} theme-${preferences.theme}`}
+    >
       {/* Editor Header */}
       <EditorHeader
         chapter={chapter}

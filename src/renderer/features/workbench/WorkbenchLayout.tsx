@@ -5,6 +5,7 @@ import type { EditorHandle } from '../../types/editor'
 import { useProjectStore } from '../../stores/useProjectStore'
 import { useEditorStore } from '../../stores/useEditorStore'
 import { useWorkbenchStore } from '../../stores/useWorkbenchStore'
+import { useTaskStore } from '../../stores/useTaskStore'
 import { TopBar } from './TopBar'
 import { NavRail } from './NavRail'
 import { ChapterTree } from './ChapterTree'
@@ -143,6 +144,17 @@ export function WorkbenchLayout({
   useEffect(() => {
     const unsub = window.novelAgent?.task?.onProgress?.((event: any) => {
       setActiveTaskProgress(event)
+      if (event?.taskId) {
+        useTaskStore.getState().updateOrAddTask({
+          id: event.taskId,
+          type: event.taskType || event.type || 'task',
+          title: event.title || '后台任务',
+          progress: event.progress ?? 0,
+          status: event.state || event.status || 'running',
+          stage: event.stage || '',
+          message: event.message
+        })
+      }
       if (event.state === 'completed' || event.state === 'failed' || event.state === 'cancelled') {
         window.setTimeout(() => {
           setActiveTaskProgress((prev) => (prev?.taskId === event.taskId ? null : prev))
@@ -185,6 +197,30 @@ export function WorkbenchLayout({
     selectChapter(id)
   }
 
+  const handleMoveChapter = (id: string, direction: -1 | 1) => {
+    const idx = chapters.findIndex((c) => c.id === id)
+    if (idx < 0) return
+    const targetIdx = idx + direction
+    if (targetIdx < 0 || targetIdx >= chapters.length) return
+    const newChapters = [...chapters]
+    const [moved] = newChapters.splice(idx, 1)
+    newChapters.splice(targetIdx, 0, moved)
+    void reorderChapters(newChapters)
+  }
+
+  const handleDeleteChapter = (id: string) => {
+    const chap = chapters.find((c) => c.id === id)
+    openDialog('confirm', {
+      title: '删除章节',
+      message: `确定要删除「${chap?.title || '此章节'}」吗？删除后正文不会立即丢失，但将从目录中移除。`,
+      confirmText: '删除章节',
+      confirmVariant: 'danger',
+      onConfirm: async () => {
+        await deleteChapter(id)
+      }
+    })
+  }
+
   const handleReturnToShelf = async () => {
     try {
       await editorRef.current?.flush()
@@ -214,7 +250,15 @@ export function WorkbenchLayout({
             onToggleExpanded={toggleNavExpanded}
             onSelectAction={(actionKey) => {
               if (actionKey === 'write') {
-                // Focus write canvas
+                useWorkbenchStore.getState().closeDialog()
+              } else if (actionKey === 'tasks') {
+                toggleDrawer('tasks')
+              } else if (actionKey === 'candidateReview' || actionKey === 'candidate') {
+                openDialog('candidate')
+              } else if (actionKey === 'consistency' || actionKey === 'issues') {
+                openDialog('issues')
+              } else if (actionKey === 'suggestions' || actionKey === 'suggestion') {
+                openDialog('suggestion')
               } else {
                 openDialog(actionKey as any)
               }
@@ -250,20 +294,16 @@ export function WorkbenchLayout({
               </IconButton>
             </div>
             <ChapterTree
-            chapters={chapters}
-            selectedChapterId={selectedChapterId}
-            onSelectChapter={handleSelectChapter}
-            onCreateChapter={handleCreateChapter}
-            onRenameChapter={(id, currentTitle) => {
-              const newTitle = window.prompt('请输入新的章节标题', currentTitle)
-              if (newTitle && newTitle.trim()) {
-                void renameChapter(id, newTitle.trim())
-              }
-            }}
-            onDeleteChapter={(id) => {
-              void deleteChapter(id)
-            }}
-          />
+              chapters={chapters}
+              selectedChapterId={selectedChapterId}
+              onSelectChapter={handleSelectChapter}
+              onCreateChapter={handleCreateChapter}
+              onRenameChapter={(id, newTitle) => {
+                void renameChapter(id, newTitle)
+              }}
+              onDeleteChapter={handleDeleteChapter}
+              onMoveChapter={handleMoveChapter}
+            />
           </div>
         )}
 

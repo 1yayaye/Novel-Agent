@@ -63,6 +63,7 @@ export function DrawerHost({
 
   return (
     <aside
+      data-tour="inspector"
       className="w-96 border-l border-[#e5ddd3] bg-[#faf8f5] flex flex-col h-full shrink-0 shadow-lg select-none z-20 animate-in slide-in-from-right duration-200"
       aria-label={meta.title}
     >
