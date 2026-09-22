@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback } from 'react'
 import { motion } from 'motion/react'
 import { Bookmark, Check, CheckCircle2, Eye, X } from 'lucide-react'
-import { Chapter, ConsistencyIssue, ConsistencyIssueSeverity, ConsistencyIssueState } from '../../../shared/project'
+import { ChapterHeader, ConsistencyIssue, ConsistencyIssueSeverity, ConsistencyIssueState } from '../../../shared/project'
 import { IconButton } from '../common/IconButton'
 import { errorText, formatDate } from '../../utils/formatters'
 import { consistencySeverityLabel, consistencyIssueTypeLabel, consistencyStateLabel } from '../../utils/constants'
@@ -15,7 +15,7 @@ export function ConsistencyIssuesDialog({
   onNavigateChapter
 }: {
   sessionId: string
-  chapters: Chapter[]
+  chapters: ChapterHeader[]
   isReadOnly: boolean
   onClose: () => void
   onNavigateChapter: (chapterId: string, startOffset?: number, length?: number) => void

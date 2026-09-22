@@ -23,8 +23,9 @@ import {
   User,
   X
 } from 'lucide-react'
-import {
+import type {
   Chapter,
+  ChapterHeader,
   ChapterOutline,
   ChatMessage,
   ChatMessageCitation,
@@ -34,10 +35,12 @@ import {
   ChatWorkflowType,
   TaskType
 } from '../../../shared/project'
+import { toChapterHeader } from '../../../shared/project'
 import { IconButton } from '../common/IconButton'
 import { errorText, formatDate } from '../../utils/formatters'
 import { getChapterNumber } from '../../utils/chapter-numbering'
 import { useDialogDismiss } from '../../hooks/useDialogDismiss'
+import { useStreamThrottle } from '../../hooks/useStreamThrottle'
 import { useToast } from '../common/Toast'
 import { isNearBottom, decideScrollBehavior, type ScrollActionType } from '../../utils/chatScroll'
 
@@ -57,7 +60,7 @@ export function ChatWorkbenchDialog({
   onChapterCreated
 }: {
   sessionId: string
-  chapters?: Chapter[]
+  chapters?: ChapterHeader[]
   activeChapterId?: string
   isReadOnly: boolean
   onClose: () => void
@@ -85,7 +88,7 @@ export function ChatWorkbenchDialog({
   const [loadingMessages, setLoadingMessages] = useState(false)
   const [actionLoading, setActionLoading] = useState(false)
   const [isStreaming, setIsStreaming] = useState(false)
-  const [streamingText, setStreamingText] = useState('')
+  const streaming = useStreamThrottle('')
   const [streamingMessageId, setStreamingMessageId] = useState<string | null>(null)
   const [isEditingSummary, setIsEditingSummary] = useState(false)
   const [summaryDraft, setSummaryDraft] = useState('')
@@ -95,7 +98,7 @@ export function ChatWorkbenchDialog({
   const [newSessionChapterId, setNewSessionChapterId] = useState<string>(activeChapterId || chapters[0]?.id || '')
   const [isCreatingNewChapter, setIsCreatingNewChapter] = useState(chapters.length === 0)
   const [newChapterTitleDraft, setNewChapterTitleDraft] = useState(chapters.length === 0 ? '第一章' : '')
-  const [localChapters, setLocalChapters] = useState<Chapter[]>(chapters)
+  const [localChapters, setLocalChapters] = useState<ChapterHeader[]>(chapters)
   const [hasCustomSessionTitle, setHasCustomSessionTitle] = useState(false)
   const [latestChapterOutline, setLatestChapterOutline] = useState<ChapterOutline | null>(null)
   const [showSummaryBox, setShowSummaryBox] = useState(true)
@@ -178,25 +181,25 @@ export function ChatWorkbenchDialog({
   }, [selectedSessionId, loadSessionDetails])
 
   useEffect(() => {
-    if (isStreaming || streamingText) {
+    if (isStreaming || streaming.value) {
       triggerScroll('stream_delta')
     }
-  }, [streamingText, isStreaming, triggerScroll])
+  }, [streaming.value, isStreaming, triggerScroll])
 
   useEffect(() => {
     const unsubDelta = window.novelAgent.chat.onDelta?.((event) => {
       if (selectedSessionId === event.chatSessionId) {
         setIsStreaming(true)
         setStreamingMessageId(event.messageId)
-        setStreamingText(event.fullText)
+        streaming.update(event.fullText)
       }
     })
 
     const unsubDone = window.novelAgent.chat.onDone?.((event) => {
       if (selectedSessionId === event.chatSessionId) {
+        streaming.flush()
         setIsStreaming(false)
         setStreamingMessageId(null)
-        setStreamingText('')
         void loadSessionDetails(selectedSessionId)
       }
     })
@@ -205,7 +208,7 @@ export function ChatWorkbenchDialog({
       unsubDelta?.()
       unsubDone?.()
     }
-  }, [selectedSessionId, loadSessionDetails])
+  }, [selectedSessionId, loadSessionDetails, streaming])
 
   // Load latest chapter outline when viewing a creation workflow session
   const loadOutlineForSession = useCallback(async (chapId: string) => {
@@ -253,7 +256,7 @@ export function ChatWorkbenchDialog({
         })
         targetChapId = createdChapter.id
         targetChapterTitle = createdChapter.title
-        setLocalChapters((prev) => [...prev, createdChapter])
+        setLocalChapters((prev) => [...prev, toChapterHeader(createdChapter)])
         setNewSessionChapterId(createdChapter.id)
         setIsCreatingNewChapter(false)
         onChapterCreated?.(createdChapter)
@@ -336,7 +339,7 @@ export function ChatWorkbenchDialog({
 
     setInputContent('')
     setIsStreaming(true)
-    setStreamingText('')
+    streaming.flush()
     isNearBottomRef.current = true
     triggerScroll('user_send')
 
@@ -357,7 +360,7 @@ export function ChatWorkbenchDialog({
     try {
       await window.novelAgent.chat.cancel({ sessionId, chatSessionId: selectedSessionId })
       setIsStreaming(false)
-      setStreamingText('')
+      streaming.flush()
       await loadSessionDetails(selectedSessionId)
     } catch (err) {
       setError(errorText(err, '取消生成失败'))
@@ -920,7 +923,7 @@ export function ChatWorkbenchDialog({
                           {msg.content}
                           {msg.state === 'streaming' && msg.id === streamingMessageId && (
                             <>
-                              {streamingText.slice(msg.content.length)}
+                              {streaming.value.slice(msg.content.length)}
                               <span className="typewriter-cursor" />
                             </>
                           )}
@@ -984,7 +987,7 @@ export function ChatWorkbenchDialog({
                       </div>
                       <div className="chat-bubble assistant">
                         <div className="chat-message-text">
-                          {streamingText}
+                          {streaming.value}
                           <span className="typewriter-cursor" />
                         </div>
                         <div className="chat-message-meta">

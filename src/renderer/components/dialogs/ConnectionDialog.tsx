@@ -411,6 +411,7 @@ export function ConnectionDialog({
         )}
         {deletingConn && (
           <ConfirmActionDialog
+            key="confirm-delete-conn"
             isOpen={Boolean(deletingConn)}
             title="确认删除模型连接"
             message={`确定删除模型连接「${deletingConn.name}」吗？绑定的任务路由将变为 unresolved 状态。`}

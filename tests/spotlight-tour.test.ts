@@ -1,5 +1,10 @@
-import { describe, expect, it } from 'vitest'
-import { DEFAULT_TOUR_STEPS } from '../src/renderer/components/dialogs/SpotlightTour'
+/**
+ * @vitest-environment jsdom
+ */
+import { describe, expect, it, vi } from 'vitest'
+import React from 'react'
+import { render, fireEvent, screen } from '@testing-library/react'
+import { SpotlightTour, DEFAULT_TOUR_STEPS } from '../src/renderer/components/dialogs/SpotlightTour'
 
 describe('Automated Immersive Real-Scene Onboarding Tour', () => {
   it('defines 9 automated real-scene tour steps in logical sequence', () => {
@@ -73,4 +78,44 @@ describe('Automated Immersive Real-Scene Onboarding Tour', () => {
     expect(inspectorStep.content).toContain('快照')
     expect(inspectorStep.content).toContain('.novelproj')
   })
+
+  it('renders tour card and handles navigation and skip without crashing', () => {
+    const onClose = vi.fn()
+    const onStepChange = vi.fn()
+
+    const { getByText, rerender, unmount } = render(
+      React.createElement(SpotlightTour, {
+        isOpen: true,
+        steps: DEFAULT_TOUR_STEPS,
+        onClose,
+        onStepChange
+      })
+    )
+
+    // Initial step rendered
+    expect(screen.getByText(/步骤 1 \/ 9/)).toBeDefined()
+    expect(onStepChange).toHaveBeenCalledWith(0, DEFAULT_TOUR_STEPS[0])
+
+    // Click next button
+    const nextBtn = getByText('下一步')
+    fireEvent.click(nextBtn)
+    expect(screen.getByText(/步骤 2 \/ 9/)).toBeDefined()
+
+    // Press Escape to trigger finish/close
+    fireEvent.keyDown(window, { key: 'Escape' })
+    expect(onClose).toHaveBeenCalledTimes(1)
+
+    // Rerender with isOpen=false
+    rerender(
+      React.createElement(SpotlightTour, {
+        isOpen: false,
+        steps: DEFAULT_TOUR_STEPS,
+        onClose,
+        onStepChange
+      })
+    )
+
+    unmount()
+  })
 })
+

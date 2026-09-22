@@ -184,7 +184,12 @@ export function ImportPreview({
               onChange={(event) => setTitle(event.target.value)}
             />
           </label>
-          <span>{confidence === 'low' ? '编码识别置信度低，请确认' : '已识别编码'}</span>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+            <span title={preview.source} style={{ display: 'inline-flex', alignItems: 'center', gap: '4px', maxWidth: '340px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', fontSize: '11px', color: '#6b7280' }}>
+              原文副本: <code style={{ background: '#f3f4f6', padding: '1px 5px', borderRadius: '3px', fontFamily: 'monospace' }}>{preview.source}</code>
+            </span>
+            {confidence === 'low' && <span style={{ color: '#d97706', fontWeight: 500 }}>编码置信度低</span>}
+          </div>
         </div>
 
         <div className="import-body">

@@ -10,6 +10,7 @@ import {
   clearActiveModalStack,
   getFocusableElements
 } from '../src/renderer/hooks/useDialogDismiss'
+import { ConfirmActionDialog } from '../src/renderer/components/dialogs/ConfirmActionDialog'
 
 describe('Ticket 06: Unified Modal Dialog Dismiss & Focus Trap Mechanics', () => {
   beforeEach(() => {
@@ -531,4 +532,41 @@ describe('Ticket 06: Unified Modal Dialog Dismiss & Focus Trap Mechanics', () =>
 
     document.body.removeChild(container)
   })
+
+  it('verifies ConfirmActionDialog integration with modal stack and dismissal', () => {
+    const onConfirm = vi.fn()
+    const onCancel = vi.fn()
+
+    const { rerender, unmount } = render(
+      React.createElement(ConfirmActionDialog, {
+        isOpen: true,
+        title: '测试确认弹窗',
+        message: '确认执行此操作吗？',
+        onConfirm,
+        onCancel
+      })
+    )
+
+    // Modal is open, registered to modal stack
+    expect(getActiveModalStackDepth()).toBe(1)
+
+    // Press Escape dismisses top modal
+    fireEvent.keyDown(window, { key: 'Escape' })
+    expect(onCancel).toHaveBeenCalledTimes(1)
+
+    // Rerender with isOpen=false unregisters from modal stack immediately
+    rerender(
+      React.createElement(ConfirmActionDialog, {
+        isOpen: false,
+        title: '测试确认弹窗',
+        message: '确认执行此操作吗？',
+        onConfirm,
+        onCancel
+      })
+    )
+    expect(getActiveModalStackDepth()).toBe(0)
+
+    unmount()
+  })
 })
+

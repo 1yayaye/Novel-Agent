@@ -92,6 +92,7 @@ test('imports through the visible preview and autosaves after a chapter rename',
   await page.waitForTimeout(500)
   expect({ pageErrors, alerts }).toEqual({ pageErrors: [], alerts: [] })
   await expect(page.getByText('界面确认作品', { exact: true })).toBeVisible()
+  await expect(page.locator('.workbench')).toBeVisible({ timeout: 15_000 })
 
   const editor = page.locator('.cm-content')
   await editor.click()
@@ -134,8 +135,9 @@ test('imports through the visible preview and autosaves after a chapter rename',
     const latest = recent[0]
     const opened = await window.novelAgent.project.open({ path: latest.path })
     const chapters = await window.novelAgent.chapter.list({ sessionId: opened.sessionId })
+    const savedChapter = await window.novelAgent.chapter.get({ sessionId: opened.sessionId, chapterId: chapters[0].id })
     await window.novelAgent.project.close({ sessionId: opened.sessionId })
-    return chapters[0]
+    return savedChapter
   })
   expect(saved).toMatchObject({ title: '重命名后', content: '第一次保存，继续编辑' })
   await app.close()
@@ -168,6 +170,7 @@ test('phase 3: supports snapshot creation, backup management, and file export in
   await page.getByLabel('作品名称').fill('阶段三测试作品')
   await page.getByRole('button', { name: '确认导入' }).click()
   await expect(page.getByText('阶段三测试作品', { exact: true })).toBeVisible()
+  await expect(page.locator('.workbench')).toBeVisible({ timeout: 15_000 })
 
   // 1. Create a manual snapshot
   await page.getByRole('button', { name: '创建手动快照' }).click()
@@ -216,6 +219,7 @@ test('phase 4: supports full-text search, multi-source filtering, navigation and
   await page.getByLabel('作品名称').fill('阶段四搜索测试作品')
   await page.getByRole('button', { name: '确认导入' }).click()
   await expect(page.getByText('阶段四搜索测试作品', { exact: true })).toBeVisible()
+  await expect(page.locator('.workbench')).toBeVisible({ timeout: 15_000 })
 
   // 1. Open Search Dialog via left rail
   await page.locator('.left-rail').getByRole('button', { name: '全文搜索' }).click()
@@ -282,6 +286,7 @@ test('phase 5: supports knowledge base management, creative configuration, and A
   await page.getByLabel('作品名称').fill('阶段五测试作品')
   await page.getByRole('button', { name: '确认导入' }).click()
   await expect(page.getByText('阶段五测试作品', { exact: true })).toBeVisible()
+  await expect(page.locator('.workbench')).toBeVisible({ timeout: 15_000 })
 
   // 1. Knowledge Base Management
   await page.locator('.left-rail').getByRole('button', { name: '知识库' }).click()
@@ -365,6 +370,7 @@ test('phase 6: supports model connections, content target confirmation, task rou
   await page.getByLabel('作品名称').fill('阶段六测试作品')
   await page.getByRole('button', { name: '确认导入' }).click()
   await expect(page.getByText('阶段六测试作品', { exact: true })).toBeVisible()
+  await expect(page.locator('.workbench')).toBeVisible({ timeout: 15_000 })
 
   console.log('[Phase 6 Test] Opening Model Dialog...')
   // Model Connections, Task Routes, and Privacy
@@ -444,6 +450,7 @@ test('phase 7: tasks, consistency issues, 6-section literary reports, and rollin
   await page.getByRole('button', { name: '确认导入' }).click()
   await page.waitForTimeout(500)
   await expect(page.getByText('第七阶段全景测试', { exact: true })).toBeVisible()
+  await expect(page.locator('.workbench')).toBeVisible({ timeout: 15_000 })
 
   console.log('[Phase 7 Test] Testing Consistency Dialog...')
   // 2. Open Consistency Issues Dialog
@@ -530,6 +537,7 @@ test('phase 8: context assembly preview, token budget meter, and prompt inspecti
   await page.getByRole('button', { name: '确认导入' }).click()
   await page.waitForTimeout(500)
   await expect(page.getByText('第八阶段全景测试', { exact: true })).toBeVisible()
+  await expect(page.locator('.workbench')).toBeVisible({ timeout: 15_000 })
 
   console.log('[Phase 8 Test] Creating a test generation model connection...')
   const connName = `Phase8-LLM-${Date.now()}`
@@ -615,6 +623,7 @@ test('phase 9 creation toolbar, candidate diff review modal, hunk toggling, and 
   await page.getByRole('button', { name: '确认导入' }).click()
   await page.waitForTimeout(500)
   await expect(page.getByText('第九阶段全景测试', { exact: true })).toBeVisible()
+  await expect(page.locator('.workbench')).toBeVisible({ timeout: 15_000 })
 
   console.log('[Phase 9 Test] Ensuring generation model connection exists...')
   const connName = `Phase9-LLM-${Date.now()}`
@@ -690,6 +699,7 @@ test('phase 10: multi-turn chat workbench, sessions, rolling summary, citations 
   await page.getByRole('button', { name: '确认导入' }).click()
   await page.waitForTimeout(500)
   await expect(page.getByText('第十阶段全景测试', { exact: true })).toBeVisible()
+  await expect(page.locator('.workbench')).toBeVisible({ timeout: 15_000 })
 
   console.log('[Phase 10 Test] Verifying rail chat button...')
   await expect(page.locator('.left-rail').getByRole('button', { name: '项目问答', exact: true })).toBeVisible()
@@ -720,7 +730,3 @@ test('phase 10: multi-turn chat workbench, sessions, rolling summary, citations 
   console.log('[Phase 10 Test] Completed successfully!')
   await app.close()
 })
-
-
-
-

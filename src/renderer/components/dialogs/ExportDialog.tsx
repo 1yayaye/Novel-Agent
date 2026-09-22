@@ -1,13 +1,13 @@
 import { useState } from 'react'
 import { motion } from 'motion/react'
 import { Check, Download, X } from 'lucide-react'
-import { Chapter, ExportFormat } from '../../../shared/project'
+import { ChapterHeader, ExportFormat } from '../../../shared/project'
 import { IconButton } from '../common/IconButton'
 import { errorText } from '../../utils/formatters'
 import { getChapterNumber } from '../../utils/chapter-numbering'
 import { useDialogDismiss } from '../../hooks/useDialogDismiss'
 
-export function ExportDialog({ sessionId, chapters, onClose }: { sessionId: string; chapters: Chapter[]; onClose: () => void }) {
+export function ExportDialog({ sessionId, chapters, onClose }: { sessionId: string; chapters: ChapterHeader[]; onClose: () => void }) {
   const { dialogRef, backdropProps } = useDialogDismiss({ onClose })
   const [format, setFormat] = useState<ExportFormat>('txt')
   const [scope, setScope] = useState<'all' | 'custom'>('all')

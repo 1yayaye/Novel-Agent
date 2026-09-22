@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback } from 'react'
 import { motion } from 'motion/react'
 import { Compass, Sparkles, X } from 'lucide-react'
-import { BookSynopsis, Chapter, ChapterSummary } from '../../../shared/project'
+import { BookSynopsis, ChapterHeader, ChapterSummary } from '../../../shared/project'
 import { IconButton } from '../common/IconButton'
 import { errorText, formatDate } from '../../utils/formatters'
 import { useDialogDismiss } from '../../hooks/useDialogDismiss'
@@ -11,13 +11,15 @@ export function SynopsisDialog({
   chapters,
   isReadOnly,
   onClose,
-  onLaunchNew
+  onLaunchNew,
+  onLaunchAnalysis
 }: {
   sessionId: string
-  chapters: Chapter[]
+  chapters: ChapterHeader[]
   isReadOnly: boolean
   onClose: () => void
   onLaunchNew: () => void
+  onLaunchAnalysis?: (type: 'knowledge' | 'report' | 'synopsis') => void
 }) {
   const { dialogRef, backdropProps } = useDialogDismiss({ onClose })
   const [synopsis, setSynopsis] = useState<BookSynopsis | null>(null)
@@ -54,8 +56,20 @@ export function SynopsisDialog({
             <p>基于各章节摘要自动滚动的全书宏观故事脉络与细分梗概</p>
           </div>
           <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-            <button className="primary-button" disabled={isReadOnly} onClick={onLaunchNew}>
-              <Sparkles size={14} />重新生成大纲
+            <button
+              className="primary-button"
+              disabled={isReadOnly}
+              onClick={() => {
+                if (summaries.length === 0 && onLaunchAnalysis) {
+                  onLaunchAnalysis('knowledge')
+                } else {
+                  onLaunchNew()
+                }
+              }}
+              title={summaries.length === 0 ? '尚未生成章节摘要，将先启动全书章节分析' : '基于最新章节摘要重新生成全书宏观故事脉络'}
+            >
+              <Sparkles size={14} />
+              {summaries.length === 0 ? '一键提取剧情并生成大纲' : '重新生成故事脉络'}
             </button>
             <IconButton label="关闭" onClick={onClose}><X size={18} /></IconButton>
           </div>
@@ -83,8 +97,27 @@ export function SynopsisDialog({
             {loading ? (
               <p className="empty-hint">加载中...</p>
             ) : !synopsis ? (
-              <div className="empty-copy" style={{ padding: '20px 0', textAlign: 'center' }}>
-                <p>暂无全书大纲。可在完成章节知识分析后自动生成，或点击右上角直接生成。</p>
+              <div className="empty-copy" style={{ padding: '24px 0', textAlign: 'center' }}>
+                <p style={{ color: '#6b7280', fontSize: 13, marginBottom: 12 }}>
+                  {summaries.length === 0
+                    ? '暂无全书宏观脉络。需先提取章节剧情与摘要，AI 将自动串联生成全书故事走向。'
+                    : '已提取章节摘要，可点击右上角「重新生成故事脉络」自动提炼全书大纲。'}
+                </p>
+                {summaries.length === 0 && (
+                  <button
+                    type="button"
+                    className="primary-button"
+                    style={{ display: 'inline-flex', alignItems: 'center', gap: 6, margin: '0 auto', fontSize: 12.5 }}
+                    disabled={isReadOnly}
+                    onClick={() => {
+                      if (onLaunchAnalysis) onLaunchAnalysis('knowledge')
+                      else onLaunchNew()
+                    }}
+                  >
+                    <Sparkles size={13} />
+                    <span>立即开始全书章节剧情分析</span>
+                  </button>
+                )}
               </div>
             ) : (
               <div className="synopsis-text-content">
@@ -97,7 +130,24 @@ export function SynopsisDialog({
             <h3>各章节摘要明细 ({summaries.length})</h3>
             <div className="chapter-summaries-grid">
               {summaries.length === 0 ? (
-                <p className="empty-hint">暂无章节摘要，请先在知识分析中分析章节</p>
+                <div style={{ padding: '24px 0', textAlign: 'center', gridColumn: '1 / -1' }}>
+                  <p className="empty-hint" style={{ marginBottom: 12 }}>
+                    暂无章节摘要，请先通过剧情分析提取各章事实与摘要
+                  </p>
+                  <button
+                    type="button"
+                    className="text-button"
+                    style={{ fontSize: 12, color: '#2d5a27', padding: '6px 12px', border: '1px solid #c0d4be', borderRadius: 4 }}
+                    disabled={isReadOnly}
+                    onClick={() => {
+                      if (onLaunchAnalysis) onLaunchAnalysis('knowledge')
+                      else onLaunchNew()
+                    }}
+                  >
+                    <Sparkles size={13} />
+                    <span>启动章节剧情与知识分析</span>
+                  </button>
+                </div>
               ) : (
                 summaries.map((sum) => (
                   <div key={sum.id} className="chapter-summary-card">

@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react'
-import { motion, AnimatePresence } from 'motion/react'
+import { motion, AnimatePresence, usePresence } from 'motion/react'
 import {
   Radio,
   BookOpen,
@@ -162,6 +162,8 @@ export function SpotlightTour({
   onStepChange?: (index: number, step: TourStep) => void
   storageKey?: string
 }) {
+  const [isPresent, safeToRemove] = usePresence()
+  const active = isOpen && isPresent
   const [currentIndex, setCurrentIndex] = useState(0)
   const [targetRect, setTargetRect] = useState<SpotlightRect | null>(null)
   const [tooltipPos, setTooltipPos] = useState<{ top: number; left: number }>({ top: 0, left: 0 })
@@ -171,10 +173,10 @@ export function SpotlightTour({
 
   // Notify parent on step change for automated real-scene dialog opening/closing
   useEffect(() => {
-    if (isOpen && currentStep) {
+    if (active && currentStep) {
       onStepChange?.(currentIndex, currentStep)
     }
-  }, [isOpen, currentIndex, currentStep, onStepChange])
+  }, [active, currentIndex, currentStep, onStepChange])
 
   // Update target rect based on current step selector
   const updateRect = useCallback(() => {
@@ -194,12 +196,10 @@ export function SpotlightTour({
     if (targetEl) {
       const rect = targetEl.getBoundingClientRect()
       const padding = 6
-      const scrollY = window.scrollY || 0
-      const scrollX = window.scrollX || 0
 
       const computedRect: SpotlightRect = {
-        top: Math.max(0, rect.top + scrollY - padding),
-        left: Math.max(0, rect.left + scrollX - padding),
+        top: Math.max(0, rect.top - padding),
+        left: Math.max(0, rect.left - padding),
         width: Math.min(window.innerWidth, rect.width + padding * 2),
         height: Math.min(window.innerHeight, rect.height + padding * 2)
       }
@@ -269,17 +269,25 @@ export function SpotlightTour({
     const t2 = window.setTimeout(updateRect, 180)
     const t3 = window.setTimeout(updateRect, 320)
 
+    let rafId: number | null = null
     const handleResizeOrScroll = () => {
-      updateRect()
+      if (rafId !== null) return
+      rafId = window.requestAnimationFrame(() => {
+        rafId = null
+        updateRect()
+      })
     }
 
-    window.addEventListener('resize', handleResizeOrScroll)
-    window.addEventListener('scroll', handleResizeOrScroll, true)
+    window.addEventListener('resize', handleResizeOrScroll, { passive: true })
+    window.addEventListener('scroll', handleResizeOrScroll, { capture: true, passive: true })
 
     return () => {
       window.clearTimeout(t1)
       window.clearTimeout(t2)
       window.clearTimeout(t3)
+      if (rafId !== null) {
+        window.cancelAnimationFrame(rafId)
+      }
       window.removeEventListener('resize', handleResizeOrScroll)
       window.removeEventListener('scroll', handleResizeOrScroll, true)
     }
@@ -309,13 +317,12 @@ export function SpotlightTour({
     return () => window.removeEventListener('keydown', handleKeyDown)
   }, [isOpen, currentIndex, steps.length])
 
-  const handleFinish = (completed: boolean) => {
+  const handleFinish = (_completed: boolean) => {
     try {
       if (storageKey) {
         localStorage.setItem(storageKey, 'true')
       }
     } catch {}
-    setCurrentIndex(0)
     onClose()
   }
 
@@ -333,144 +340,160 @@ export function SpotlightTour({
     }
   }
 
-  if (!isOpen || !currentStep) return null
-
   return (
-    <AnimatePresence>
-      <div className="spotlight-tour-layer" role="dialog" aria-modal="true" aria-label="沉浸式新手实景引导">
-        {/* Spotlight cutout mask */}
-        {targetRect && (
+    <AnimatePresence
+      onExitComplete={() => {
+        setCurrentIndex(0)
+        safeToRemove?.()
+      }}
+    >
+      {active && currentStep && (
+        <motion.div
+          key="spotlight-tour-layer"
+          className="spotlight-tour-layer"
+          role="dialog"
+          aria-modal="true"
+          aria-label="沉浸式新手实景引导"
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          exit={{ opacity: 0 }}
+          transition={{ duration: 0.2 }}
+        >
+          {/* Spotlight cutout mask */}
+          {targetRect && (
+            <motion.div
+              className="spotlight-cutout"
+              initial={false}
+              animate={{
+                top: targetRect.top,
+                left: targetRect.left,
+                width: targetRect.width,
+                height: targetRect.height
+              }}
+              exit={{ opacity: 0 }}
+              transition={{
+                type: 'spring',
+                stiffness: 350,
+                damping: 32
+              }}
+            >
+              <div className="spotlight-pulse" />
+            </motion.div>
+          )}
+
+          {/* Floating Tooltip Card */}
           <motion.div
-            className="spotlight-cutout"
-            initial={false}
-            animate={{
-              top: targetRect.top,
-              left: targetRect.left,
-              width: targetRect.width,
-              height: targetRect.height
-            }}
-            transition={{
-              type: 'spring',
-              stiffness: 350,
-              damping: 32
+            ref={tooltipRef}
+            className="spotlight-tooltip-card"
+            initial={{ opacity: 0, scale: 0.96, y: 8 }}
+            animate={{ opacity: 1, scale: 1, y: 0 }}
+            exit={{ opacity: 0, scale: 0.96 }}
+            transition={{ duration: 0.2 }}
+            style={{
+              top: `${tooltipPos.top}px`,
+              left: `${tooltipPos.left}px`
             }}
           >
-            <div className="spotlight-pulse" />
-          </motion.div>
-        )}
-
-        {/* Floating Tooltip Card */}
-        <motion.div
-          ref={tooltipRef}
-          className="spotlight-tooltip-card"
-          initial={{ opacity: 0, scale: 0.96, y: 8 }}
-          animate={{ opacity: 1, scale: 1, y: 0 }}
-          exit={{ opacity: 0, scale: 0.96 }}
-          transition={{ duration: 0.2 }}
-          style={{
-            top: `${tooltipPos.top}px`,
-            left: `${tooltipPos.left}px`
-          }}
-        >
-          {/* Card Header */}
-          <div className="tour-card-header">
-            <div className="tour-step-badge">
-              {currentStep.icon}
-              <span>
-                步骤 {currentIndex + 1} / {steps.length}
-              </span>
-            </div>
-            {currentStep.sceneDialog && (
-              <div className="tour-scene-tag">
-                <Eye size={12} />
-                <span>实景沉浸中</span>
+            {/* Card Header */}
+            <div className="tour-card-header">
+              <div className="tour-step-badge">
+                {currentStep.icon}
+                <span>
+                  步骤 {currentIndex + 1} / {steps.length}
+                </span>
               </div>
-            )}
-            <button
-              type="button"
-              className="tour-close-btn"
-              title="退出引导 (Esc)"
-              onClick={() => handleFinish(false)}
-            >
-              <X size={16} />
-            </button>
-          </div>
-
-          {/* Card Content */}
-          <div className="tour-card-body">
-            <h3 className="tour-step-title">{currentStep.title}</h3>
-            {currentStep.subtitle && <p className="tour-step-subtitle">{currentStep.subtitle}</p>}
-            <div className="tour-step-content">
-              {currentStep.content.split('\n').map((line, idx) => (
-                <p key={idx}>{line}</p>
-              ))}
-            </div>
-
-            {currentStep.tip && (
-              <div className="tour-step-tip">
-                <Lightbulb size={14} className="tour-tip-icon" />
-                <span>{currentStep.tip}</span>
-              </div>
-            )}
-          </div>
-
-          {/* Card Footer */}
-          <div className="tour-card-footer">
-            <div className="tour-dots">
-              {steps.map((_, idx) => (
-                <button
-                  key={idx}
-                  type="button"
-                  className={`tour-dot ${idx === currentIndex ? 'active' : ''} ${
-                    idx < currentIndex ? 'passed' : ''
-                  }`}
-                  title={`跳转至第 ${idx + 1} 步`}
-                  onClick={() => setCurrentIndex(idx)}
-                />
-              ))}
-            </div>
-
-            <div className="tour-actions">
+              {currentStep.sceneDialog && (
+                <div className="tour-scene-tag">
+                  <Eye size={12} />
+                  <span>实景沉浸中</span>
+                </div>
+              )}
               <button
                 type="button"
-                className="tour-btn text"
+                className="tour-close-btn"
+                title="退出引导 (Esc)"
                 onClick={() => handleFinish(false)}
               >
-                跳过引导
-              </button>
-
-              {currentIndex > 0 && (
-                <button
-                  type="button"
-                  className="tour-btn secondary"
-                  onClick={handlePrev}
-                >
-                  <ChevronLeft size={14} />
-                  上一步
-                </button>
-              )}
-
-              <button
-                type="button"
-                className="tour-btn primary"
-                onClick={handleNext}
-              >
-                {currentIndex < steps.length - 1 ? (
-                  <>
-                    下一步
-                    <ChevronRight size={14} />
-                  </>
-                ) : (
-                  <>
-                    <Check size={14} />
-                    完成探索
-                  </>
-                )}
+                <X size={16} />
               </button>
             </div>
-          </div>
+
+            {/* Card Content */}
+            <div className="tour-card-body">
+              <h3 className="tour-step-title">{currentStep.title}</h3>
+              {currentStep.subtitle && <p className="tour-step-subtitle">{currentStep.subtitle}</p>}
+              <div className="tour-step-content">
+                {currentStep.content.split('\n').map((line, idx) => (
+                  <p key={idx}>{line}</p>
+                ))}
+              </div>
+
+              {currentStep.tip && (
+                <div className="tour-step-tip">
+                  <Lightbulb size={14} className="tour-tip-icon" />
+                  <span>{currentStep.tip}</span>
+                </div>
+              )}
+            </div>
+
+            {/* Card Footer */}
+            <div className="tour-card-footer">
+              <div className="tour-dots">
+                {steps.map((_, idx) => (
+                  <button
+                    key={idx}
+                    type="button"
+                    className={`tour-dot ${idx === currentIndex ? 'active' : ''} ${
+                      idx < currentIndex ? 'passed' : ''
+                    }`}
+                    title={`跳转至第 ${idx + 1} 步`}
+                    onClick={() => setCurrentIndex(idx)}
+                  />
+                ))}
+              </div>
+
+              <div className="tour-actions">
+                <button
+                  type="button"
+                  className="tour-btn text"
+                  onClick={() => handleFinish(false)}
+                >
+                  跳过引导
+                </button>
+
+                {currentIndex > 0 && (
+                  <button
+                    type="button"
+                    className="tour-btn secondary"
+                    onClick={handlePrev}
+                  >
+                    <ChevronLeft size={14} />
+                    上一步
+                  </button>
+                )}
+
+                <button
+                  type="button"
+                  className="tour-btn primary"
+                  onClick={handleNext}
+                >
+                  {currentIndex < steps.length - 1 ? (
+                    <>
+                      下一步
+                      <ChevronRight size={14} />
+                    </>
+                  ) : (
+                    <>
+                      <Check size={14} />
+                      完成探索
+                    </>
+                  )}
+                </button>
+              </div>
+            </div>
+          </motion.div>
         </motion.div>
-      </div>
+      )}
     </AnimatePresence>
   )
 }

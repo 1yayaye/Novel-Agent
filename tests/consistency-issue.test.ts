@@ -40,7 +40,7 @@ describe('ConsistencyIssue Service & Lifecycle States', () => {
     const { project, store, chapters } = fixture()
     const opened = await store.open(project)
     const chap = chapters.list(opened.sessionId)[0]
-    const hash = createHash('sha256').update(chap.content).digest('hex')
+    const hash = createHash('sha256').update(chapters.get(opened.sessionId, chap.id).content).digest('hex')
 
     // Create a task first
     const task = store.createTask(opened.sessionId, 'knowledge', '{}', null, [chap.id])

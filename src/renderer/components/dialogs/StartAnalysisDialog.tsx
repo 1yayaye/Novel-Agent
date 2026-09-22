@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react'
 import { motion } from 'motion/react'
 import { X, Sparkles, FileBarChart, Compass, RotateCw, Play, AlertTriangle } from 'lucide-react'
-import { Chapter, ModelConnectionSummary } from '../../../shared/project'
+import { ChapterHeader, ModelConnectionSummary } from '../../../shared/project'
 import { IconButton } from '../common/IconButton'
 import { errorText } from '../../utils/formatters'
 import { getEndpointHost } from '../../utils/crypto'
@@ -16,7 +16,7 @@ export function StartAnalysisDialog({
   onStarted
 }: {
   sessionId: string
-  chapters: Chapter[]
+  chapters: ChapterHeader[]
   initialType?: 'knowledge' | 'report' | 'synopsis'
   isReadOnly: boolean
   onClose: () => void

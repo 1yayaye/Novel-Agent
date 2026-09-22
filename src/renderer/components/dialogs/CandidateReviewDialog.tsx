@@ -1,11 +1,12 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
 import { motion } from 'motion/react'
 import { AlertCircle, AlertTriangle, Check, Clock, History, Pencil, RotateCcw, RotateCw, Save, Square, X } from 'lucide-react'
-import { CandidateApplyResult, CandidateDetail, CandidateHunk, CandidateSummary, Chapter, CandidateState } from '../../../shared/project'
+import { CandidateApplyResult, CandidateDetail, CandidateHunk, CandidateSummary, ChapterHeader, CandidateState } from '../../../shared/project'
 import { IconButton } from '../common/IconButton'
 import { errorText, formatDate } from '../../utils/formatters'
 import { taskTypeLabel } from '../../utils/constants'
 import { useDialogDismiss } from '../../hooks/useDialogDismiss'
+import { useStreamThrottle } from '../../hooks/useStreamThrottle'
 import { computeProportionalScroll, renderDeleteHunkPreview } from '../../utils/diffScrollSync'
 
 export function CandidateReviewDialog({
@@ -17,7 +18,7 @@ export function CandidateReviewDialog({
   onApplied
 }: {
   sessionId: string
-  chapters: Chapter[]
+  chapters: ChapterHeader[]
   initialCandidateId?: string
   isReadOnly: boolean
   onClose: () => void
@@ -30,7 +31,7 @@ export function CandidateReviewDialog({
   const [editingText, setEditingText] = useState('')
   const [isEditingDraft, setIsEditingDraft] = useState(false)
   const [isStreaming, setIsStreaming] = useState(false)
-  const [streamingText, setStreamingText] = useState('')
+  const streaming = useStreamThrottle('')
   const [loading, setLoading] = useState(false)
   const [actionLoading, setActionLoading] = useState(false)
   const [error, setError] = useState('')
@@ -101,7 +102,7 @@ export function CandidateReviewDialog({
       setEditingText(detail.editedContent !== null && detail.editedContent !== undefined ? detail.editedContent : detail.rawOutput)
       if (detail.state === 'streaming') {
         setIsStreaming(true)
-        setStreamingText(detail.rawOutput)
+        streaming.update(detail.rawOutput)
       } else {
         setIsStreaming(false)
       }
@@ -126,12 +127,13 @@ export function CandidateReviewDialog({
       if (selectedCandidateId === event.candidateId || !selectedCandidateId) {
         if (!selectedCandidateId) setSelectedCandidateId(event.candidateId)
         setIsStreaming(true)
-        setStreamingText(event.fullText)
+        streaming.update(event.fullText)
       }
     })
     const unsubDone = window.novelAgent.candidate.onDone?.((event) => {
       void loadCandidates()
       if (selectedCandidateId === event.candidateId || !selectedCandidateId) {
+        streaming.flush()
         setIsStreaming(false)
         if (event.candidate) {
           setCandidateDetail(event.candidate)
@@ -145,7 +147,7 @@ export function CandidateReviewDialog({
       unsubDelta?.()
       unsubDone?.()
     }
-  }, [selectedCandidateId, loadCandidates, loadCandidateDetail])
+  }, [selectedCandidateId, loadCandidates, loadCandidateDetail, streaming])
 
   const handleToggleHunk = async (hunk: CandidateHunk) => {
     if (!candidateDetail || isReadOnly || candidateDetail.state !== 'ready') return
@@ -351,7 +353,7 @@ export function CandidateReviewDialog({
                 <div className="streaming-banner">
                   <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                     <RotateCw className="spin" size={15} />
-                    <span>AI 正在流式打字生成中... (已接收 {streamingText.length} 字)</span>
+                    <span>AI 正在流式打字生成中... (已接收 {streaming.value.length} 字)</span>
                   </div>
                   <button
                     type="button"
@@ -363,7 +365,7 @@ export function CandidateReviewDialog({
                   </button>
                 </div>
                 <div className="streaming-typing-area" style={{ marginTop: 12, flex: 1 }}>
-                  {streamingText}
+                  {streaming.value}
                   <span className="typewriter-cursor" />
                 </div>
               </div>

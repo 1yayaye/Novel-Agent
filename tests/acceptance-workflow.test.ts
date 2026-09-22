@@ -102,10 +102,11 @@ describe('17-Step Full MVP Acceptance Workflow (SPECS Section 16.4)', () => {
       expect(chapterList.length).toBe(3)
 
       const ch1 = chapterList[0]
+      const ch1Content = chapters.get(sessionId, ch1.id)
       const updatedCh1 = chapters.update(
         sessionId,
         ch1.id,
-        ch1.content + '\n韩立心中暗暗思忖修仙长生之道。',
+        ch1Content.content + '\n韩立心中暗暗思忖修仙长生之道。',
         ch1.version
       )
       expect(updatedCh1.version).toBe(ch1.version + 1)
@@ -115,7 +116,7 @@ describe('17-Step Full MVP Acceptance Workflow (SPECS Section 16.4)', () => {
       opened = await store.open(projectPath)
       sessionId = opened.sessionId
       chapterList = chapters.list(sessionId)
-      expect(chapterList[0].content).toContain('韩立心中暗暗思忖修仙长生之道。')
+      expect(chapters.get(sessionId, chapterList[0].id).content).toContain('韩立心中暗暗思忖修仙长生之道。')
       expect(chapterList[0].version).toBe(2)
 
       // =========================================================================
@@ -507,6 +508,7 @@ describe('17-Step Full MVP Acceptance Workflow (SPECS Section 16.4)', () => {
       ]
 
       const repCh = chapters.list(sessionId)[0]
+      const repChContent = chapters.get(sessionId, repCh.id)
       const reportId = store.createLiteraryReport(
         sessionId,
         JSON.stringify({ all: true }),
@@ -532,7 +534,7 @@ describe('17-Step Full MVP Acceptance Workflow (SPECS Section 16.4)', () => {
       expect(annotatedReport).toBeDefined()
 
       // Modify chapter -> literary report preserved without stale (ADR 0001)
-      chapters.update(sessionId, repCh.id, repCh.content + '\n深夜，雨声渐歇。', repCh.version)
+      chapters.update(sessionId, repCh.id, repChContent.content + '\n深夜，雨声渐歇。', repCh.version)
       const preservedReport = store.getLiteraryReport(sessionId, report.id)
       expect(preservedReport.state).toBe('current')
 

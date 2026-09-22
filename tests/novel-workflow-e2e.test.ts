@@ -561,7 +561,7 @@ describe('T11: End-to-End Novel Workflow Integration Test (15-Step Full Loop)', 
       expect(reloadedChapters.length).toBe(2)
       const reloadedChap2 = reloadedChapters.find((c) => c.id === chapter2.id)!
       expect(reloadedChap2.version).toBe(2)
-      expect(reloadedChap2.content).toContain('月华如水')
+      expect(chapterRepo.get(newSessionId, reloadedChap2.id).content).toContain('月华如水')
 
       // Check book outline (preserved without stale on writeback, ADR 0001)
       const reloadedBookOutline = store.getBookOutline(newSessionId)

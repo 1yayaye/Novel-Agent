@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback } from 'react'
 import { motion } from 'motion/react'
 import { AlertTriangle, Check, Copy, Eye, RotateCw, Sparkles, X } from 'lucide-react'
 import {
-  Chapter,
+  ChapterHeader,
   ChatWorkflowStage,
   ChatWorkflowType,
   ContextPackage,
@@ -34,7 +34,7 @@ export function ContextPreviewDialog({
   onOpenConnections
 }: {
   sessionId: string
-  chapters: Chapter[]
+  chapters: ChapterHeader[]
   currentChapterId?: string
   initialTaskType?: TaskType
   initialStage?: ChatWorkflowStage

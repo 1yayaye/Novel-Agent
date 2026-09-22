@@ -300,6 +300,7 @@ export function LiteraryReportsDialog({
       <AnimatePresence>
         {deletingAnnotationId && (
           <ConfirmActionDialog
+            key="confirm-delete-annotation"
             isOpen={Boolean(deletingAnnotationId)}
             title="确认删除作者批注"
             message="确定删除该作者批注吗？删除后不可恢复。"

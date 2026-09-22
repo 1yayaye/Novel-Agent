@@ -1,5 +1,5 @@
 import React from 'react'
-import { motion } from 'motion/react'
+import { motion, AnimatePresence, usePresence } from 'motion/react'
 import { AlertTriangle, AlertOctagon, Info, X } from 'lucide-react'
 import { IconButton } from '../common/IconButton'
 import { useDialogDismiss } from '../../hooks/useDialogDismiss'
@@ -27,22 +27,26 @@ export function ConfirmActionDialog({
   onConfirm,
   onCancel
 }: ConfirmActionDialogProps) {
+  const [isPresent, safeToRemove] = usePresence()
+  const active = isOpen && isPresent
+
   const { dialogRef, backdropProps } = useDialogDismiss<HTMLDivElement>({
-    isOpen,
+    isOpen: active,
     onClose: onCancel
   })
 
-  if (!isOpen) return null
-
   return (
-    <motion.div
-      className="action-dialog-layer confirm-dialog-layer"
-      {...backdropProps}
-      initial={{ opacity: 0 }}
-      animate={{ opacity: 1 }}
-      exit={{ opacity: 0 }}
-      style={{ zIndex: 100 }}
-    >
+    <AnimatePresence onExitComplete={() => safeToRemove?.()}>
+      {active && (
+        <motion.div
+          key="confirm-dialog-layer"
+          className="action-dialog-layer confirm-dialog-layer"
+          {...backdropProps}
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          exit={{ opacity: 0 }}
+          style={{ zIndex: 100 }}
+        >
       <motion.div
         ref={dialogRef}
         className="action-dialog confirm-dialog"
@@ -91,5 +95,7 @@ export function ConfirmActionDialog({
         </footer>
       </motion.div>
     </motion.div>
+      )}
+    </AnimatePresence>
   )
 }
