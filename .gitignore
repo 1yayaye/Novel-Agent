@@ -32,6 +32,9 @@ skills-lock.json
 # Generated architecture diagrams (local only)
 diagrams/
 
+# Documentation (local only)
+docs/
+
 # Logs & env
 *.log
 logs/
