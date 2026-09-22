@@ -1,6 +1,6 @@
 import { BrowserWindow, dialog, ipcMain, shell, type IpcMainInvokeEvent } from 'electron'
-import { existsSync, mkdirSync } from 'node:fs'
-import { dirname, join, parse, resolve } from 'node:path'
+import { copyFileSync, existsSync, mkdirSync } from 'node:fs'
+import { basename, dirname, extname, isAbsolute, join, normalize, parse, relative, resolve } from 'node:path'
 import { z } from 'zod'
 import {
   AcceptSuggestionInputSchema,
@@ -11,6 +11,7 @@ import {
   BookSynopsisSchema,
   CancelTaskInputSchema,
   ChapterOutlineSchema,
+  ChapterHeaderSchema,
   ChapterSchema,
   ChapterSnapshotDetailSchema,
   ChapterSnapshotSchema,
@@ -193,6 +194,8 @@ import { CandidateService } from './candidate-service'
 import { CreationRunner } from './creation-runner'
 import { ChatService } from './chat-service'
 import { parseImport } from './import-parser'
+import { novelsDirectory } from './paths'
+import { parseIpcInput, parseIpcOutput } from '../shared/ipc-parse'
 import type { ConnectionStore } from './connection-store'
 import type { ModelGateway } from './model-gateway'
 import type { DiagnosticsService } from './diagnostics'
@@ -206,6 +209,36 @@ function failure(error: unknown) {
   if (error instanceof ProjectError) return { ok: false as const, error: { code: error.code, message: error.message } }
   if (error instanceof z.ZodError) return { ok: false as const, error: { code: 'VALIDATION_ERROR' as const, message: '请求数据无效' } }
   return { ok: false as const, error: { code: 'DATABASE_ERROR' as const, message: '项目操作失败' } }
+}
+
+export function copySourceToNovels(sourcePath: string, dataDir: string): string {
+  const resolvedSource = normalize(resolve(sourcePath))
+  if (!existsSync(resolvedSource)) {
+    throw new ProjectError('IMPORT_INVALID', '无法读取原文文件')
+  }
+  const targetDir = novelsDirectory(dataDir)
+  const rel = relative(targetDir, resolvedSource)
+  if (!rel.startsWith('..') && !isAbsolute(rel)) {
+    return resolvedSource
+  }
+
+  const ext = extname(resolvedSource)
+  const stem = basename(resolvedSource, ext)
+  let candidateName = `${stem}${ext}`
+  let targetPath = join(targetDir, candidateName)
+  let counter = 1
+
+  while (existsSync(targetPath)) {
+    if (normalize(resolve(targetPath)) === resolvedSource) {
+      return targetPath
+    }
+    candidateName = `${stem} (${counter})${ext}`
+    targetPath = join(targetDir, candidateName)
+    counter++
+  }
+
+  copyFileSync(resolvedSource, targetPath)
+  return targetPath
 }
 
 export function registerProjectIpc(
@@ -258,7 +291,9 @@ export function registerProjectIpc(
     ipcMain.handle(channel, async (event, value) => {
       if (!isTrustedSender(event, window)) return { ok: false, error: { code: 'UNTRUSTED_SENDER', message: '不受信任的 IPC 调用来源' } }
       try {
-        return { ok: true, value: outputSchema.parse(await action(inputSchema.parse(value))) }
+        const input = parseIpcInput(inputSchema, value)
+        const output = await action(input)
+        return { ok: true, value: parseIpcOutput(outputSchema, output) }
       } catch (error) {
         return failure(error)
       }
@@ -287,8 +322,18 @@ export function registerProjectIpc(
     return result
   })
   handle('project.previewImport', ImportPreviewInputSchema, ImportPreviewResultSchema, async (input) => {
-    const source = input.source ?? (await dialog.showOpenDialog(window, { title: '选择原文', properties: ['openFile'], filters: [{ name: '原文', extensions: ['txt', 'md', 'markdown'] }] })).filePaths[0]
-    return source ? parseImport(resolve(source), input.encoding) : null
+    let source = input.source
+    if (!source) {
+      const dialogRes = await dialog.showOpenDialog(window, {
+        title: '选择原文',
+        properties: ['openFile'],
+        filters: [{ name: '原文', extensions: ['txt', 'md', 'markdown'] }]
+      })
+      source = dialogRes.filePaths[0]
+    }
+    if (!source) return null
+    const finalSource = copySourceToNovels(source, store.dataDirectory)
+    return parseImport(finalSource, input.encoding)
   })
   function sanitizeFileName(name: string): string {
     const sanitized = name
@@ -321,7 +366,8 @@ export function registerProjectIpc(
       destination = targetPath
     }
     const projectPath = destination.toLowerCase().endsWith('.novelproj') ? destination : `${destination}.novelproj`
-    return store.create({ destination: projectPath, title: input.title, description: '' }, input.chapters)
+    const finalSource = copySourceToNovels(input.source, store.dataDirectory)
+    return store.create({ destination: projectPath, title: input.title, description: '', sourcePath: finalSource }, input.chapters)
   })
   handle('project.export', ExportProjectInputSchema, ExportProjectResultSchema.nullable(), async (input) => {
     let destination = input.destination
@@ -338,15 +384,15 @@ export function registerProjectIpc(
     return store.exportProject(input.sessionId, input.format, input.chapterIds, destination)
   })
 
-  handle('chapter.list', ListChaptersInputSchema, z.array(ChapterSchema), (input) => chapters.list(input.sessionId))
+  handle('chapter.list', ListChaptersInputSchema, z.array(ChapterHeaderSchema), (input) => chapters.list(input.sessionId))
   handle('chapter.get', GetChapterInputSchema, ChapterSchema, (input) => chapters.get(input.sessionId, input.chapterId))
   handle('chapter.update', UpdateChapterInputSchema, ChapterSchema, (input) => chapters.update(input.sessionId, input.chapterId, input.content, input.expectedVersion))
   handle('chapter.create', CreateChapterInputSchema, ChapterSchema, (input) => chapters.create(input.sessionId, input.title, input.content))
   handle('chapter.rename', RenameChapterInputSchema, ChapterSchema, (input) => chapters.rename(input.sessionId, input.chapterId, input.title, input.expectedVersion))
   handle('chapter.delete', DeleteChapterInputSchema, SuccessResultSchema, (input) => chapters.delete(input.sessionId, input.chapterId, input.expectedVersion))
-  handle('chapter.reorder', ReorderChaptersInputSchema, z.array(ChapterSchema), (input) => chapters.reorder(input.sessionId, input.chapters))
-  handle('chapter.split', SplitChapterInputSchema, z.array(ChapterSchema), (input) => chapters.split(input.sessionId, input.chapterId, input.offset, input.newTitle, input.expectedVersion))
-  handle('chapter.merge', MergeChapterInputSchema, z.array(ChapterSchema), (input) => chapters.merge(input.sessionId, input.chapterId, input.expectedVersion, input.nextExpectedVersion))
+  handle('chapter.reorder', ReorderChaptersInputSchema, z.array(ChapterHeaderSchema), (input) => chapters.reorder(input.sessionId, input.chapters))
+  handle('chapter.split', SplitChapterInputSchema, z.array(ChapterHeaderSchema), (input) => chapters.split(input.sessionId, input.chapterId, input.offset, input.newTitle, input.expectedVersion))
+  handle('chapter.merge', MergeChapterInputSchema, z.array(ChapterHeaderSchema), (input) => chapters.merge(input.sessionId, input.chapterId, input.expectedVersion, input.nextExpectedVersion))
   handle('chapter.listSnapshots', ListSnapshotsInputSchema, z.array(ChapterSnapshotSchema), (input) => chapters.listSnapshots(input.sessionId, input.chapterId))
   handle('chapter.getSnapshot', GetSnapshotInputSchema, ChapterSnapshotDetailSchema, (input) => chapters.getSnapshot(input.sessionId, input.snapshotId))
   handle('chapter.createSnapshot', CreateSnapshotInputSchema, ChapterSnapshotSchema, (input) => chapters.createSnapshot(input.sessionId, input.chapterId, input.expectedVersion, input.name))

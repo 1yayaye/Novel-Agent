@@ -110,7 +110,7 @@ describe('Project Backup and Recovery', () => {
     expect(restoredSession.integrity).toBe('ok')
 
     const restoredChapters = repository.list(restoredSession.sessionId)
-    expect(restoredChapters[0].content).toBe('第一章正文')
+    expect(repository.get(restoredSession.sessionId, restoredChapters[0].id).content).toBe('第一章正文')
 
     // Check that pre-restore backup was generated
     const allBackups = store.listBackups(restoredSession.sessionId)
@@ -149,7 +149,8 @@ describe('Project Backup and Recovery', () => {
   it('recovers interrupted records when restoring a backup', async () => {
     const { project, store } = fixture()
     const opened = await store.open(project, { autoBackupDelayMs: 0 })
-    const chapter = new ChapterRepository(store).list(opened.sessionId)[0]
+    const repository = new ChapterRepository(store)
+    const chapter = repository.list(opened.sessionId)[0]
     const taskId = randomUUID()
     const stepId = randomUUID()
     const candidateId = randomUUID()
@@ -169,7 +170,7 @@ describe('Project Backup and Recovery', () => {
       db.prepare(`
         INSERT INTO candidate(id, task_id, chapter_id, chapter_version, original_content, raw_output, version, state, created_at, updated_at)
         VALUES (?, ?, ?, 1, ?, ?, 1, 'streaming', ?, ?)
-      `).run(candidateId, taskId, chapter.id, chapter.content, '已落盘的候选片段', now, now)
+      `).run(candidateId, taskId, chapter.id, repository.get(opened.sessionId, chapter.id).content, '已落盘的候选片段', now, now)
       db.prepare(`
         INSERT INTO chat_session(id, title, connection_id, version, created_at, updated_at)
         VALUES (?, '恢复测试', NULL, 1, ?, ?)
@@ -214,9 +215,11 @@ describe('Project Backup and Recovery', () => {
     repository.update(opened.sessionId, chapter.id, '恢复前正文', 6)
 
     const restored = await store.restoreBackup(opened.sessionId, backups[0].path)
-    expect(new ChapterRepository(store).list(restored.sessionId)[0].content).toBe('历史正文 0')
+    const restoredRepository = new ChapterRepository(store)
+    const restoredChapters = restoredRepository.list(restored.sessionId)
+    expect(restoredRepository.get(restored.sessionId, restoredChapters[0].id).content).toBe('历史正文 0')
     expect(store.listBackups(restored.sessionId)).toHaveLength(5)
-    expect(new ChapterRepository(store).list(restored.sessionId)[0].content).not.toBe('恢复前正文')
+    expect(restoredRepository.get(restored.sessionId, restoredChapters[0].id).content).not.toBe('恢复前正文')
 
     store.close(restored.sessionId)
   })

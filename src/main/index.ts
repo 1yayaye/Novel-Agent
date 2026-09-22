@@ -17,6 +17,10 @@ import { CandidateService } from './candidate-service'
 import { CreationRunner } from './creation-runner'
 import { ChatService } from './chat-service'
 
+if (app.isPackaged && !process.env.NODE_ENV) {
+  process.env.NODE_ENV = 'production'
+}
+
 protocol.registerSchemesAsPrivileged([{ scheme: 'app', privileges: { standard: true, secure: true, supportFetchAPI: true } }])
 
 const dataPath = dataDirectory(process.execPath, app.isPackaged)

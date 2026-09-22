@@ -51,7 +51,7 @@ import type { ConnectionStore } from './connection-store'
 
 type DatabaseHandle = Database.Database
 type Session = { database: DatabaseHandle; path: string; readOnly: boolean; lock?: ProjectLock; restoring?: boolean }
-type RecentEntry = { path: string; title: string; lastOpenedAt: number }
+type RecentEntry = { path: string; title: string; lastOpenedAt: number; sourcePath?: string }
 type ProjectMetaRow = {
   id: string
   title: string
@@ -282,6 +282,9 @@ export class ProjectStore {
       database = new Database(path)
       this.configureWritable(database)
       const summary = this.initialize(database, path, input.title, input.description, chapters)
+      if (input.sourcePath) {
+        summary.sourcePath = input.sourcePath
+      }
       database.pragma('wal_checkpoint(TRUNCATE)')
       database.close()
       database = undefined
@@ -2158,11 +2161,18 @@ export class ProjectStore {
     }
   }
 
-  private writeRecent(summary: Pick<ProjectSummary, 'path' | 'title'>): void {
+  private writeRecent(summary: Pick<ProjectSummary, 'path' | 'title' | 'sourcePath'>): void {
     try {
       const key = pathKey(summary.path)
+      const existing = this.readRecent().find((entry) => pathKey(entry.path) === key)
       const entries = this.readRecent().filter((entry) => pathKey(entry.path) !== key)
-      entries.unshift({ path: summary.path, title: summary.title, lastOpenedAt: Date.now() })
+      const resolvedSourcePath = summary.sourcePath ?? existing?.sourcePath
+      entries.unshift({
+        path: summary.path,
+        title: summary.title,
+        lastOpenedAt: Date.now(),
+        ...(resolvedSourcePath ? { sourcePath: resolvedSourcePath } : {})
+      })
       writeFileSync(this.recentPath, `${JSON.stringify(entries, null, 2)}\n`, 'utf8')
     } catch {}
   }

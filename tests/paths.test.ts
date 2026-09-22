@@ -1,5 +1,6 @@
+import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
-import { dataDirectory } from '../src/main/paths'
+import { dataDirectory, novelsDirectory } from '../src/main/paths'
 
 describe('dataDirectory', () => {
   it('keeps packaged data beside the executable', () => {
@@ -17,7 +18,23 @@ describe('dataDirectory', () => {
     }
   })
 
-  it('keeps development data outside the source tree', () => {
+  it('keeps development data outside the source tree in test runner', () => {
     expect(dataDirectory('C:\\Novel Agent\\Novel Agent.exe', false)).not.toContain('小说工作流')
+  })
+
+  it('defaults to cwd data directory in development mode outside test runner', () => {
+    const originalNodeEnv = process.env.NODE_ENV
+    try {
+      process.env.NODE_ENV = 'development'
+      expect(dataDirectory('C:\\Novel Agent\\Novel Agent.exe', false)).toBe(join(process.cwd(), 'data'))
+    } finally {
+      process.env.NODE_ENV = originalNodeEnv
+    }
+  })
+
+  it('creates and returns the novels subdirectory under dataDirectory', () => {
+    const tempDir = join(process.cwd(), 'test-results', 'temp-data-dir')
+    const novelsDir = novelsDirectory(tempDir)
+    expect(novelsDir).toBe(join(tempDir, 'novels'))
   })
 })
