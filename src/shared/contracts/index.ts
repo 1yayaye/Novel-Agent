@@ -1,6 +1,7 @@
 import { z } from 'zod'
 import {
   Chapter,
+  ChapterHeader,
   ChapterSnapshot,
   ChapterSnapshotDetail,
   CreateOrdinarySnapshotInput,
@@ -208,15 +209,15 @@ export type NovelAgentApi = {
     export(input: ExportProjectInput): Promise<ExportProjectResult | null>
   }
   chapter: {
-    list(input: z.infer<typeof ListChaptersInputSchema>): Promise<Chapter[]>
+    list(input: z.infer<typeof ListChaptersInputSchema>): Promise<ChapterHeader[]>
     get(input: z.infer<typeof GetChapterInputSchema>): Promise<Chapter>
     update(input: z.infer<typeof UpdateChapterInputSchema>): Promise<Chapter>
     create(input: z.infer<typeof CreateChapterInputSchema>): Promise<Chapter>
     rename(input: z.infer<typeof RenameChapterInputSchema>): Promise<Chapter>
     delete(input: z.infer<typeof DeleteChapterInputSchema>): Promise<SuccessResult>
-    reorder(input: z.infer<typeof ReorderChaptersInputSchema>): Promise<Chapter[]>
-    split(input: z.infer<typeof SplitChapterInputSchema>): Promise<Chapter[]>
-    merge(input: z.infer<typeof MergeChapterInputSchema>): Promise<Chapter[]>
+    reorder(input: z.infer<typeof ReorderChaptersInputSchema>): Promise<ChapterHeader[]>
+    split(input: z.infer<typeof SplitChapterInputSchema>): Promise<ChapterHeader[]>
+    merge(input: z.infer<typeof MergeChapterInputSchema>): Promise<ChapterHeader[]>
     listSnapshots(input: ListSnapshotsInput): Promise<ChapterSnapshot[]>
     getSnapshot(input: GetSnapshotInput): Promise<ChapterSnapshotDetail>
     createSnapshot(input: CreateSnapshotInput): Promise<ChapterSnapshot>

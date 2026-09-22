@@ -5,6 +5,7 @@ import react from '@vitejs/plugin-react'
 export default defineConfig({
   main: {
     build: {
+      minify: true,
       externalizeDeps: {
         exclude: ['zod']
       },
@@ -15,6 +16,7 @@ export default defineConfig({
   },
   preload: {
     build: {
+      minify: true,
       externalizeDeps: false,
       rollupOptions: {
         input: resolve(__dirname, 'src/preload/index.ts')
@@ -22,6 +24,18 @@ export default defineConfig({
     }
   },
   renderer: {
-    plugins: [react({})]
+    plugins: [react({})],
+    build: {
+      rollupOptions: {
+        output: {
+          manualChunks(id) {
+            const normalized = id.replace(/\\/g, '/')
+            if (normalized.includes('/src/renderer/components/dialogs/') && !normalized.includes('ImportPreview')) {
+              return 'workbench-dialogs'
+            }
+          }
+        }
+      }
+    }
   }
 })

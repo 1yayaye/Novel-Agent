@@ -40,14 +40,16 @@ export const ProjectSummarySchema = z.object({
   version: z.number().int().min(1).nullable(),
   schemaVersion: z.number().int().nonnegative(),
   updatedAt: z.number().int().nonnegative(),
-  searchIndexState: z.enum(['current', 'needs_rebuild', 'unknown'])
+  searchIndexState: z.enum(['current', 'needs_rebuild', 'unknown']),
+  sourcePath: z.string().optional()
 })
 export type ProjectSummary = z.infer<typeof ProjectSummarySchema>
 
 export const CreateProjectInputSchema = z.object({
   destination: ProjectPathSchema,
   title: z.string().trim().min(1).max(200),
-  description: z.string().max(4000).default('')
+  description: z.string().max(4000).default(''),
+  sourcePath: z.string().optional()
 })
 export type CreateProjectInput = z.infer<typeof CreateProjectInputSchema>
 
@@ -61,7 +63,7 @@ export type SuccessResult = z.infer<typeof SuccessResultSchema>
 export const SaveCopyResultSchema = z.object({ savedPath: z.string() })
 export type SaveCopyResult = z.infer<typeof SaveCopyResultSchema>
 
-export const RecentProjectSchema = ProjectSummarySchema.pick({ path: true, title: true }).extend({
+export const RecentProjectSchema = ProjectSummarySchema.pick({ path: true, title: true, sourcePath: true }).extend({
   lastOpenedAt: z.number().int(),
   isAvailable: z.boolean()
 })

@@ -1,4 +1,5 @@
 import { z } from 'zod'
+import { count } from '../text-counter'
 
 export const ChapterDraftSchema = z.object({
   title: z.string().trim().min(1).max(300),
@@ -16,6 +17,29 @@ export const ChapterSchema = z.object({
   updatedAt: z.number().int().nonnegative()
 })
 export type Chapter = z.infer<typeof ChapterSchema>
+
+export const ChapterHeaderSchema = z.object({
+  id: z.string().uuid(),
+  title: z.string(),
+  position: z.number().int().nonnegative(),
+  version: z.number().int().min(1),
+  characterCount: z.number().int().nonnegative(),
+  createdAt: z.number().int().nonnegative(),
+  updatedAt: z.number().int().nonnegative()
+})
+export type ChapterHeader = z.infer<typeof ChapterHeaderSchema>
+
+export function toChapterHeader(chapter: Chapter): ChapterHeader {
+  return {
+    id: chapter.id,
+    title: chapter.title,
+    position: chapter.position,
+    version: chapter.version,
+    characterCount: count(chapter.content),
+    createdAt: chapter.createdAt,
+    updatedAt: chapter.updatedAt
+  }
+}
 
 export const ListChaptersInputSchema = z.object({
   sessionId: z.string().uuid()

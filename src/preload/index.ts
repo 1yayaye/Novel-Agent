@@ -9,6 +9,7 @@ import {
   BookSynopsisSchema,
   CancelTaskInputSchema,
   ChapterOutlineSchema,
+  ChapterHeaderSchema,
   ChapterSchema,
   ChapterSnapshotDetailSchema,
   ChapterSnapshotSchema,
@@ -65,7 +66,6 @@ import {
   ImportProjectResultSchema,
   IndexStatusResultSchema,
   InstructionPresetSchema,
-  ipcResultSchema,
   KeywordSearchInputSchema,
   KeywordSearchResultSchema,
   KnowledgeEntrySchema,
@@ -188,9 +188,13 @@ import {
   type ChatDeltaEvent,
   type ChatDoneEvent
 } from '../shared/project'
+import { parseIpcInput, parseIpcResult, shouldParseIpcOutput } from '../shared/ipc-parse'
 
 const invoke = async <I, O>(channel: string, input: I, inputSchema: z.ZodType<I>, outputSchema: z.ZodType<O>): Promise<O> => {
-  const result = ipcResultSchema(outputSchema).parse(await ipcRenderer.invoke(channel, inputSchema.parse(input)))
+  const result = parseIpcResult(outputSchema, await ipcRenderer.invoke(
+    channel,
+    shouldParseIpcOutput() ? parseIpcInput(inputSchema, input) : input
+  ))
   if (!result.ok) throw { name: 'NovelAgentError', ...result.error }
   return result.value
 }
@@ -208,15 +212,15 @@ const api: NovelAgentApi = {
     export: (input) => invoke('project.export', input, ExportProjectInputSchema, ExportProjectResultSchema.nullable())
   },
   chapter: {
-    list: (input) => invoke('chapter.list', input, ListChaptersInputSchema, z.array(ChapterSchema)),
+    list: (input) => invoke('chapter.list', input, ListChaptersInputSchema, z.array(ChapterHeaderSchema)),
     get: (input) => invoke('chapter.get', input, GetChapterInputSchema, ChapterSchema),
     update: (input) => invoke('chapter.update', input, UpdateChapterInputSchema, ChapterSchema),
     create: (input) => invoke('chapter.create', input, CreateChapterInputSchema, ChapterSchema),
     rename: (input) => invoke('chapter.rename', input, RenameChapterInputSchema, ChapterSchema),
     delete: (input) => invoke('chapter.delete', input, DeleteChapterInputSchema, SuccessResultSchema),
-    reorder: (input) => invoke('chapter.reorder', input, ReorderChaptersInputSchema, z.array(ChapterSchema)),
-    split: (input) => invoke('chapter.split', input, SplitChapterInputSchema, z.array(ChapterSchema)),
-    merge: (input) => invoke('chapter.merge', input, MergeChapterInputSchema, z.array(ChapterSchema)),
+    reorder: (input) => invoke('chapter.reorder', input, ReorderChaptersInputSchema, z.array(ChapterHeaderSchema)),
+    split: (input) => invoke('chapter.split', input, SplitChapterInputSchema, z.array(ChapterHeaderSchema)),
+    merge: (input) => invoke('chapter.merge', input, MergeChapterInputSchema, z.array(ChapterHeaderSchema)),
     listSnapshots: (input) => invoke('chapter.listSnapshots', input, ListSnapshotsInputSchema, z.array(ChapterSnapshotSchema)),
     getSnapshot: (input) => invoke('chapter.getSnapshot', input, GetSnapshotInputSchema, ChapterSnapshotDetailSchema),
     createSnapshot: (input) => invoke('chapter.createSnapshot', input, CreateSnapshotInputSchema, ChapterSnapshotSchema),
@@ -306,7 +310,7 @@ const api: NovelAgentApi = {
     onProgress: (callback: (event: TaskProgressEvent) => void) => {
       const listener = (_event: Electron.IpcRendererEvent, data: unknown) => {
         try {
-          callback(TaskProgressEventSchema.parse(data))
+          callback(shouldParseIpcOutput() ? TaskProgressEventSchema.parse(data) : data as TaskProgressEvent)
         } catch {}
       }
       ipcRenderer.on('task:progress', listener)
@@ -354,7 +358,7 @@ const api: NovelAgentApi = {
     onDelta: (callback: (event: CandidateDeltaEvent) => void) => {
       const listener = (_event: Electron.IpcRendererEvent, data: unknown) => {
         try {
-          callback(CandidateDeltaEventSchema.parse(data))
+          callback(shouldParseIpcOutput() ? CandidateDeltaEventSchema.parse(data) : data as CandidateDeltaEvent)
         } catch {}
       }
       ipcRenderer.on('candidate:delta', listener)
@@ -365,7 +369,7 @@ const api: NovelAgentApi = {
     onDone: (callback: (event: CandidateDoneEvent) => void) => {
       const listener = (_event: Electron.IpcRendererEvent, data: unknown) => {
         try {
-          callback(CandidateDoneEventSchema.parse(data))
+          callback(shouldParseIpcOutput() ? CandidateDoneEventSchema.parse(data) : data as CandidateDoneEvent)
         } catch {}
       }
       ipcRenderer.on('candidate:done', listener)
@@ -389,7 +393,7 @@ const api: NovelAgentApi = {
     onDelta: (callback: (event: ChatDeltaEvent) => void) => {
       const listener = (_event: Electron.IpcRendererEvent, data: unknown) => {
         try {
-          callback(ChatDeltaEventSchema.parse(data))
+          callback(shouldParseIpcOutput() ? ChatDeltaEventSchema.parse(data) : data as ChatDeltaEvent)
         } catch {}
       }
       ipcRenderer.on('chat:delta', listener)
@@ -400,7 +404,7 @@ const api: NovelAgentApi = {
     onDone: (callback: (event: ChatDoneEvent) => void) => {
       const listener = (_event: Electron.IpcRendererEvent, data: unknown) => {
         try {
-          callback(ChatDoneEventSchema.parse(data))
+          callback(shouldParseIpcOutput() ? ChatDoneEventSchema.parse(data) : data as ChatDoneEvent)
         } catch {}
       }
       ipcRenderer.on('chat:done', listener)
@@ -445,6 +449,4 @@ const api: NovelAgentApi = {
 }
 
 contextBridge.exposeInMainWorld('novelAgent', api)
-
-
 
