@@ -62,7 +62,8 @@ describe('Chapter Snapshots', () => {
     const { project, store } = fixture()
     const opened = await store.open(project)
     const repository = new ChapterRepository(store)
-    let chapter = repository.list(opened.sessionId)[0]
+    const listedChapter = repository.list(opened.sessionId)[0]
+    let chapter = repository.get(opened.sessionId, listedChapter.id)
 
     // Create 1 manual permanent snapshot
     repository.createSnapshot(opened.sessionId, chapter.id, chapter.version, '重要里程碑')

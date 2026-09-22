@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto'
 import type Database from 'better-sqlite3'
-import type { Chapter, ChapterSnapshot, ChapterSnapshotDetail } from '../shared/project'
+import type { Chapter, ChapterHeader, ChapterSnapshot, ChapterSnapshotDetail } from '../shared/project'
+import { count } from '../shared/text-counter'
 import { ProjectError, ProjectStore } from './project-store'
 
 type ChapterRow = { id: string; title: string; position: number; content: string; version: number; created_at: number; updated_at: number }
@@ -20,6 +21,18 @@ function chapter(row: ChapterRow): Chapter {
   return { id: row.id, title: row.title, position: row.position, content: row.content, version: row.version, createdAt: row.created_at, updatedAt: row.updated_at }
 }
 
+function header(row: ChapterRow): ChapterHeader {
+  return {
+    id: row.id,
+    title: row.title,
+    position: row.position,
+    version: row.version,
+    characterCount: count(row.content),
+    createdAt: row.created_at,
+    updatedAt: row.updated_at
+  }
+}
+
 function snapshotSummary(row: SnapshotRow): ChapterSnapshot {
   return {
     id: row.id,
@@ -33,8 +46,8 @@ function snapshotSummary(row: SnapshotRow): ChapterSnapshot {
   }
 }
 
-function active(database: Database.Database): Chapter[] {
-  return (database.prepare('SELECT id,title,position,content,version,created_at,updated_at FROM chapter WHERE deleted_at IS NULL ORDER BY position').all() as ChapterRow[]).map(chapter)
+function active(database: Database.Database): ChapterHeader[] {
+  return (database.prepare('SELECT id,title,position,content,version,created_at,updated_at FROM chapter WHERE deleted_at IS NULL ORDER BY position').all() as ChapterRow[]).map(header)
 }
 
 function invalidateContent(database: Database.Database, chapterId: string, now: number, isDeleted = false): void {
@@ -88,7 +101,7 @@ export class ChapterRepository {
     private readonly searchIndex?: SearchIndex
   ) {}
 
-  list(sessionId: string): Chapter[] { return this.store.read(sessionId, active) }
+  list(sessionId: string): ChapterHeader[] { return this.store.read(sessionId, active) }
   get(sessionId: string, chapterId: string): Chapter {
     return this.store.read(sessionId, (database) => {
       const row = database.prepare('SELECT id,title,position,content,version,created_at,updated_at FROM chapter WHERE id = ? AND deleted_at IS NULL').get(chapterId) as ChapterRow | undefined
@@ -138,7 +151,7 @@ export class ChapterRepository {
     void this.searchIndex?.sync(sessionId).catch(() => {})
     return result
   }
-  reorder(sessionId: string, chapters: Array<{ id: string; expectedVersion: number }>): Chapter[] {
+  reorder(sessionId: string, chapters: Array<{ id: string; expectedVersion: number }>): ChapterHeader[] {
     const result = this.store.transaction(sessionId, (database) => {
       const current = active(database)
       if (chapters.length !== current.length || new Set(chapters.map(({ id }) => id)).size !== chapters.length || chapters.some(({ id, expectedVersion }) => current.find((item) => item.id === id)?.version !== expectedVersion)) {
@@ -152,7 +165,7 @@ export class ChapterRepository {
     })
     return result
   }
-  async split(sessionId: string, chapterId: string, offset: number, newTitle: string, expectedVersion: number): Promise<Chapter[]> {
+  async split(sessionId: string, chapterId: string, offset: number, newTitle: string, expectedVersion: number): Promise<ChapterHeader[]> {
     await this.store.createPreOperationBackup(sessionId, 'split')
     const result = this.store.transaction(sessionId, (database) => {
       const row = requireCurrent(database, chapterId, expectedVersion); protectSurrogate(row.content, offset)
@@ -173,7 +186,7 @@ export class ChapterRepository {
     void this.searchIndex?.sync(sessionId).catch(() => {})
     return result
   }
-  async merge(sessionId: string, chapterId: string, expectedVersion: number, nextExpectedVersion: number): Promise<Chapter[]> {
+  async merge(sessionId: string, chapterId: string, expectedVersion: number, nextExpectedVersion: number): Promise<ChapterHeader[]> {
     await this.store.createPreOperationBackup(sessionId, 'merge')
     const result = this.store.transaction(sessionId, (database) => {
       const first = requireCurrent(database, chapterId, expectedVersion)
@@ -304,4 +317,3 @@ export class ChapterRepository {
     return restored
   }
 }
-

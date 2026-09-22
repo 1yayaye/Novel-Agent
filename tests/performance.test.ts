@@ -47,6 +47,9 @@ describe('Performance and Responsiveness Targets (SPECS Section 14)', () => {
       const openDuration = performance.now() - openStart
 
       expect(list.length).toBe(chapterCount)
+      expect(list.every((item) => !Object.prototype.hasOwnProperty.call(item, 'content'))).toBe(true)
+      const fullChapters = list.map(({ id }) => chapters.get(opened.sessionId, id))
+      expect(JSON.stringify(list).length).toBeLessThan(JSON.stringify(fullChapters).length * 0.05)
       expect(openDuration).toBeLessThan(2000) // <= 2.0s target
       console.log(`[Perf 2M] Project Open + Chapter List: ${openDuration.toFixed(2)}ms (Target: <2000ms)`)
 

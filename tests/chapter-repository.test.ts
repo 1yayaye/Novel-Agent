@@ -7,6 +7,7 @@ import { afterEach, describe, expect, it } from 'vitest'
 import { ChapterRepository } from '../src/main/chapter-repository'
 import { parseImport } from '../src/main/import-parser'
 import { ProjectStore } from '../src/main/project-store'
+import { count } from '../src/shared/text-counter'
 
 const folders: string[] = []
 function fixture() {
@@ -46,10 +47,15 @@ describe('import parser', () => {
 describe('ChapterRepository', () => {
   it('persists confirmed import drafts atomically and retains order after reopening', async () => {
     const { project, store } = fixture(); const opened = await store.open(project); const repository = new ChapterRepository(store)
-    expect(repository.list(opened.sessionId).map(({ title, position, content }) => [title, position, content])).toEqual([['第一章', 0, '甲乙丙'], ['第二章', 1, '丁戊己']])
+    const listed = repository.list(opened.sessionId)
+    expect(listed.every((item) => !Object.prototype.hasOwnProperty.call(item, 'content'))).toBe(true)
+    expect(listed.map(({ title, position, characterCount }) => [title, position, characterCount])).toEqual([['第一章', 0, count('甲乙丙')], ['第二章', 1, count('丁戊己')]])
+    expect(listed.map(({ id }) => repository.get(opened.sessionId, id).content)).toEqual(['甲乙丙', '丁戊己'])
     store.close(opened.sessionId)
     const reopened = await store.open(project)
-    expect(repository.list(reopened.sessionId).map(({ title, position, content }) => [title, position, content])).toEqual([['第一章', 0, '甲乙丙'], ['第二章', 1, '丁戊己']])
+    const reopenedList = repository.list(reopened.sessionId)
+    expect(reopenedList.map(({ title, position, characterCount }) => [title, position, characterCount])).toEqual([['第一章', 0, count('甲乙丙')], ['第二章', 1, count('丁戊己')]])
+    expect(reopenedList.map(({ id }) => repository.get(reopened.sessionId, id).content)).toEqual(['甲乙丙', '丁戊己'])
     store.close(reopened.sessionId)
   })
 
@@ -60,12 +66,13 @@ describe('ChapterRepository', () => {
     expect(() => repository.update(opened.sessionId, first.id, '旧写入', first.version)).toThrow(expect.objectContaining({ code: 'VERSION_CONFLICT' }))
     await expect(repository.split(opened.sessionId, first.id, 2, '第二段', updated.version)).rejects.toThrow(expect.objectContaining({ code: 'VALIDATION_ERROR' }))
     chapters = await repository.split(opened.sessionId, first.id, 3, '第二段', updated.version)
-    expect(chapters.map(({ title, content }) => [title, content])).toEqual([['第一章', '甲😀'], ['第二段', '乙丙'], ['第二章', '丁戊己']])
+    expect(chapters.map(({ title, characterCount }) => [title, characterCount])).toEqual([['第一章', count('甲😀')], ['第二段', count('乙丙')], ['第二章', count('丁戊己')]])
+    expect(chapters.map(({ id }) => repository.get(opened.sessionId, id).content)).toEqual(['甲😀', '乙丙', '丁戊己'])
     chapters = await repository.merge(opened.sessionId, chapters[0].id, chapters[0].version, chapters[1].version)
-    expect(chapters[0].content).toBe('甲😀\n\n乙丙')
+    expect(repository.get(opened.sessionId, chapters[0].id).content).toBe('甲😀\n\n乙丙')
     chapters = await repository.merge(opened.sessionId, chapters[0].id, chapters[0].version, chapters[1].version)
     expect(chapters).toHaveLength(1)
-    expect(chapters[0].content).toContain('丁戊己')
+    expect(repository.get(opened.sessionId, chapters[0].id).content).toContain('丁戊己')
     const created = repository.create(opened.sessionId, '尾章', '终')
     chapters = repository.reorder(opened.sessionId, [...repository.list(opened.sessionId)].reverse().map(({ id, version }) => ({ id, expectedVersion: version })))
     expect(chapters[0].id).toBe(created.id)

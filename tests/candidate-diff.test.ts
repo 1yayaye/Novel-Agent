@@ -91,6 +91,18 @@ describe('Candidate Two-tier Diff & Text Synthesis (SPEC 8.2, 8.3)', () => {
     expect(synthesizeText(large50kHunks)).toBe(text50kCand)
   })
 
+  it('keeps localized 5,000-character paragraph diffs on the main thread', () => {
+    const prefix = '青云门通天峰大殿之上，仙气缭绕。'.repeat(230)
+    const suffix = '山风穿过竹林，远处传来钟声。'.repeat(100)
+    const original = `${prefix}【原文：韩立在石阶前停步】${suffix}`
+    const candidate = `${prefix}【修订：韩立在石阶前回首】${suffix}`
+    const startedAt = performance.now()
+    const hunks = computeDiffHunks(original, candidate)
+
+    expect(performance.now() - startedAt).toBeLessThan(20)
+    expect(synthesizeText(hunks)).toBe(candidate)
+  })
+
   it('preserves multi-line paragraphs in two-tier diff', () => {
     const original = '第一段：韩立拜入七玄门。\n第二段：神手谷采药。\n第三段：发现神秘绿瓶。'
     const candidate = '第一段：韩立拜入七玄门。\n第二段：神手谷精心采药。\n第三段：发现神秘绿瓶。'

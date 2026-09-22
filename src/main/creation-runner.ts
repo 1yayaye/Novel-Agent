@@ -10,6 +10,7 @@ import type { ModelGateway } from './model-gateway'
 import type { ConnectionStore } from './connection-store'
 import type { ContextAssembler } from './context-assembler'
 import { computeDiffHunks, type CandidateService } from './candidate-service'
+import { createStreamThrottler } from './stream-throttle'
 
 export interface CreationCallbacks {
   onDelta?: (event: CandidateDeltaEvent) => void
@@ -264,6 +265,7 @@ export class CreationRunner {
     let completionTokens = 0
     let checkpointedText = ''
     let checkpointTimer: NodeJS.Timeout | undefined
+    const throttler = createStreamThrottler<CandidateDeltaEvent>(60, (event) => this.callbacks.onDelta?.(event))
 
     const checkpoint = () => {
       if (bufferedText === checkpointedText) return
@@ -310,18 +312,23 @@ export class CreationRunner {
         if (chunk.text) {
           bufferedText += chunk.text
           startCheckpointing()
-          this.callbacks.onDelta?.({
-            candidateId,
-            taskId,
-            delta: chunk.text,
-            fullText: bufferedText,
-            state: 'streaming'
-          })
         }
         if (chunk.usage) {
           promptTokens = chunk.usage.promptTokens
           completionTokens = chunk.usage.completionTokens
         }
+        throttler.push({
+          candidateId,
+          taskId,
+          delta: chunk.text || '',
+          fullText: bufferedText,
+          state: 'streaming'
+        })
+      }
+
+      throttler.flush()
+      if (signal.aborted) {
+        throw new ProjectError('TASK_CANCELLED', '任务已由作者取消')
       }
 
       const now = Date.now()
@@ -398,6 +405,7 @@ export class CreationRunner {
         candidate: candidateDetail
       })
     } catch (error) {
+      throttler.flush()
       if (error instanceof ProjectError && error.code === 'PROJECT_NOT_OPEN') {
         return
       }

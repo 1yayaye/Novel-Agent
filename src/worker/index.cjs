@@ -5,25 +5,34 @@ function lcs(a, b) {
   const n = b.length
   if (m === 0 || n === 0) return []
 
-  const totalCells = (m + 1) * (n + 1)
-  if (totalCells > 16000000) {
-    return []
-  }
+  const max = m + n
+  const offset = max
+  let v = new Int32Array(2 * max + 1)
+  v[offset + 1] = 0
+  const trace = []
+  let finalD = max
 
-  const stride = n + 1
-  const dp = new Int32Array(totalCells)
-
-  for (let i = 1; i <= m; i++) {
-    const row = i * stride
-    const prevRow = (i - 1) * stride
-    const ai = a[i - 1]
-    for (let j = 1; j <= n; j++) {
-      if (ai === b[j - 1]) {
-        dp[row + j] = dp[prevRow + (j - 1)] + 1
+  outer: for (let d = 0; d <= max; d++) {
+    trace.push(v.slice())
+    for (let k = -d; k <= d; k += 2) {
+      const kIndex = offset + k
+      let x
+      if (k === -d || (k !== d && v[kIndex - 1] < v[kIndex + 1])) {
+        x = v[kIndex + 1]
       } else {
-        const up = dp[prevRow + j]
-        const left = dp[row + (j - 1)]
-        dp[row + j] = up >= left ? up : left
+        x = v[kIndex - 1] + 1
+      }
+
+      let y = x - k
+      while (x < m && y < n && a[x] === b[y]) {
+        x++
+        y++
+      }
+      v[kIndex] = x
+
+      if (x >= m && y >= n) {
+        finalD = d
+        break outer
       }
     }
   }
@@ -31,20 +40,35 @@ function lcs(a, b) {
   const matches = []
   let i = m
   let j = n
-  while (i > 0 && j > 0) {
-    const row = i * stride
-    const prevRow = (i - 1) * stride
-    if (a[i - 1] === b[j - 1]) {
-      matches.unshift({ aIndex: i - 1, bIndex: j - 1 })
+
+  for (let d = finalD; d > 0; d--) {
+    const previousV = trace[d]
+    const k = i - j
+    const kIndex = offset + k
+    const previousK = k === -d || (k !== d && previousV[kIndex - 1] < previousV[kIndex + 1]) ? k + 1 : k - 1
+    const previousI = previousV[offset + previousK]
+    const previousJ = previousI - previousK
+
+    while (i > previousI && j > previousJ) {
+      matches.push({ aIndex: i - 1, bIndex: j - 1 })
       i--
-      j--
-    } else if (dp[prevRow + j] >= dp[row + (j - 1)]) {
-      i--
-    } else {
       j--
     }
+
+    if (i === previousI) {
+      j--
+    } else {
+      i--
+    }
   }
-  return matches
+
+  while (i > 0 && j > 0) {
+    matches.push({ aIndex: i - 1, bIndex: j - 1 })
+    i--
+    j--
+  }
+
+  return matches.reverse()
 }
 
 parentPort.on('message', (message) => {

@@ -142,6 +142,16 @@ describe('SearchIndex Vector Indexing & Hybrid Search (SPEC 7.6)', () => {
     expect(status.vectorMeta?.lastError).toBeNull()
   })
 
+  it('stores vector embeddings as float32 blobs', () => {
+    const status = searchIndex.getStatus(sessionId)
+    const row = store.read(sessionId, (db) => db.prepare('SELECT embedding FROM content_vector LIMIT 1').get() as { embedding: Buffer | Uint8Array } | undefined)
+
+    expect(row).toBeDefined()
+    expect(row?.embedding).toBeInstanceOf(Uint8Array)
+    expect(row?.embedding.byteLength).toBe((status.vectorMeta?.dimensions ?? 0) * 4)
+    expect(Buffer.from(row!.embedding).subarray(0, 1).toString('utf8')).not.toBe('[')
+  })
+
   it('does not commit an embedding result after its source content changes', async () => {
     const entryId = randomUUID()
     const now = Date.now()

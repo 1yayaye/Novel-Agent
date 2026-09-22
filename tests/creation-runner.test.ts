@@ -116,21 +116,13 @@ describe('CreationRunner - Streaming Typewriter Pipeline (SPEC 6.9, 6.10, 8.2, 8
         '怀揣神秘玉佩前往七玄门。',
         '山风凛冽，白云苍狗。'
       ]
-
-      let idx = 0
-      const timer = setInterval(() => {
-        if (idx < chunks.length) {
-          const payload = {
-            choices: [{ delta: { content: chunks[idx] } }]
-          }
-          res.write(`data: ${JSON.stringify(payload)}\n\n`)
-          idx++
-        } else {
-          res.write('data: [DONE]\n\n')
-          res.end()
-          clearInterval(timer)
-        }
-      }, 20)
+      res.write(`data: ${JSON.stringify({ choices: [{ delta: { content: chunks[0] } }] })}\n\n`)
+      res.write(`data: ${JSON.stringify({ choices: [{ delta: { content: chunks[1] } }] })}\n\n`)
+      setTimeout(() => {
+        res.write(`data: ${JSON.stringify({ choices: [{ delta: { content: chunks[2] } }] })}\n\n`)
+        res.write('data: [DONE]\n\n')
+        res.end()
+      }, 140)
     }
 
     // Generate context package first
@@ -142,11 +134,11 @@ describe('CreationRunner - Streaming Typewriter Pipeline (SPEC 6.9, 6.10, 8.2, 8
       target: { chapterId }
     })
 
-    const deltas: string[] = []
+    const deltas: Array<{ delta: string; fullText: string }> = []
     let doneCandidate: any = null
     runner.setCallbacks({
       onDelta: (event) => {
-        deltas.push(event.delta)
+        deltas.push({ delta: event.delta, fullText: event.fullText })
       },
       onDone: (event) => {
         doneCandidate = event.candidate
@@ -165,7 +157,9 @@ describe('CreationRunner - Streaming Typewriter Pipeline (SPEC 6.9, 6.10, 8.2, 8
     expect(candDetail.state).toBe('ready')
     expect(candDetail.rawOutput).toBe('韩立背负青竹剑离开五里沟，怀揣神秘玉佩前往七玄门。山风凛冽，白云苍狗。')
     expect(candDetail.hunks.length).toBeGreaterThan(0)
-    expect(deltas.length).toBeGreaterThanOrEqual(3)
+    expect(deltas.length).toBeGreaterThan(1)
+    expect(deltas.some((event) => event.fullText === '韩立背负青竹剑离开五里沟，怀揣神秘玉佩前往七玄门。')).toBe(true)
+    expect(deltas[deltas.length - 1].fullText).toBe(candDetail.rawOutput)
   })
 
   it('cancels ongoing streaming and marks candidate cancelled while preserving output', async () => {

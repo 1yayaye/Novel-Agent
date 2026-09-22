@@ -192,7 +192,7 @@ describe('ChatService - Q&A, Multi-turn History, Citations & Rolling Summary (SP
 
     expect(deltas.length).toBeGreaterThan(0)
     expect(doneEvent?.state).toBe('completed')
-    expect(doneEvent?.message?.content).toContain('韩立离开五里沟')
+    expect(doneEvent?.message?.content).toBe('根据[来源1]所述，韩立离开五里沟拜入七玄门。同时[设定:掌天瓶]是仙家法宝，可催熟草药。')
     expect(doneEvent?.message?.tokenCount).toBe(165)
 
     // Check citations
@@ -207,6 +207,7 @@ describe('ChatService - Q&A, Multi-turn History, Citations & Rolling Summary (SP
     expect(messages[0].role).toBe('user')
     expect(messages[0].content).toBe('韩立来自哪里？他的掌天瓶有什么用？')
     expect(messages[1].role).toBe('assistant')
+    expect(messages[1].content).toBe(doneEvent?.message?.content)
     expect(messages[1].state).toBe('completed')
   })
 

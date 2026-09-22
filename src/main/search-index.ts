@@ -47,6 +47,11 @@ function escapeFts5Query(query: string): string {
   return `"${sanitized}"`
 }
 
+function embeddingToVecBlob(vec: number[]): Buffer {
+  const f32 = Float32Array.from(vec)
+  return Buffer.from(f32.buffer, f32.byteOffset, f32.byteLength)
+}
+
 /**
  * Generate a clean text excerpt with highlight offsets around the match.
  */
@@ -478,6 +483,9 @@ export class SearchIndex {
         }
 
         const dims = embResult.dimensions
+        if (dims <= 0 || embResult.embeddings.some((vec) => vec.length === 0)) {
+          throw new ProjectError('MODEL_OUTPUT_INVALID', 'Embedding 向量数据为空')
+        }
 
         // Ensure virtual table exists before starting batch transaction
         this.store.read(sessionId, (db) => {
@@ -496,7 +504,7 @@ export class SearchIndex {
           for (let j = 0; j < batch.length; j++) {
             const item = batch[j]
             const vec = embResult.embeddings[j]
-            insertVec.run(BigInt(item.rowid), JSON.stringify(vec))
+            insertVec.run(BigInt(item.rowid), embeddingToVecBlob(vec))
           }
 
           processed += batch.length
@@ -1141,7 +1149,7 @@ export class SearchIndex {
                 WHERE embedding MATCH ?
                 ORDER BY distance ASC
                 LIMIT 30
-              `).all(JSON.stringify(queryVec)) as Array<{
+              `).all(embeddingToVecBlob(queryVec)) as Array<{
                 rowid: number
                 distance: number
               }>

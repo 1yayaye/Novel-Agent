@@ -24,6 +24,7 @@ import type { ModelGateway } from './model-gateway'
 import type { ConnectionStore } from './connection-store'
 import type { ContextAssembler } from './context-assembler'
 import type { SearchIndex } from './search-index'
+import { createStreamThrottler } from './stream-throttle'
 
 export interface ChatCallbacks {
   onDelta?: (event: ChatDeltaEvent) => void
@@ -633,6 +634,7 @@ export class ChatService {
     let totalTokens = 0
     let checkpointedText = ''
     let checkpointTimer: NodeJS.Timeout | undefined
+    const throttler = createStreamThrottler<ChatDeltaEvent>(60, (event) => this.callbacks.onDelta?.(event))
 
     const checkpoint = () => {
       if (fullText === checkpointedText) return
@@ -671,7 +673,10 @@ export class ChatService {
       })
 
       for await (const chunk of stream) {
-        if (controller.signal.aborted) return
+        if (controller.signal.aborted) {
+          throttler.flush()
+          return
+        }
         if (chunk.text) {
           fullText += chunk.text
           startCheckpointing()
@@ -680,7 +685,7 @@ export class ChatService {
           totalTokens = chunk.usage.totalTokens
         }
 
-        this.callbacks.onDelta?.({
+        throttler.push({
           chatSessionId,
           messageId,
           delta: chunk.text || '',
@@ -689,6 +694,8 @@ export class ChatService {
         })
       }
 
+      throttler.flush()
+
       if (controller.signal.aborted) {
         this.finishMessage(sessionId, chatSessionId, messageId, fullText, totalTokens, 'cancelled', contextPackage)
         return
@@ -696,6 +703,7 @@ export class ChatService {
 
       this.finishMessage(sessionId, chatSessionId, messageId, fullText, totalTokens, 'completed', contextPackage)
     } catch (error) {
+      throttler.flush()
       if (error instanceof ProjectError && error.code === 'PROJECT_NOT_OPEN') {
         return
       }
