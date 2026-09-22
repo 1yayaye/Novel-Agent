@@ -4,9 +4,9 @@ import { resolve } from 'node:path'
 import { EditorState } from '@codemirror/state'
 
 describe('Ticket 08: CodeMirror Search Panel Theme Integration & Drawer Toggle Selector', () => {
-  const cssPath = resolve(__dirname, '../src/renderer/styles.css')
+  const cssPath = resolve(__dirname, '../src/renderer/styles/index.css')
   const css = readFileSync(cssPath, 'utf8')
-  const workbenchTsxPath = resolve(__dirname, '../src/renderer/components/workbench/Workbench.tsx')
+  const workbenchTsxPath = resolve(__dirname, '../src/renderer/features/workbench/WorkbenchLayout.tsx')
   const workbenchTsx = readFileSync(workbenchTsxPath, 'utf8')
   const iconButtonTsxPath = resolve(__dirname, '../src/renderer/components/common/IconButton.tsx')
   const iconButtonTsx = readFileSync(iconButtonTsxPath, 'utf8')

@@ -85,7 +85,7 @@ describe('Ticket 02: Status Bar Save Lifecycle and Dark Contrast', () => {
   })
 
   it('verifies stylesheet definitions for high contrast in dark mode', () => {
-    const cssPath = resolve(__dirname, '../src/renderer/styles.css')
+    const cssPath = resolve(__dirname, '../src/renderer/styles/index.css')
     const css = readFileSync(cssPath, 'utf8')
 
     // High contrast strong text for dark theme (#f3f4f6 has contrast > 12:1 against #26262d)

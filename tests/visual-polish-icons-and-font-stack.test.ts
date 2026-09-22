@@ -3,9 +3,9 @@ import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 
 describe('Ticket 09: Visual Polish, Icons Deduplication, Alert Banner Success and Font Stack', () => {
-  const cssPath = resolve(__dirname, '../src/renderer/styles.css')
+  const cssPath = resolve(__dirname, '../src/renderer/styles/index.css')
   const css = readFileSync(cssPath, 'utf8')
-  const workbenchTsxPath = resolve(__dirname, '../src/renderer/components/workbench/Workbench.tsx')
+  const workbenchTsxPath = resolve(__dirname, '../src/renderer/features/workbench/WorkbenchLayout.tsx')
   const workbenchTsx = readFileSync(workbenchTsxPath, 'utf8')
   const connDialogTsxPath = resolve(__dirname, '../src/renderer/components/dialogs/ConnectionEditDialog.tsx')
   const connDialogTsx = readFileSync(connDialogTsxPath, 'utf8')

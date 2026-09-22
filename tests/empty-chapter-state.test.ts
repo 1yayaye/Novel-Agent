@@ -80,7 +80,7 @@ describe('Ticket 03: Empty Chapter State Card & Blank Project Crash Guard', () =
   })
 
   it('verifies stylesheet definitions for EmptyChapterState across light, dark, and sepia themes', () => {
-    const cssPath = resolve(__dirname, '../src/renderer/styles.css')
+    const cssPath = resolve(__dirname, '../src/renderer/styles/index.css')
     const css = readFileSync(cssPath, 'utf8')
 
     // Base container and card styling

@@ -67,7 +67,7 @@ describe('Ticket 05: Candidate Diff Review - Reversible Delete Badge & Proportio
   })
 
   it('verifies stylesheet definitions for candidate diff review and deleted badges', () => {
-    const cssPath = resolve(__dirname, '../src/renderer/styles.css')
+    const cssPath = resolve(__dirname, '../src/renderer/styles/index.css')
     const css = readFileSync(cssPath, 'utf8')
 
     expect(css).toContain('.candidate-dialog')

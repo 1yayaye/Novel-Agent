@@ -134,7 +134,7 @@ describe('Ticket 01: Zen Mode Esc Exit and Window Controls Loop', () => {
   })
 
   it('verifies stylesheet definitions for smooth grid transitions and zen window controls', () => {
-    const cssPath = resolve(__dirname, '../src/renderer/styles.css')
+    const cssPath = resolve(__dirname, '../src/renderer/styles/index.css')
     const css = readFileSync(cssPath, 'utf8')
 
     // Grid transition on workbench body

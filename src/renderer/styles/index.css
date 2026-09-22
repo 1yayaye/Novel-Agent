@@ -1,0 +1,294 @@
+@import "tailwindcss";
+
+@theme {
+  --color-latte-50: #faf8f5;
+  --color-latte-100: #f5efe6;
+  --color-latte-200: #efe6da;
+  --color-latte-300: #e5ddd3;
+  --color-latte-400: #d6cbbf;
+  --color-latte-500: #baa997;
+  --color-latte-600: #9c8874;
+  --color-latte-700: #7d6b59;
+  --color-latte-800: #54473b;
+  --color-latte-900: #2c2523;
+
+  --color-brand-forest: #2d6a4f;
+  --color-brand-forest-hover: #24583e;
+  --color-brand-forest-light: #e8f3ee;
+  --color-brand-amber: #d97706;
+  --color-brand-amber-hover: #b45309;
+  --color-brand-amber-light: #fef3c7;
+  --color-brand-terracotta: #c85a32;
+  --color-brand-terracotta-hover: #a84724;
+  --color-brand-terracotta-light: #fceee9;
+
+  --font-serif: "Noto Serif SC", "Source Han Serif SC", "Source Han Serif CN", "Songti SC", "STSong", "Microsoft YaHei", "PingFang SC", "Hiragino Sans GB", serif;
+  --font-sans: Inter, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", "Source Han Sans SC", "Noto Sans SC", sans-serif;
+  --font-mono: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+
+  --radius-card: 14px;
+}
+
+@layer base {
+  *, *::before, *::after {
+    box-sizing: border-box;
+  }
+
+  html, body, #root {
+    height: 100%;
+    margin: 0;
+    padding: 0;
+    overflow: hidden;
+    background-color: var(--color-latte-50);
+    color: var(--color-latte-900);
+    font-family:Inter,-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,"PingFang SC","Hiragino Sans GB","Microsoft YaHei","Source Han Sans SC","Noto Sans SC",sans-serif;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    user-select: none;
+  }
+
+  /* Custom scrollbar styling in warm palette */
+  ::-webkit-scrollbar {
+    width: 6px;
+    height: 6px;
+  }
+  ::-webkit-scrollbar-track {
+    background: transparent;
+  }
+  ::-webkit-scrollbar-thumb {
+    background: #d6cbbf;
+    border-radius: 9999px;
+  }
+  ::-webkit-scrollbar-thumb:hover {
+    background: #baa997;
+  }
+
+  /* Electron window drag headers */
+  .drag-region {
+    -webkit-app-region: drag;
+  }
+  .no-drag-region {
+    -webkit-app-region: no-drag;
+  }
+}
+
+/* Chinese manuscript styling for CodeMirror */
+.cm-editor {
+  height: 100% !important;
+  outline: none !important;
+}
+
+.cm-editor .cm-scroller {
+  font-family: inherit;
+  line-height: 1.95;
+  overflow-y: auto !important;
+}
+
+.cm-editor .cm-content {
+  padding: 32px 0 160px 0 !important;
+  caret-color: #2d6a4f;
+  word-break: break-word;
+  user-select: text;
+}
+
+.chapter-editor-container.font-serif .cm-content{font-family:"Noto Serif SC","Source Han Serif SC","Source Han Serif CN","Songti SC","STSong","Microsoft YaHei","PingFang SC","Hiragino Sans GB",serif}
+.chapter-editor-container.font-sans .cm-content{font-family:Inter,-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,"PingFang SC","Hiragino Sans GB","Microsoft YaHei","Source Han Sans SC","Noto Sans SC",sans-serif}
+.cm-editor.font-serif .cm-content {
+  font-family: "Noto Serif SC","Source Han Serif SC","Source Han Serif CN","Songti SC","STSong","Microsoft YaHei","PingFang SC","Hiragino Sans GB",serif !important;
+}
+.cm-editor.font-sans .cm-content {
+  font-family: Inter,-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,"PingFang SC","Hiragino Sans GB","Microsoft YaHei","Source Han Sans SC","Noto Sans SC",sans-serif !important;
+}
+
+/* Paragraph 2em indent for novel writing */
+.cm-editor.indent-paragraphs .cm-line {
+  text-indent: 2em;
+}
+
+.cm-editor .cm-line {
+  padding: 0 4px;
+}
+
+.cm-editor .cm-activeLine {
+  background-color: rgba(229, 221, 211, 0.35) !important;
+  border-radius: 4px;
+}
+
+.cm-editor .cm-selectionBackground,
+.cm-editor ::selection {
+  background-color: #d1e7dd !important;
+}
+
+/* CodeMirror Search Panel Theme Integration */
+.cm-panel.cm-search {
+  padding: 6px 10px;
+  border-bottom: 1px solid #e5ddd3;
+  background: #faf8f5;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.cm-panel.cm-search input.cm-textfield {
+  background: #ffffff;
+  border: 1px solid #dacdbe;
+  border-radius: 6px;
+  padding: 3px 8px;
+  font-size: 12px;
+  color: #2c2523;
+  outline: none;
+}
+
+.cm-panel.cm-search input.cm-textfield:focus{border-color:#2d5a27;box-shadow:0 0 0 2px rgba(45,90,39,.18)}
+
+.cm-panel.cm-search button.cm-button {
+  background: #efe6da;
+  border: 1px solid #dacdbe;
+  border-radius: 6px;
+  padding: 3px 8px;
+  font-size: 12px;
+  color: #54473b;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+
+.cm-panel.cm-search button.cm-button:hover{background:#e8efe5;color:#2d5a27;border-color:#2d5a27}
+
+.cm-panel.cm-search label.cm-search-label {
+  font-size: 12px;
+  color: #7d6b59;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.cm-panel.cm-search button.cm-button[name="close"] {
+  margin-left: auto;
+  padding: 2px 6px;
+}
+
+.cm-panel.cm-search .cm-search-matches {
+  font-size: 11px;
+  color: #7d6b59;
+  padding: 0 4px;
+}
+
+/* Search panel themes */
+.theme-sepia .cm-panels,.theme-sepia .cm-panel.cm-search{background:#eee9dc!important}
+.theme-sepia .cm-panel.cm-search input.cm-textfield{background:#fbf8f0;border-color:#dcd3c1;color:#2c251e}
+.theme-sepia .cm-panel.cm-search button.cm-button:hover{background:#e5d8be;color:#2c251e;border-color:#8c6239}
+
+.theme-dark .cm-panels,.theme-dark .cm-panel.cm-search,.dark .cm-panel.cm-search{background:#26262d!important}
+.theme-dark .cm-panel.cm-search input.cm-textfield,.dark .cm-panel.cm-search input.cm-textfield{background:#1e1e24;border-color:#3f3f4e;color:#f3f4f6}
+.theme-dark .cm-panel.cm-search button.cm-button:hover,.dark .cm-panel.cm-search button.cm-button:hover{background:#1f3a1d;color:#4ade80;border-color:#4ade80}
+
+@media(min-width:1440px){.drawer-toggle-button{display:none!important}}
+
+/* Zen mode grid transitions */
+.workbench-body {
+  transition:grid-template-columns .25s cubic-bezier(0.16,1,0.3,1);
+}
+
+.zen-body{grid-template-columns:0px 0px 1fr 0px!important}
+.zen-body .left-rail,.zen-body .chapter-panel,.zen-body .inspector{opacity:0;pointer-events:none;border:none;padding:0;overflow:hidden}
+
+.zen-window-controls{position:absolute;right:12px;top:0;bottom:0;display:flex;align-items:center;-webkit-app-region:no-drag;z-index:10}
+
+@media (prefers-reduced-motion:reduce) {
+  .workbench-body {
+    transition: none !important;
+  }
+}
+
+/* Empty Chapter State */
+.empty-chapter-container{flex:1;height:100%;display:grid;place-items:center}
+.empty-chapter-card{max-width:460px;width:100%;background:#ffffff;border:1px solid #e5ddd3;border-radius:16px;padding:32px;text-align:center;box-shadow:0 2px 8px rgba(0,0,0,0.04)}
+.empty-chapter-title{margin:0 0 10px;font-size:20px;font-weight:700;color:#2c2523}
+.empty-chapter-icon-wrapper{display:grid;place-items:center;width:72px;height:72px;border-radius:50%;background:#efe6da;margin:0 auto 16px;color:#2d6a4f}
+
+.theme-dark .empty-chapter-card{background:#23232b;border-color:#383842}
+.theme-dark .empty-chapter-title{color:#f3f4f6}
+.theme-sepia .empty-chapter-card{background:#fcf9f2;border-color:#dfd8c7}
+.theme-sepia .empty-chapter-title{color:#2c251e}
+
+/* Candidate Diff Review & badges */
+.candidate-dialog {
+  display: flex;
+  flex-direction: column;
+}
+.split-panels-container {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+}
+.diff-deleted-placeholder {
+  opacity: 0.75;
+}
+.diff-deleted-badge {
+  background: #fee2e2;
+  color: #b91c1c;
+}
+.hunk-interactive-item {
+  cursor: pointer;
+}
+
+/* Status Bar & Save Dots */
+.novel-status-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 4px 12px;
+  font-size: 11px;
+  background: #faf8f5;
+  border-top: 1px solid #e5ddd3;
+  color: #7d6b59;
+}
+.novel-status-bar .status-left,
+.novel-status-bar .status-right {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+.novel-status-bar .status-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+.novel-status-bar .status-item strong {
+  font-weight: 600;
+  color: #2c2523;
+}
+.novel-status-bar .save-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  display: inline-block;
+}
+.novel-status-bar .save-dot.saved { background: #2d6a4f; }
+.novel-status-bar .save-dot.saving,
+.novel-status-bar .save-dot.dirty { background: #d97706; }
+.novel-status-bar .save-dot.error,
+.novel-status-bar .save-dot.conflict { background: #c85a32; }
+.novel-status-bar .save-dot.read_only { background: #9ca3af; }
+
+.novel-status-bar.dark {
+  background: #1e1e24;
+  border-color: #2e2e36;
+  color: #9ca3af;
+}
+.novel-status-bar.dark .status-item strong{color:#f3f4f6}
+.novel-status-bar.dark .save-dot{background:#4ade80}
+.novel-status-bar.dark .save-dot.dirty,.novel-status-bar.dark .save-dot.saving{background:#fbbf24}
+.novel-status-bar.dark .save-dot.error,.novel-status-bar.dark .save-dot.conflict{background:#f87171}
+.novel-status-bar.dark .save-dot.read_only{background:#9ca3af}
+
+.novel-status-bar.sepia {
+  background: #f7f2e7;
+  border-color: #e5d8bf;
+  color: #7d6b59;
+}
+.novel-status-bar.sepia .status-item strong{color:#2c251e}
+
+/* Alert Banners */
+.alert-banner.success{background:#ecfdf5;border:1px solid #a7f3d0;color:#065f46}
+.theme-dark .alert-banner.success{background:#064e3b;border-color:#059669;color:#ecfdf5}

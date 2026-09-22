@@ -1,0 +1,105 @@
+import React from 'react'
+import { Sparkles, Wand2, Scissors, Quote, Check, X } from 'lucide-react'
+import type { SelectionInfo } from '../../types/editor'
+
+export interface EditorFloatingMenuProps {
+  selection: SelectionInfo | null
+  onPolish?: (selectedText: string) => void
+  onExpand?: (selectedText: string) => void
+  onSummarize?: (selectedText: string) => void
+  onWrapQuotes?: (type: 'double' | 'single' | 'angle') => void
+  onClose?: () => void
+}
+
+export function EditorFloatingMenu({
+  selection,
+  onPolish,
+  onExpand,
+  onSummarize,
+  onWrapQuotes,
+  onClose
+}: EditorFloatingMenuProps) {
+  if (!selection || !selection.text.trim() || !selection.rect) {
+    return null
+  }
+
+  // Calculate coordinates anchored to cursor selection
+  const top = Math.max(10, selection.rect.top - 46)
+  const left = Math.max(10, Math.min(window.innerWidth - 320, selection.rect.left))
+
+  return (
+    <div
+      style={{ top: `${top}px`, left: `${left}px` }}
+      className="fixed z-50 flex items-center gap-1 p-1 bg-[#faf8f5]/95 backdrop-blur-md border border-[#e5ddd3] shadow-lg rounded-xl select-none animate-in fade-in zoom-in-95 duration-150"
+    >
+      {onPolish && (
+        <button
+          type="button"
+          onClick={() => onPolish(selection.text)}
+          className="flex items-center gap-1 px-2.5 py-1 text-xs font-medium text-[#2d6a4f] hover:bg-[#e8f3ee] rounded-lg transition-colors"
+          title="润色修辞与文学造句"
+        >
+          <Sparkles size={13} />
+          <span>润色</span>
+        </button>
+      )}
+
+      {onExpand && (
+        <button
+          type="button"
+          onClick={() => onExpand(selection.text)}
+          className="flex items-center gap-1 px-2.5 py-1 text-xs font-medium text-[#b45309] hover:bg-[#fef3c7] rounded-lg transition-colors"
+          title="细节扩写与氛围渲染"
+        >
+          <Wand2 size={13} />
+          <span>扩写</span>
+        </button>
+      )}
+
+      {onSummarize && (
+        <button
+          type="button"
+          onClick={() => onSummarize(selection.text)}
+          className="flex items-center gap-1 px-2.5 py-1 text-xs font-medium text-[#54473b] hover:bg-[#efe6da] rounded-lg transition-colors"
+          title="精简冗余字词"
+        >
+          <Scissors size={13} />
+          <span>精简</span>
+        </button>
+      )}
+
+      {onWrapQuotes && (
+        <>
+          <div className="h-4 w-px bg-[#e5ddd3] mx-0.5" />
+          <button
+            type="button"
+            onClick={() => onWrapQuotes('double')}
+            className="px-2 py-1 text-xs text-[#54473b] hover:bg-[#efe6da] rounded-lg transition-colors font-serif font-bold"
+            title="添加双引号 “ ”"
+          >
+            “”
+          </button>
+          <button
+            type="button"
+            onClick={() => onWrapQuotes('angle')}
+            className="px-2 py-1 text-xs text-[#54473b] hover:bg-[#efe6da] rounded-lg transition-colors font-serif font-bold"
+            title="添加书名号 《 》"
+          >
+            《》
+          </button>
+        </>
+      )}
+
+      {onClose && (
+        <button
+          type="button"
+          onClick={onClose}
+          className="p-1 text-[#baa997] hover:text-[#54473b] hover:bg-[#efe6da] rounded-lg transition-colors"
+          title="关闭"
+        >
+          <X size={12} />
+        </button>
+      )}
+    </div>
+  )
+}

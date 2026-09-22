@@ -1,6 +1,7 @@
 import { resolve } from 'node:path'
 import { defineConfig } from 'electron-vite'
 import react from '@vitejs/plugin-react'
+import tailwindcss from '@tailwindcss/vite'
 
 export default defineConfig({
   main: {
@@ -24,13 +25,17 @@ export default defineConfig({
     }
   },
   renderer: {
-    plugins: [react({})],
+    plugins: [tailwindcss(), react({})],
     build: {
       rollupOptions: {
         output: {
           manualChunks(id) {
             const normalized = id.replace(/\\/g, '/')
-            if (normalized.includes('/src/renderer/components/dialogs/') && !normalized.includes('ImportPreview')) {
+            if (
+              (normalized.includes('/src/renderer/components/dialogs/') ||
+                normalized.includes('/src/renderer/features/dialogs/')) &&
+              !normalized.includes('ImportPreview')
+            ) {
               return 'workbench-dialogs'
             }
           }
