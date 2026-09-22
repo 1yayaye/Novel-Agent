@@ -97,6 +97,11 @@ export function ProjectShelf({
               <div className="project-card-path" title={item.path}>
                 {item.path}
               </div>
+              {item.sourcePath && (
+                <div className="project-card-source" title={`原文副本：${item.sourcePath}`} style={{ fontSize: '10px', color: '#9ca3af', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', direction: 'rtl', textAlign: 'left', fontFamily: 'monospace' }}>
+                  源：{item.sourcePath}
+                </div>
+              )}
               <div className="project-card-footer">
                 <span className="project-card-time">
                   <Clock size={13} />

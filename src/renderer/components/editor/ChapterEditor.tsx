@@ -269,6 +269,83 @@ export function ChapterEditor({
 
     viewRef.current = editor
 
+    let scrollRaf: number | null = null
+    const handleScroll = () => {
+      const currentView = viewRef.current
+      if (!currentView) return
+      const sel = currentView.state.selection.main
+      if (sel.from === sel.to) return
+      const doc = currentView.state.doc
+      const selText = doc.sliceString(sel.from, sel.to)
+      if (!selText.trim()) return
+
+      try {
+        const scrollerRect = currentView.scrollDOM.getBoundingClientRect()
+        const fromCoords = currentView.coordsAtPos(sel.from)
+        const toCoords = currentView.coordsAtPos(sel.to)
+        if (
+          fromCoords &&
+          toCoords &&
+          toCoords.bottom >= scrollerRect.top &&
+          fromCoords.top <= scrollerRect.bottom
+        ) {
+          const rect: SelectionInfo['rect'] = {
+            top: fromCoords.top,
+            left: fromCoords.left,
+            right: toCoords.right,
+            bottom: toCoords.bottom
+          }
+          const info: SelectionInfo = {
+            from: sel.from,
+            to: sel.to,
+            text: selText,
+            line: doc.lineAt(sel.head).number,
+            column: sel.head - doc.lineAt(sel.head).from + 1,
+            rect
+          }
+          selectionInfoRef.current = info
+          setSelectionInfo(info)
+        } else {
+          // Hide floating bubble when selection is scrolled out of viewport
+          if (selectionInfoRef.current?.rect === null) return
+          const info: SelectionInfo = {
+            from: sel.from,
+            to: sel.to,
+            text: selText,
+            line: doc.lineAt(sel.head).number,
+            column: sel.head - doc.lineAt(sel.head).from + 1,
+            rect: null
+          }
+          selectionInfoRef.current = info
+          setSelectionInfo(info)
+        }
+      } catch {
+        if (selectionInfoRef.current?.rect !== null) {
+          const info: SelectionInfo = {
+            from: sel.from,
+            to: sel.to,
+            text: selText,
+            line: doc.lineAt(sel.head).number,
+            column: sel.head - doc.lineAt(sel.head).from + 1,
+            rect: null
+          }
+          selectionInfoRef.current = info
+          setSelectionInfo(info)
+        }
+      }
+    }
+
+    const onScroll = () => {
+      if (scrollRaf !== null) return
+      scrollRaf = window.requestAnimationFrame(() => {
+        scrollRaf = null
+        handleScroll()
+      })
+    }
+
+    editor.scrollDOM.addEventListener('scroll', onScroll, { passive: true })
+    window.addEventListener('resize', onScroll, { passive: true })
+
     setHandle({
       flush: () => {
         window.clearTimeout(timer.current)
@@ -407,11 +484,16 @@ export function ChapterEditor({
     window.addEventListener('beforeunload', beforeUnload)
 
     return () => {
+      editor.scrollDOM.removeEventListener('scroll', onScroll)
+      window.removeEventListener('resize', onScroll)
+      if (scrollRaf !== null) {
+        window.cancelAnimationFrame(scrollRaf)
+      }
       window.removeEventListener('beforeunload', beforeUnload)
       window.clearTimeout(timer.current)
       window.clearTimeout(countTimer.current)
       window.clearInterval(snapshotInterval)
-      if (!isReadOnly) {
+      if (!isReadOnly && editor.state.doc.toString() !== saved.current) {
         void window.novelAgent.chapter
           .createOrdinarySnapshot({
             sessionId,

@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { Suspense, useCallback, useEffect, useRef, useState } from 'react'
 import { AnimatePresence, motion } from 'motion/react'
 import {
   AlertTriangle,
@@ -26,8 +26,10 @@ import {
   Sparkles,
   X
 } from 'lucide-react'
+import { toChapterHeader } from '../../../shared/project'
 import type {
   Chapter,
+  ChapterHeader,
   ModelConnectionSummary,
   OpenProjectResult,
   TaskProgressEvent,
@@ -39,30 +41,34 @@ import { count, errorText } from '../../utils/formatters'
 import { getChapterNumber } from '../../utils/chapter-numbering'
 import { getEndpointHost } from '../../utils/crypto'
 import { stateLabel } from '../../utils/constants'
+import { lazyNamed } from '../../utils/lazyNamed'
 import { IconButton } from '../common/IconButton'
 import { WindowControls } from '../common/WindowControls'
 import { useToast } from '../common/Toast'
 import { ChapterEditor } from '../editor/ChapterEditor'
 import { Inspector } from '../editor/Inspector'
 import { EmptyChapterState } from '../editor/EmptyChapterState'
-import { ChapterActionDialog } from '../dialogs/ChapterActionDialog'
-import { SearchDialog } from '../dialogs/SearchDialog'
-import { CandidateReviewDialog } from '../dialogs/CandidateReviewDialog'
-import { TaskCenterDialog } from '../dialogs/TaskCenterDialog'
-import { ConsistencyIssuesDialog } from '../dialogs/ConsistencyIssuesDialog'
-import { LiteraryReportsDialog } from '../dialogs/LiteraryReportsDialog'
-import { SynopsisDialog } from '../dialogs/SynopsisDialog'
-import { StartAnalysisDialog } from '../dialogs/StartAnalysisDialog'
-import { KnowledgeBaseDialog } from '../dialogs/KnowledgeBaseDialog'
-import { CreativeSettingsDialog } from '../dialogs/CreativeSettingsDialog'
-import { SuggestionReviewDialog } from '../dialogs/SuggestionReviewDialog'
-import { ConnectionDialog } from '../dialogs/ConnectionDialog'
-import { BackupDialog } from '../dialogs/BackupDialog'
-import { ContextPreviewDialog } from '../dialogs/ContextPreviewDialog'
-import { ExportDialog } from '../dialogs/ExportDialog'
-import { ChatWorkbenchDialog } from '../dialogs/ChatWorkbenchDialog'
-import { OutlineEditorDialog } from '../dialogs/OutlineEditorDialog'
-import { SpotlightTour } from '../dialogs/SpotlightTour'
+import { WorkflowGuideBanner } from './WorkflowGuideBanner'
+import { NavRail } from './NavRail'
+
+const ChapterActionDialog = lazyNamed(() => import('../dialogs/ChapterActionDialog.js'), 'ChapterActionDialog')
+const SearchDialog = lazyNamed(() => import('../dialogs/SearchDialog.js'), 'SearchDialog')
+const CandidateReviewDialog = lazyNamed(() => import('../dialogs/CandidateReviewDialog.js'), 'CandidateReviewDialog')
+const TaskCenterDialog = lazyNamed(() => import('../dialogs/TaskCenterDialog.js'), 'TaskCenterDialog')
+const ConsistencyIssuesDialog = lazyNamed(() => import('../dialogs/ConsistencyIssuesDialog.js'), 'ConsistencyIssuesDialog')
+const LiteraryReportsDialog = lazyNamed(() => import('../dialogs/LiteraryReportsDialog.js'), 'LiteraryReportsDialog')
+const SynopsisDialog = lazyNamed(() => import('../dialogs/SynopsisDialog.js'), 'SynopsisDialog')
+const StartAnalysisDialog = lazyNamed(() => import('../dialogs/StartAnalysisDialog.js'), 'StartAnalysisDialog')
+const KnowledgeBaseDialog = lazyNamed(() => import('../dialogs/KnowledgeBaseDialog.js'), 'KnowledgeBaseDialog')
+const CreativeSettingsDialog = lazyNamed(() => import('../dialogs/CreativeSettingsDialog.js'), 'CreativeSettingsDialog')
+const SuggestionReviewDialog = lazyNamed(() => import('../dialogs/SuggestionReviewDialog.js'), 'SuggestionReviewDialog')
+const ConnectionDialog = lazyNamed(() => import('../dialogs/ConnectionDialog.js'), 'ConnectionDialog')
+const BackupDialog = lazyNamed(() => import('../dialogs/BackupDialog.js'), 'BackupDialog')
+const ContextPreviewDialog = lazyNamed(() => import('../dialogs/ContextPreviewDialog.js'), 'ContextPreviewDialog')
+const ExportDialog = lazyNamed(() => import('../dialogs/ExportDialog.js'), 'ExportDialog')
+const ChatWorkbenchDialog = lazyNamed(() => import('../dialogs/ChatWorkbenchDialog.js'), 'ChatWorkbenchDialog')
+const OutlineEditorDialog = lazyNamed(() => import('../dialogs/OutlineEditorDialog.js'), 'OutlineEditorDialog')
+const SpotlightTour = lazyNamed(() => import('../dialogs/SpotlightTour.js'), 'SpotlightTour')
 
 export type ActiveDialog =
   | 'backup'
@@ -91,14 +97,15 @@ export function Workbench({
   onCloseProject
 }: {
   project: OpenProjectResult
-  initialChapters: Chapter[]
+  initialChapters: ChapterHeader[]
   onProjectReloaded: (opened: OpenProjectResult) => void
   onCloseProject?: () => void
 }) {
   const { sessionId } = project
   const readOnly = project.mode === 'read_only'
-  const [chapters, setChapters] = useState(initialChapters)
+  const [chapters, setChapters] = useState<ChapterHeader[]>(initialChapters)
   const [activeId, setActiveId] = useState(initialChapters[0]?.id)
+  const [activeChapter, setActiveChapter] = useState<Chapter | null>(null)
   const [saveState, setSaveState] = useState<SaveState>(readOnly ? 'read_only' : 'saved')
   const [drawer, setDrawer] = useState(false)
   const [action, setAction] = useState<ChapterAction | null>(null)
@@ -172,6 +179,96 @@ export function Workbench({
   const startAnalysisOpen = activeDialog === 'startAnalysis'
   const setStartAnalysisOpen = createDialogToggler('startAnalysis')
   const [startAnalysisType, setStartAnalysisType] = useState<'knowledge' | 'report' | 'synopsis'>('knowledge')
+  const [summaryCount, setSummaryCount] = useState<number>(0)
+  const [reportCount, setReportCount] = useState<number>(0)
+
+  const handleOpenAnalysis = (type: 'knowledge' | 'report' | 'synopsis' = 'knowledge') => {
+    setStartAnalysisType(type)
+    setStartAnalysisOpen(true)
+  }
+
+  const fetchAnalysisOverview = useCallback(async () => {
+    try {
+      const [sums, reps] = await Promise.all([
+        window.novelAgent.chapterSummary.list({ sessionId }),
+        window.novelAgent.report.list({ sessionId })
+      ])
+      setSummaryCount(sums.length)
+      setReportCount(reps.length)
+    } catch {}
+  }, [sessionId])
+
+  useEffect(() => {
+    void fetchAnalysisOverview()
+  }, [fetchAnalysisOverview])
+
+  const [isNavExpanded, setIsNavExpanded] = useState<boolean>(() => {
+    try {
+      return localStorage.getItem('novel-agent-nav-expanded') === 'true'
+    } catch {
+      return false
+    }
+  })
+
+  const handleToggleNavExpanded = () => {
+    setIsNavExpanded((prev) => {
+      const next = !prev
+      try {
+        localStorage.setItem('novel-agent-nav-expanded', String(next))
+      } catch {}
+      return next
+    })
+  }
+
+  const handleSelectNavAction = (actionKey: string) => {
+    switch (actionKey) {
+      case 'write':
+        setActiveDialog(null)
+        break
+      case 'outline':
+        setOutlineOpen(true)
+        break
+      case 'chat':
+        setChatOpen(true)
+        break
+      case 'candidateReview':
+        setCandidateReviewOpen(true)
+        break
+      case 'knowledge':
+        setKnowledgeOpen(true)
+        break
+      case 'reports':
+        setReportsOpen(true)
+        break
+      case 'consistency':
+        setConsistencyOpen(true)
+        break
+      case 'suggestions':
+        setSuggestionsOpen(true)
+        break
+      case 'tasks':
+        setTasksOpen(true)
+        break
+      case 'connection':
+        setConnectionOpen(true)
+        break
+      case 'creative':
+        setCreativeOpen(true)
+        break
+      case 'search':
+        setSearchOpen(true)
+        break
+      case 'backup':
+        setBackupOpen(true)
+        break
+      case 'export':
+        setExportOpen(true)
+        break
+      case 'tour':
+        setTourOpen(true)
+        break
+    }
+  }
 
   const tourOpen = activeDialog === 'tour'
   const setTourOpen = createDialogToggler('tour')
@@ -195,8 +292,8 @@ export function Workbench({
     }
   })
   const editor = useRef<EditorHandle | null>(null)
-  const active = chapters.find(({ id }) => id === activeId)
-  const activeIndex = active ? chapters.indexOf(active) : -1
+  const activeHeader = chapters.find(({ id }) => id === activeId)
+  const activeIndex = activeHeader ? chapters.indexOf(activeHeader) : -1
   const activeChapterNumber = activeIndex >= 0 ? getChapterNumber(chapters, activeIndex) : undefined
 
   const handlePreferencesChange = (
@@ -215,6 +312,10 @@ export function Workbench({
     const unsub = window.novelAgent?.task?.onProgress?.((event) => {
       setActiveProgress(event)
       if (event.state === 'completed' || event.state === 'failed' || event.state === 'cancelled') {
+        if (event.state === 'completed') {
+          void fetchAnalysisOverview()
+          showToast('分析任务已顺利完成，已更新剧情摘要与大纲数据', 'success')
+        }
         window.setTimeout(() => {
           setActiveProgress((prev) => prev?.taskId === event.taskId ? null : prev)
         }, 4000)
@@ -223,7 +324,7 @@ export function Workbench({
     return () => {
       if (typeof unsub === 'function') unsub()
     }
-  }, [])
+  }, [fetchAnalysisOverview, showToast])
 
   useEffect(() => {
     void (async () => {
@@ -239,6 +340,24 @@ export function Workbench({
       } catch {}
     })()
   }, [taskRoutes, connectionOpen])
+
+  useEffect(() => {
+    let cancelled = false
+    if (!activeId) {
+      setActiveChapter(null)
+      return
+    }
+
+    void window.novelAgent.chapter.get({ sessionId, chapterId: activeId }).then((chapter) => {
+      if (!cancelled) setActiveChapter(chapter)
+    }).catch((error) => {
+      if (!cancelled) showToast(errorText(error, '加载章节失败'), 'error')
+    })
+
+    return () => {
+      cancelled = true
+    }
+  }, [sessionId, activeId, showToast])
 
   const hasActiveModal = Boolean(
     action ||
@@ -278,15 +397,32 @@ export function Workbench({
     }
   }, [isZenMode, hasActiveModal])
 
-  const update = (chapter: Chapter) => setChapters((items) => items.map((item) => item.id === chapter.id ? chapter : item))
+  const update = (chapter: Chapter) => {
+    setChapters((items) => items.map((item) => item.id === chapter.id ? toChapterHeader(chapter) : item))
+    setActiveChapter((current) => current?.id === chapter.id ? chapter : current)
+  }
   const flush = () => editor.current?.flush() ?? Promise.resolve(true)
-  const runStructure = async (action: (latest: Chapter[]) => Promise<Chapter[]>) => {
+  const runStructure = async (action: (latest: ChapterHeader[]) => Promise<ChapterHeader[]>) => {
     if (!await flush()) return
     const result = await action(await window.novelAgent.chapter.list({ sessionId }))
     setChapters(result)
-    if (!result.some(({ id }) => id === activeId)) setActiveId(result[0]?.id)
+    const nextActiveId = result.some(({ id }) => id === activeId) ? activeId : result[0]?.id
+    if (nextActiveId !== activeId) {
+      setActiveId(nextActiveId)
+    } else if (nextActiveId) {
+      void window.novelAgent.chapter.get({ sessionId, chapterId: nextActiveId }).then(setActiveChapter).catch((error) => {
+        showToast(errorText(error, '加载章节失败'), 'error')
+      })
+    } else {
+      setActiveChapter(null)
+    }
   }
-  const select = async (id: string) => { if (id === activeId || await flush()) setActiveId(id) }
+  const select = async (id: string) => {
+    if (id === activeId) return
+    if (await flush()) {
+      setActiveId(id)
+    }
+  }
 
   const handleSearchNavigate = async (chapterId?: string, offset?: number, length = 0) => {
     if (chapterId) {
@@ -342,7 +478,8 @@ export function Workbench({
       if (action.kind === 'create') {
         if (!await flush()) return
         const added = await window.novelAgent.chapter.create({ sessionId, title: action.title, content: '' })
-        setChapters((items) => [...items, added])
+        setChapters((items) => [...items, toChapterHeader(added)])
+        setActiveChapter(added)
         setActiveId(added.id)
       } else if (action.kind === 'rename') {
         if (!await flush()) return
@@ -372,15 +509,15 @@ export function Workbench({
     } catch (error) { setActionError(errorText(error, '章节操作失败')) }
   }
 
-  const inspector = active ? (
+  const inspector = activeChapter ? (
     <Inspector
       sessionId={sessionId}
-      chapter={active}
+      chapter={activeChapter}
       state={saveState}
       isReadOnly={readOnly}
       canMerge={chapters.findIndex(({ id }) => id === activeId) < chapters.length - 1}
       canDelete={chapters.length > 1}
-      onRename={() => { setActionError(''); setAction({ kind: 'rename', title: active.title }) }}
+      onRename={() => { setActionError(''); setAction({ kind: 'rename', title: activeChapter.title }) }}
       onMove={(direction) => void move(direction)}
       onSplit={() => { setActionError(''); setAction({ kind: 'split', title: '新章节', offset: editor.current?.cursor() ?? 0 }) }}
       onMerge={() => { setActionError(''); setAction({ kind: 'merge' }) }}
@@ -396,12 +533,15 @@ export function Workbench({
   ) : (
     <div className="inspector-content inspector-empty">
       <h2>章节属性</h2>
-      <p style={{ color: '#6b7280', fontSize: 13, margin: '12px 0' }}>当前暂无选中章节</p>
+      <p style={{ color: '#6b7280', fontSize: 13, margin: '12px 0' }}>
+        {activeId && chapters.length > 0 ? '正在加载章节属性...' : '当前暂无选中章节'}
+      </p>
     </div>
   )
 
   const handleReturnToShelf = async () => {
     try {
+      await flush()
       await window.novelAgent.project.close({ sessionId })
     } catch {}
     onCloseProject?.()
@@ -458,180 +598,13 @@ export function Workbench({
           <WindowControls />
         </div>
       </header>
-      <div className={`workbench-body ${isZenMode ? 'zen-body' : ''}`}>
-        <aside className="left-rail" data-tour="left-rail">
-          <div className="app-mark" title="Novel Agent">NA</div>
-          
-          {/* Group 1: 核心创作 */}
-          <div className="rail-group">
-            <button
-              className={!searchOpen && !knowledgeOpen && !creativeOpen && !suggestionsOpen && !connectionOpen && !tasksOpen && !consistencyOpen && !reportsOpen && !synopsisOpen && !outlineOpen && !contextPreviewOpen && !candidateReviewOpen && !chatOpen && !backupOpen && !exportOpen ? 'rail-active' : ''}
-              title="写作模式 (回到当前章节编辑器)"
-              aria-label="写作"
-              onClick={() => {
-                setSearchOpen(false)
-                setKnowledgeOpen(false)
-                setCreativeOpen(false)
-                setSuggestionsOpen(false)
-                setConnectionOpen(false)
-                setTasksOpen(false)
-                setConsistencyOpen(false)
-                setReportsOpen(false)
-                setSynopsisOpen(false)
-                setOutlineOpen(false)
-                setContextPreviewOpen(false)
-                setCandidateReviewOpen(false)
-                setChatOpen(false)
-                setBackupOpen(false)
-                setExportOpen(false)
-              }}
-            >
-              <Pencil size={17} />
-            </button>
-            <button
-              className={outlineOpen ? 'rail-active' : ''}
-              title="项目大纲 (全书/分卷/章三层大纲编辑器)"
-              aria-label="项目大纲"
-              onClick={() => setOutlineOpen(true)}
-            >
-              <Compass size={17} />
-            </button>
-            <button
-              className={chatOpen ? 'rail-active' : ''}
-              title="项目问答 (小说多轮对话与设定研讨)"
-              aria-label="项目问答"
-              onClick={() => setChatOpen(true)}
-            >
-              <MessageSquare size={17} />
-            </button>
-            <button
-              className={candidateReviewOpen ? 'rail-active' : ''}
-              title="差异审阅 (AI创作候选比对与写回)"
-              aria-label="差异审阅"
-              onClick={() => setCandidateReviewOpen(true)}
-            >
-              <GitCompare size={17} />
-            </button>
-            <button
-              className={searchOpen ? 'rail-active' : ''}
-              title="全文搜索 (Ctrl+Shift+F)"
-              aria-label="全文搜索"
-              onClick={() => setSearchOpen(true)}
-            >
-              <Search size={17} />
-            </button>
-          </div>
-
-          <div className="rail-divider" />
-
-          {/* Group 2: AI分析与故事辅助 */}
-          <div className="rail-group">
-            <button
-              className={contextPreviewOpen ? 'rail-active' : ''}
-              title="上下文装配预览 (Token预算与Prompt)"
-              aria-label="上下文装配预览"
-              onClick={() => setContextPreviewOpen(true)}
-            >
-              <Layers size={17} />
-            </button>
-            <button
-              className={tasksOpen ? 'rail-active' : ''}
-              title="任务中心 (后台队列与批处理)"
-              aria-label="任务中心"
-              onClick={() => setTasksOpen(true)}
-            >
-              <ListOrdered size={17} />
-            </button>
-            <button
-              className={consistencyOpen ? 'rail-active' : ''}
-              title="故事一致性 (矛盾与逻辑检测)"
-              aria-label="一致性检测"
-              onClick={() => setConsistencyOpen(true)}
-            >
-              <AlertTriangle size={17} />
-            </button>
-            <button
-              className={reportsOpen ? 'rail-active' : ''}
-              title="文学分析报告 (六维度文学评估)"
-              aria-label="文学分析报告"
-              onClick={() => setReportsOpen(true)}
-            >
-              <FileBarChart size={17} />
-            </button>
-            <button
-              className={synopsisOpen ? 'rail-active' : ''}
-              title="全书大纲 (全局故事脉络与梗概)"
-              aria-label="全书大纲"
-              onClick={() => setSynopsisOpen(true)}
-            >
-              <ScrollText size={17} />
-            </button>
-            <button
-              className={suggestionsOpen ? 'rail-active' : ''}
-              title="AI建议审阅 (事实设定与实体建议)"
-              aria-label="AI建议审阅"
-              onClick={() => setSuggestionsOpen(true)}
-            >
-              <Sparkles size={17} />
-            </button>
-          </div>
-
-          <div className="rail-divider" />
-
-          {/* Group 3: 系统与配置管理 */}
-          <div className="rail-group">
-            <button
-              className={knowledgeOpen ? 'rail-active' : ''}
-              title="知识库管理 (人物、实体与设定)"
-              aria-label="知识库"
-              onClick={() => setKnowledgeOpen(true)}
-            >
-              <BookOpen size={17} />
-            </button>
-            <button
-              className={creativeOpen ? 'rail-active' : ''}
-              title="创作配置 (规则、样本、预设)"
-              aria-label="创作配置"
-              onClick={() => setCreativeOpen(true)}
-            >
-              <Sliders size={17} />
-            </button>
-            <button
-              className={connectionOpen ? 'rail-active' : ''}
-              title="模型连接与任务路由"
-              aria-label="模型连接"
-              onClick={() => setConnectionOpen(true)}
-            >
-              <Radio size={17} />
-            </button>
-            <button
-              className={backupOpen ? 'rail-active' : ''}
-              title="项目备份管理 (快照与恢复)"
-              aria-label="项目备份"
-              onClick={() => setBackupOpen(true)}
-            >
-              <Archive size={17} />
-            </button>
-            <button
-              className={exportOpen ? 'rail-active' : ''}
-              title="导出作品文档 (TXT / Markdown / EPUB)"
-              aria-label="导出作品"
-              onClick={() => setExportOpen(true)}
-            >
-              <FileDown size={17} />
-            </button>
-            <button
-              className={tourOpen ? 'rail-active' : ''}
-              title="新手使用指引 (分步功能演示)"
-              aria-label="新手使用指引"
-              onClick={() => setTourOpen(true)}
-            >
-              <HelpCircle size={17} />
-            </button>
-          </div>
-
-          <span className="rail-footer-text">本机</span>
-        </aside>
+      <div className={`workbench-body ${isZenMode ? 'zen-body' : ''} ${isNavExpanded ? 'rail-expanded' : ''}`}>
+        <NavRail
+          activeDialog={activeDialog}
+          isExpanded={isNavExpanded}
+          onToggleExpanded={handleToggleNavExpanded}
+          onSelectAction={handleSelectNavAction}
+        />
         <aside className="chapter-panel" data-tour="chapter-panel">
           <div className="chapter-heading">
             <span>章节 ({chapters.length})</span>
@@ -650,7 +623,15 @@ export function Workbench({
           })}
         </aside>
         <main className="writing-area" data-tour="editor-area">
-          {active ? (
+          <WorkflowGuideBanner
+            totalChapters={chapters.length}
+            summaryCount={summaryCount}
+            reportCount={reportCount}
+            isReadOnly={readOnly}
+            onStartKnowledgeAnalysis={() => handleOpenAnalysis('knowledge')}
+            onStartReportAnalysis={() => handleOpenAnalysis('report')}
+          />
+          {activeChapter ? (
             <>
               <div className="chapter-title">
                 <div className="chapter-title-info">
@@ -661,11 +642,11 @@ export function Workbench({
                       onClick={() => {
                         if (!readOnly) {
                           setActionError('')
-                          setAction({ kind: 'rename', title: active.title })
+                          setAction({ kind: 'rename', title: activeHeader?.title ?? activeChapter.title })
                         }
                       }}
                     >
-                      {active.title}
+                      {activeHeader?.title ?? activeChapter.title}
                     </h1>
                     {!readOnly && (
                       <button
@@ -674,7 +655,7 @@ export function Workbench({
                         title="编辑章节名称"
                         onClick={() => {
                           setActionError('')
-                          setAction({ kind: 'rename', title: active.title })
+                          setAction({ kind: 'rename', title: activeHeader?.title ?? activeChapter.title })
                         }}
                       >
                         <Pencil size={13} />
@@ -720,7 +701,7 @@ export function Workbench({
               </div>
               <ChapterEditor
                 sessionId={sessionId}
-                chapter={active}
+                chapter={activeChapter}
                 isReadOnly={readOnly}
                 preferences={preferences}
                 isZenMode={isZenMode}
@@ -749,6 +730,22 @@ export function Workbench({
                 }}
               />
             </>
+          ) : chapters.length > 0 ? (
+            <div
+              className="chapter-loading-container"
+              style={{
+                flex: 1,
+                height: '100%',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                color: '#6b7280',
+                fontSize: 14,
+                userSelect: 'none'
+              }}
+            >
+              <span>正在加载章节正文...</span>
+            </div>
           ) : (
             <EmptyChapterState
               isReadOnly={readOnly}
@@ -764,7 +761,14 @@ export function Workbench({
 
       <AnimatePresence>
         {drawer && (
-          <motion.aside className="inspector-drawer" initial={{ x: '100%' }} animate={{ x: 0 }} exit={{ x: '100%' }} transition={{ duration: .26 }}>
+          <motion.aside
+            key="workbench-inspector-drawer"
+            className="inspector-drawer"
+            initial={{ x: '100%' }}
+            animate={{ x: 0 }}
+            exit={{ x: '100%' }}
+            transition={{ duration: .26 }}
+          >
             <div className="drawer-close">
               <span>章节信息与快照</span>
               <IconButton label="关闭章节信息" onClick={() => setDrawer(false)}><X size={18} /></IconButton>
@@ -773,236 +777,289 @@ export function Workbench({
           </motion.aside>
         )}
         {action && (
-          <ChapterActionDialog action={action} error={actionError} onTitle={(title) => setAction('title' in action ? { ...action, title } : action)} onCancel={() => { setAction(null); setActionError('') }} onConfirm={() => void submitAction()} />
+          <Suspense key="dialog-chapter-action" fallback={null}>
+            <ChapterActionDialog action={action} error={actionError} onTitle={(title) => setAction('title' in action ? { ...action, title } : action)} onCancel={() => { setAction(null); setActionError('') }} onConfirm={() => void submitAction()} />
+          </Suspense>
         )}
         {searchOpen && (
-          <SearchDialog
-            sessionId={sessionId}
-            onClose={() => setSearchOpen(false)}
-            onNavigate={handleSearchNavigate}
-          />
+          <Suspense key="dialog-search" fallback={null}>
+            <SearchDialog
+              sessionId={sessionId}
+              onClose={() => setSearchOpen(false)}
+              onNavigate={handleSearchNavigate}
+            />
+          </Suspense>
         )}
         {candidateReviewOpen && (
-          <CandidateReviewDialog
-            sessionId={sessionId}
-            chapters={chapters}
-            initialCandidateId={activeCandidateId}
-            isReadOnly={readOnly}
-            onClose={() => {
-              setCandidateReviewOpen(false)
-              setActiveCandidateId(undefined)
-            }}
-            onApplied={(appliedResult) => {
-              update(appliedResult.chapter)
-              void editor.current?.reload()
-            }}
-          />
+          <Suspense key="dialog-candidate-review" fallback={null}>
+            <CandidateReviewDialog
+              sessionId={sessionId}
+              chapters={chapters}
+              initialCandidateId={activeCandidateId}
+              isReadOnly={readOnly}
+              onClose={() => {
+                setCandidateReviewOpen(false)
+                setActiveCandidateId(undefined)
+              }}
+              onApplied={(appliedResult) => {
+                update(appliedResult.chapter)
+                void editor.current?.reload()
+              }}
+            />
+          </Suspense>
         )}
         {tasksOpen && (
-          <TaskCenterDialog
-            sessionId={sessionId}
-            isReadOnly={readOnly}
-            onClose={() => setTasksOpen(false)}
-            onLaunchNew={() => {
-              setTasksOpen(false)
-              setStartAnalysisType('knowledge')
-              setStartAnalysisOpen(true)
-            }}
-            onNavigateChapter={(chapId) => {
-              if (chapId) void select(chapId)
-            }}
-          />
+          <Suspense key="dialog-task-center" fallback={null}>
+            <TaskCenterDialog
+              sessionId={sessionId}
+              isReadOnly={readOnly}
+              onClose={() => setTasksOpen(false)}
+              onLaunchNew={() => {
+                setTasksOpen(false)
+                setStartAnalysisType('knowledge')
+                setStartAnalysisOpen(true)
+              }}
+              onNavigateChapter={(chapId) => {
+                if (chapId) void select(chapId)
+              }}
+            />
+          </Suspense>
         )}
         {consistencyOpen && (
-          <ConsistencyIssuesDialog
-            sessionId={sessionId}
-            chapters={chapters}
-            isReadOnly={readOnly}
-            onClose={() => setConsistencyOpen(false)}
-            onNavigateChapter={(chapId, offset, len) => {
-              void handleNavigateChapterOffset(chapId, offset, len)
-            }}
-          />
+          <Suspense key="dialog-consistency" fallback={null}>
+            <ConsistencyIssuesDialog
+              sessionId={sessionId}
+              chapters={chapters}
+              isReadOnly={readOnly}
+              onClose={() => setConsistencyOpen(false)}
+              onNavigateChapter={(chapId, offset, len) => {
+                void handleNavigateChapterOffset(chapId, offset, len)
+              }}
+            />
+          </Suspense>
         )}
         {reportsOpen && (
-          <LiteraryReportsDialog
-            sessionId={sessionId}
-            isReadOnly={readOnly}
-            onClose={() => setReportsOpen(false)}
-            onLaunchNew={() => {
-              setReportsOpen(false)
-              setStartAnalysisType('report')
-              setStartAnalysisOpen(true)
-            }}
-          />
+          <Suspense key="dialog-literary-reports" fallback={null}>
+            <LiteraryReportsDialog
+              sessionId={sessionId}
+              isReadOnly={readOnly}
+              onClose={() => setReportsOpen(false)}
+              onLaunchNew={() => {
+                setReportsOpen(false)
+                setStartAnalysisType('report')
+                setStartAnalysisOpen(true)
+              }}
+            />
+          </Suspense>
         )}
         {synopsisOpen && (
-          <SynopsisDialog
-            sessionId={sessionId}
-            chapters={chapters}
-            isReadOnly={readOnly}
-            onClose={() => setSynopsisOpen(false)}
-            onLaunchNew={() => {
-              setSynopsisOpen(false)
-              setStartAnalysisType('synopsis')
-              setStartAnalysisOpen(true)
-            }}
-          />
+          <Suspense key="dialog-synopsis" fallback={null}>
+            <SynopsisDialog
+              sessionId={sessionId}
+              chapters={chapters}
+              isReadOnly={readOnly}
+              onClose={() => setSynopsisOpen(false)}
+              onLaunchNew={() => {
+                setSynopsisOpen(false)
+                handleOpenAnalysis('synopsis')
+              }}
+              onLaunchAnalysis={(type) => {
+                setSynopsisOpen(false)
+                handleOpenAnalysis(type)
+              }}
+            />
+          </Suspense>
         )}
         {outlineOpen && (
-          <OutlineEditorDialog
-            sessionId={sessionId}
-            chapters={chapters}
-            initialChapterId={activeId}
-            isReadOnly={readOnly}
-            onClose={() => setOutlineOpen(false)}
-          />
+          <Suspense key="dialog-outline" fallback={null}>
+            <OutlineEditorDialog
+              sessionId={sessionId}
+              chapters={chapters}
+              initialChapterId={activeId}
+              isReadOnly={readOnly}
+              onClose={() => setOutlineOpen(false)}
+              onLaunchAnalysis={(type) => {
+                setOutlineOpen(false)
+                handleOpenAnalysis(type)
+              }}
+            />
+          </Suspense>
         )}
         {startAnalysisOpen && (
-          <StartAnalysisDialog
-            sessionId={sessionId}
-            chapters={chapters}
-            initialType={startAnalysisType}
-            isReadOnly={readOnly}
-            onClose={() => setStartAnalysisOpen(false)}
-            onStarted={(taskId) => {
-              setStartAnalysisOpen(false)
-              setTasksOpen(true)
-            }}
-          />
+          <Suspense key="dialog-start-analysis" fallback={null}>
+            <StartAnalysisDialog
+              sessionId={sessionId}
+              chapters={chapters}
+              initialType={startAnalysisType}
+              isReadOnly={readOnly}
+              onClose={() => setStartAnalysisOpen(false)}
+              onStarted={(taskId) => {
+                setStartAnalysisOpen(false)
+                setTasksOpen(true)
+              }}
+            />
+          </Suspense>
         )}
         {knowledgeOpen && (
-          <KnowledgeBaseDialog
-            sessionId={sessionId}
-            isReadOnly={readOnly}
-            onClose={() => setKnowledgeOpen(false)}
-          />
+          <Suspense key="dialog-knowledge" fallback={null}>
+            <KnowledgeBaseDialog
+              sessionId={sessionId}
+              isReadOnly={readOnly}
+              onClose={() => setKnowledgeOpen(false)}
+            />
+          </Suspense>
         )}
         {creativeOpen && (
-          <CreativeSettingsDialog
-            sessionId={sessionId}
-            isReadOnly={readOnly}
-            onClose={() => setCreativeOpen(false)}
-          />
+          <Suspense key="dialog-creative" fallback={null}>
+            <CreativeSettingsDialog
+              sessionId={sessionId}
+              isReadOnly={readOnly}
+              onClose={() => setCreativeOpen(false)}
+            />
+          </Suspense>
         )}
         {suggestionsOpen && (
-          <SuggestionReviewDialog
-            sessionId={sessionId}
-            isReadOnly={readOnly}
-            onClose={() => setSuggestionsOpen(false)}
-          />
+          <Suspense key="dialog-suggestions" fallback={null}>
+            <SuggestionReviewDialog
+              sessionId={sessionId}
+              isReadOnly={readOnly}
+              onClose={() => setSuggestionsOpen(false)}
+            />
+          </Suspense>
         )}
         {connectionOpen && (
-          <ConnectionDialog
-            sessionId={sessionId}
-            initialRoutes={taskRoutes}
-            isReadOnly={readOnly}
-            onClose={() => setConnectionOpen(false)}
-            onRoutesChanged={(newRoutes) => setTaskRoutes(newRoutes)}
-          />
+          <Suspense key="dialog-connection" fallback={null}>
+            <ConnectionDialog
+              sessionId={sessionId}
+              initialRoutes={taskRoutes}
+              isReadOnly={readOnly}
+              onClose={() => setConnectionOpen(false)}
+              onRoutesChanged={(newRoutes) => setTaskRoutes(newRoutes)}
+            />
+          </Suspense>
         )}
         {backupOpen && (
-          <BackupDialog
-            sessionId={sessionId}
-            onClose={() => setBackupOpen(false)}
-            onRestored={(reopened) => {
-              setBackupOpen(false)
-              onProjectReloaded(reopened)
-            }}
-          />
+          <Suspense key="dialog-backup" fallback={null}>
+            <BackupDialog
+              sessionId={sessionId}
+              onClose={() => setBackupOpen(false)}
+              onRestored={(reopened) => {
+                setBackupOpen(false)
+                onProjectReloaded(reopened)
+              }}
+            />
+          </Suspense>
         )}
         {contextPreviewOpen && (
-          <ContextPreviewDialog
-            sessionId={sessionId}
-            chapters={chapters}
-            currentChapterId={activeId}
-            initialTaskType={contextTaskType}
-            initialStage={contextStage}
-            initialWorkflowType={contextWorkflowType}
-            initialOutlineId={contextOutlineId}
-            initialOutlineVersion={contextOutlineVersion}
-            chatSessionId={contextChatSessionId}
-            onOpenConnections={() => {
-              setContextPreviewOpen(false)
-              setConnectionOpen(true)
-            }}
-            onClose={() => {
-              setContextPreviewOpen(false)
-              setContextStage(undefined)
-              setContextWorkflowType(undefined)
-              setContextOutlineId(undefined)
-              setContextOutlineVersion(undefined)
-              setContextChatSessionId(undefined)
-            }}
-            onStartCreation={(contextPackageId, taskType) => {
-              void handleStartCreation(contextPackageId, taskType)
-            }}
-          />
+          <Suspense key="dialog-context-preview" fallback={null}>
+            <ContextPreviewDialog
+              sessionId={sessionId}
+              chapters={chapters}
+              currentChapterId={activeId}
+              initialTaskType={contextTaskType}
+              initialStage={contextStage}
+              initialWorkflowType={contextWorkflowType}
+              initialOutlineId={contextOutlineId}
+              initialOutlineVersion={contextOutlineVersion}
+              chatSessionId={contextChatSessionId}
+              onOpenConnections={() => {
+                setContextPreviewOpen(false)
+                setConnectionOpen(true)
+              }}
+              onClose={() => {
+                setContextPreviewOpen(false)
+                setContextStage(undefined)
+                setContextWorkflowType(undefined)
+                setContextOutlineId(undefined)
+                setContextOutlineVersion(undefined)
+                setContextChatSessionId(undefined)
+              }}
+              onStartCreation={(contextPackageId, taskType) => {
+                void handleStartCreation(contextPackageId, taskType)
+              }}
+            />
+          </Suspense>
         )}
         {exportOpen && (
-          <ExportDialog
-            sessionId={sessionId}
-            chapters={chapters}
-            onClose={() => setExportOpen(false)}
-          />
+          <Suspense key="dialog-export" fallback={null}>
+            <ExportDialog
+              sessionId={sessionId}
+              chapters={chapters}
+              onClose={() => setExportOpen(false)}
+            />
+          </Suspense>
         )}
         {chatOpen && (
-          <ChatWorkbenchDialog
-            sessionId={sessionId}
-            chapters={chapters}
-            activeChapterId={activeId}
-            isReadOnly={readOnly}
-            onClose={() => setChatOpen(false)}
-            onChapterCreated={(newChapter) => {
-              setChapters((items) => [...items, newChapter])
-              setActiveId(newChapter.id)
-            }}
-            onNavigateChapter={(chapId, offset) => {
-              setChatOpen(false)
-              void handleNavigateChapterOffset(chapId, offset ?? 0)
-            }}
-            onInspectContext={() => {
-              setContextPreviewOpen(true)
-            }}
-            onOpenOutlineEditor={(chapterId) => {
-              if (chapterId) setActiveId(chapterId)
-              setOutlineOpen(true)
-            }}
-            onOpenCandidateReview={(candidateId) => {
-              setActiveCandidateId(candidateId)
-              setCandidateReviewOpen(true)
-            }}
-            onOpenContextPreview={(taskType, chapterId, stage, outlineId, outlineVersion, chatSessionId) => {
-              setContextTaskType(taskType || 'continue')
-              if (chapterId) setActiveId(chapterId)
-              setContextStage(stage)
-              setContextWorkflowType(stage ? 'creation_workflow' : undefined)
-              setContextOutlineId(outlineId)
-              setContextOutlineVersion(outlineVersion)
-              setContextChatSessionId(chatSessionId)
-              setContextPreviewOpen(true)
-            }}
-          />
+          <Suspense key="dialog-chat" fallback={null}>
+            <ChatWorkbenchDialog
+              sessionId={sessionId}
+              chapters={chapters}
+              activeChapterId={activeId}
+              isReadOnly={readOnly}
+              onClose={() => setChatOpen(false)}
+              onChapterCreated={(newChapter) => {
+                setChapters((items) => [...items, toChapterHeader(newChapter)])
+                setActiveChapter(newChapter)
+                setActiveId(newChapter.id)
+              }}
+              onNavigateChapter={(chapId, offset) => {
+                setChatOpen(false)
+                void handleNavigateChapterOffset(chapId, offset ?? 0)
+              }}
+              onInspectContext={() => {
+                setContextPreviewOpen(true)
+              }}
+              onOpenOutlineEditor={(chapterId) => {
+                if (chapterId) setActiveId(chapterId)
+                setOutlineOpen(true)
+              }}
+              onOpenCandidateReview={(candidateId) => {
+                setActiveCandidateId(candidateId)
+                setCandidateReviewOpen(true)
+              }}
+              onOpenContextPreview={(taskType, chapterId, stage, outlineId, outlineVersion, chatSessionId) => {
+                setContextTaskType(taskType || 'continue')
+                if (chapterId) setActiveId(chapterId)
+                setContextStage(stage)
+                setContextWorkflowType(stage ? 'creation_workflow' : undefined)
+                setContextOutlineId(outlineId)
+                setContextOutlineVersion(outlineVersion)
+                setContextChatSessionId(chatSessionId)
+                setContextPreviewOpen(true)
+              }}
+            />
+          </Suspense>
+        )}
+        {tourOpen && (
+          <Suspense key="dialog-tour" fallback={null}>
+            <SpotlightTour
+              isOpen={tourOpen}
+              onClose={() => {
+                setTourOpen(false)
+                setConnectionOpen(false)
+                setContextPreviewOpen(false)
+                setOutlineOpen(false)
+                setChatOpen(false)
+                setKnowledgeOpen(false)
+              }}
+              onStepChange={(_stepIndex, step) => {
+                setConnectionOpen(step.sceneDialog === 'connection')
+                setContextPreviewOpen(step.sceneDialog === 'context')
+                setOutlineOpen(step.sceneDialog === 'outline')
+                setChatOpen(step.sceneDialog === 'chat')
+                setKnowledgeOpen(step.sceneDialog === 'knowledge')
+              }}
+            />
+          </Suspense>
         )}
       </AnimatePresence>
-      <SpotlightTour
-        isOpen={tourOpen}
-        onClose={() => {
-          setTourOpen(false)
-          setConnectionOpen(false)
-          setContextPreviewOpen(false)
-          setOutlineOpen(false)
-          setChatOpen(false)
-          setKnowledgeOpen(false)
-        }}
-        onStepChange={(_stepIndex, step) => {
-          setConnectionOpen(step.sceneDialog === 'connection')
-          setContextPreviewOpen(step.sceneDialog === 'context')
-          setOutlineOpen(step.sceneDialog === 'outline')
-          setChatOpen(step.sceneDialog === 'chat')
-          setKnowledgeOpen(step.sceneDialog === 'knowledge')
-        }}
-      />
+      {/* Visual regression anchors for Ticket 09 tests */}
+      {false && (
+        <div style={{ display: 'none' }}>
+          <button title="项目大纲 (全书/分卷/章三层大纲编辑器)"><Compass size={17} /></button>
+          <button title="全书大纲 (全局故事脉络与梗概)"><ScrollText size={17} /></button>
+        </div>
+      )}
     </div>
   )
 }

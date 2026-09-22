@@ -1,18 +1,20 @@
-import { useEffect, useState } from 'react'
+import { Suspense, useEffect, useState } from 'react'
 import { AnimatePresence, MotionConfig } from 'motion/react'
-import type { Chapter, ImportPreviewResult, OpenProjectResult, RecentProject } from '../shared/project'
+import type { ChapterHeader, ImportPreviewResult, OpenProjectResult, RecentProject } from '../shared/project'
 import { errorText } from './utils/formatters'
-import { Workbench } from './components/workbench/Workbench'
 import { ImportPreview } from './components/dialogs/ImportPreview'
 import { ProjectShelf } from './components/shelf/ProjectShelf'
 import { WindowControls } from './components/common/WindowControls'
 import { ToastProvider } from './components/common/Toast'
+import { lazyNamed } from './utils/lazyNamed'
+
+const Workbench = lazyNamed(() => import('./components/workbench/Workbench.js'), 'Workbench')
 
 export default function App() {
   const [recentProjects, setRecentProjects] = useState<RecentProject[]>([])
   const [preview, setPreview] = useState<NonNullable<ImportPreviewResult> | null>(null)
   const [project, setProject] = useState<OpenProjectResult | null>(null)
-  const [chapters, setChapters] = useState<Chapter[]>([])
+  const [chapters, setChapters] = useState<ChapterHeader[]>([])
   const [error, setError] = useState('')
 
   const fetchRecent = async () => {
@@ -81,12 +83,14 @@ export default function App() {
     <MotionConfig reducedMotion="user">
       <ToastProvider>
         {project ? (
-          <Workbench
-            project={project}
-            initialChapters={chapters}
-            onProjectReloaded={(reopened) => void loadProject(reopened)}
-            onCloseProject={handleCloseProject}
-          />
+          <Suspense fallback={<div className="workbench" aria-busy="true" />}>
+            <Workbench
+              project={project}
+              initialChapters={chapters}
+              onProjectReloaded={(reopened) => void loadProject(reopened)}
+              onCloseProject={handleCloseProject}
+            />
+          </Suspense>
         ) : (
           <div className="app-shell">
             <header className="topbar">
@@ -119,4 +123,3 @@ export default function App() {
     </MotionConfig>
   )
 }
-
