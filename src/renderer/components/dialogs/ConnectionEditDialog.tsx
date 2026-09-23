@@ -1,11 +1,15 @@
-import React, { useState, useEffect } from 'react'
-import { motion } from 'motion/react'
-import { Activity, Check, RefreshCw, X } from 'lucide-react'
+import { useState, useEffect } from 'react'
+import { Activity, Check, RefreshCw } from 'lucide-react'
 import { ModelConnectionKind, ModelConnectionSummary, RemoteModelSummary } from '../../../shared/project'
-import { IconButton } from '../common/IconButton'
 import { errorText } from '../../utils/formatters'
 import { getEndpointHost, computeSha256Fingerprint } from '../../utils/crypto'
-import { useDialogDismiss } from '../../hooks/useDialogDismiss'
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from '@appica/ui-react/dialog'
+import { Button } from '@appica/ui-react/button'
+import { Card } from '@appica/ui-react/card'
+import { ScrollArea } from '@appica/ui-react/scroll-area'
+import { Input } from '@appica/ui-react/input'
+import { Checkbox } from '@appica/ui-react/checkbox'
+import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from '@appica/ui-react/select'
 
 export function ConnectionEditDialog({
   connection,
@@ -18,7 +22,6 @@ export function ConnectionEditDialog({
   onClose: () => void
   onSaved: () => void
 }) {
-  const { dialogRef, backdropProps } = useDialogDismiss({ onClose })
   const isEditing = Boolean(connection)
   const [name, setName] = useState(connection?.name || '')
   const [kind, setKind] = useState<ModelConnectionKind>(connection?.kind || initialKind)
@@ -155,181 +158,277 @@ export function ConnectionEditDialog({
   }
 
   return (
-    <motion.div className="action-dialog-layer" {...backdropProps} initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
-      <motion.div ref={dialogRef} className="conn-form-dialog" role="dialog" aria-modal="true" initial={{ opacity: 0, y: 8, scale: .98 }} animate={{ opacity: 1, y: 0, scale: 1 }} exit={{ opacity: 0, y: 4 }}>
-        <header className="dialog-header">
-          <div>
-            <h2>{isEditing ? '编辑模型连接' : '新建模型连接'}</h2>
-            <p>配置 OpenAI Chat Completions 或 Embeddings 兼容服务端点</p>
-          </div>
-          <IconButton label="关闭" onClick={onClose}><X size={18} /></IconButton>
-        </header>
-        <div className="conn-form-body">
-          <div className="form-row">
-            <div className="form-field" style={{ flex: 2 }}>
-              <label>连接名称</label>
-              <input autoFocus value={name} onChange={(e) => setName(e.target.value)} placeholder="例如：硅基流动 Qwen-2.5-72B" />
-            </div>
-            <div className="form-field" style={{ flex: 1 }}>
-              <label>连接类型</label>
-              <select value={kind} disabled={isEditing} onChange={(e) => setKind(e.target.value as ModelConnectionKind)}>
-                <option value="generation">生成模型 (LLM)</option>
-                <option value="embedding">向量模型 (Embedding)</option>
-              </select>
-            </div>
-          </div>
+    <Dialog open onOpenChange={(open) => { if (!open) onClose() }}>
+      <DialogContent className="flex flex-col max-h-[90vh] sm:max-w-4xl" closeLabel="关闭">
+        <DialogHeader>
+          <DialogTitle>{isEditing ? '编辑模型连接' : '新建模型连接'}</DialogTitle>
+          <DialogDescription>
+            配置 OpenAI Chat Completions 或 Embeddings 兼容服务端点
+          </DialogDescription>
+        </DialogHeader>
 
-          <div className="form-field">
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-              <label>Base URL</label>
-              <label className="checkbox-field" style={{ margin: 0, fontSize: 12 }}>
-                <input type="checkbox" checked={isLocalService} onChange={(e) => setIsLocalService(e.target.checked)} />
-                <span>允许本地 HTTP (localhost / 127.0.0.1)</span>
-              </label>
-            </div>
-            <input value={baseUrl} onChange={(e) => setBaseUrl(e.target.value)} placeholder="例如：https://api.siliconflow.cn/v1" />
-            <span className="field-help">结尾若含 /v1 将自动追加 /chat/completions 或 /embeddings</span>
-          </div>
-
-          <div className="form-row">
-            <div className="form-field" style={{ flex: 1 }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                <label>模型 ID (Model ID)</label>
-                <button
-                  type="button"
-                  style={{
-                    display: 'inline-flex',
-                    alignItems: 'center',
-                    gap: 4,
-                    fontSize: 12,
-                    color: '#2d5a27',
-                    background: 'none',
-                    border: 'none',
-                    cursor: fetchingModels || !baseUrl.trim() ? 'not-allowed' : 'pointer',
-                    opacity: fetchingModels || !baseUrl.trim() ? 0.6 : 1,
-                    padding: 0
-                  }}
-                  disabled={fetchingModels || !baseUrl.trim()}
-                  onClick={() => void handleFetchModels()}
-                  title="向服务商查询当前 API Key / 端点支持的模型列表"
-                >
-                  <RefreshCw size={12} className={fetchingModels ? 'spin-icon' : ''} />
-                  <span>{fetchingModels ? '获取中...' : '获取模型列表'}</span>
-                </button>
+        <ScrollArea className="h-[480px] pr-2">
+          <div className="flex flex-col gap-4 p-1">
+            <div className="grid grid-cols-3 gap-3">
+              <div className="col-span-2 flex flex-col gap-1 text-xs">
+                <label className="font-semibold text-[#7d6b59]">连接名称</label>
+                <Input
+                  autoFocus
+                  className="rounded-lg border border-[#dacdbe] bg-white px-3 py-2 text-sm text-[#2c2523] outline-none"
+                  value={name}
+                  onChange={(e) => setName(e.target.value)}
+                  placeholder="例如：硅基流动 Qwen-2.5-72B"
+                />
               </div>
-              <input
-                list="remote-models-datalist"
-                value={model}
-                onChange={(e) => setModel(e.target.value)}
-                placeholder="例如：Qwen/Qwen2.5-72B-Instruct"
-              />
-              <datalist id="remote-models-datalist">
-                {fetchedModels.map((m) => (
-                  <option key={m.id} value={m.id}>
-                    {m.name || m.id} {m.ownedBy ? `(${m.ownedBy})` : ''}
-                  </option>
-                ))}
-              </datalist>
-              {fetchedModels.length > 0 && (
-                <select
-                  value={fetchedModels.some((m) => m.id === model) ? model : ''}
-                  onChange={(e) => {
-                    if (e.target.value) setModel(e.target.value)
-                  }}
-                  style={{ marginTop: 4, fontSize: 12 }}
+              <div className="flex flex-col gap-1 text-xs">
+                <label className="font-semibold text-[#7d6b59]">连接类型</label>
+                <Select
+                  value={kind}
+                  disabled={isEditing}
+                  onValueChange={(val) => setKind(val as ModelConnectionKind)}
                 >
-                  <option value="" disabled>-- 快速从已获取列表中选择 ({fetchedModels.length} 个) --</option>
+                  <SelectTrigger className="rounded-lg border border-[#dacdbe] bg-white px-3 py-2 text-sm text-[#2c2523] outline-none disabled:bg-[#f5efe6]">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="generation">生成模型 (LLM)</SelectItem>
+                    <SelectItem value="embedding">向量模型 (Embedding)</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
+
+            <div className="flex flex-col gap-1 text-xs">
+              <div className="flex items-center justify-between">
+                <label className="font-semibold text-[#7d6b59]">Base URL</label>
+                <label className="flex items-center gap-1.5 cursor-pointer text-[#7d6b59]">
+                  <Checkbox
+                    checked={isLocalService}
+                    onCheckedChange={(checked) => setIsLocalService(Boolean(checked))}
+                  />
+                  <span>允许本地 HTTP (localhost / 127.0.0.1)</span>
+                </label>
+              </div>
+              <Input
+                className="rounded-lg border border-[#dacdbe] bg-white px-3 py-2 text-sm text-[#2c2523] outline-none"
+                value={baseUrl}
+                onChange={(e) => setBaseUrl(e.target.value)}
+                placeholder="例如：https://api.siliconflow.cn/v1"
+              />
+              <span className="text-[11px] text-[#9c8874]">
+                结尾若含 /v1 将自动追加 /chat/completions 或 /embeddings
+              </span>
+            </div>
+
+            <div className="grid grid-cols-2 gap-3">
+              <div className="flex flex-col gap-1 text-xs">
+                <div className="flex items-center justify-between">
+                  <label className="font-semibold text-[#7d6b59]">模型 ID (Model ID)</label>
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="ghost"
+                    className="h-6 text-xs text-[#2d6a4f]"
+                    disabled={fetchingModels || !baseUrl.trim()}
+                    onClick={() => void handleFetchModels()}
+                  >
+                    <RefreshCw size={12} className={fetchingModels ? 'animate-spin' : ''} />
+                    <span>{fetchingModels ? '获取中...' : '获取模型列表'}</span>
+                  </Button>
+                </div>
+                <Input
+                  list="remote-models-datalist"
+                  className="rounded-lg border border-[#dacdbe] bg-white px-3 py-2 text-sm text-[#2c2523] outline-none"
+                  value={model}
+                  onChange={(e) => setModel(e.target.value)}
+                  placeholder="例如：Qwen/Qwen2.5-72B-Instruct"
+                />
+                <datalist id="remote-models-datalist">
                   {fetchedModels.map((m) => (
                     <option key={m.id} value={m.id}>
-                      {m.id} {m.ownedBy ? `(${m.ownedBy})` : ''}
+                      {m.name || m.id} {m.ownedBy ? `(${m.ownedBy})` : ''}
                     </option>
                   ))}
-                </select>
-              )}
-              {modelFetchNotice && (
-                <span
-                  className="field-help"
-                  style={{
-                    color: modelFetchNotice.isError ? '#8b322c' : '#2d5a27',
-                    fontWeight: 500
-                  }}
-                >
-                  {modelFetchNotice.message}
-                </span>
-              )}
-            </div>
-            <div className="form-field" style={{ flex: 1 }}>
-              <label>API Key {connection?.hasSecret && '(已安全加密，留空则保持不变)'}</label>
-              <input type="password" value={apiKey} onChange={(e) => setApiKey(e.target.value)} placeholder={connection?.hasSecret ? '••••••••••••••••' : 'sk-...'} />
-            </div>
-          </div>
-
-          <div className="target-preview-box">
-            <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-              <span>目标主机: <strong>{endpointPreview}</strong></span>
-              <span>指纹: <code>{fingerprint}</code></span>
-            </div>
-          </div>
-
-          {kind === 'generation' ? (
-            <>
-              <div className="form-row">
-                <div className="form-field">
-                  <label>Context Window</label>
-                  <input type="number" value={contextWindow} onChange={(e) => setContextWindow(Number(e.target.value) || 128000)} />
-                </div>
-                <div className="form-field">
-                  <label>Max Output Tokens</label>
-                  <input type="number" value={maxOutputTokens} onChange={(e) => setMaxOutputTokens(Number(e.target.value) || 4096)} />
-                </div>
-                <div className="form-field">
-                  <label>安全余量比例</label>
-                  <input type="number" step="0.05" min="0" max="0.5" value={safetyMarginRatio} onChange={(e) => setSafetyMarginRatio(Number(e.target.value) || 0.1)} />
-                </div>
+                </datalist>
+                {fetchedModels.length > 0 && (
+                  <Select
+                    value={fetchedModels.some((m) => m.id === model) ? model : 'placeholder'}
+                    onValueChange={(val) => {
+                      if (val && val !== 'placeholder') setModel(val as string)
+                    }}
+                  >
+                    <SelectTrigger className="rounded-lg border border-[#dacdbe] bg-white p-1.5 text-xs text-[#2c2523]">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="placeholder" disabled>
+                        -- 快速从已获取列表中选择 ({fetchedModels.length} 个) --
+                      </SelectItem>
+                      {fetchedModels.map((m) => (
+                        <SelectItem key={m.id} value={m.id}>
+                          {m.id} {m.ownedBy ? `(${m.ownedBy})` : ''}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                )}
+                {modelFetchNotice && (
+                  <span
+                    className={`text-[11px] ${
+                      modelFetchNotice.isError ? 'text-red-600' : 'text-[#2d6a4f]'
+                    }`}
+                  >
+                    {modelFetchNotice.message}
+                  </span>
+                )}
               </div>
-              <div className="form-field">
-                <label>特性能力支持</label>
-                <div className="capabilities-grid">
-                  <label className="checkbox-field"><input type="checkbox" checked={streaming} onChange={(e) => setStreaming(e.target.checked)} /><span>SSE 流式传输 (Streaming)</span></label>
-                  <label className="checkbox-field"><input type="checkbox" checked={jsonSchema} onChange={(e) => setJsonSchema(e.target.checked)} /><span>结构化 JSON Schema</span></label>
-                  <label className="checkbox-field"><input type="checkbox" checked={temperature} onChange={(e) => setTemperature(e.target.checked)} /><span>创意度参数 (Temperature)</span></label>
-                  <label className="checkbox-field"><input type="checkbox" checked={usage} onChange={(e) => setUsage(e.target.checked)} /><span>Token 用量统计 (Usage)</span></label>
-                </div>
-              </div>
-            </>
-          ) : (
-            <div className="form-row">
-              <div className="form-field">
-                <label>批处理大小 (Batch Size)</label>
-                <input type="number" value={batchSize} onChange={(e) => setBatchSize(Number(e.target.value) || 16)} />
+
+              <div className="flex flex-col gap-1 text-xs">
+                <label className="font-semibold text-[#7d6b59]">
+                  API Key {connection?.hasSecret && '(已安全加密，留空则保持不变)'}
+                </label>
+                <Input
+                  type="password"
+                  className="rounded-lg border border-[#dacdbe] bg-white px-3 py-2 text-sm text-[#2c2523] outline-none"
+                  value={apiKey}
+                  onChange={(e) => setApiKey(e.target.value)}
+                  placeholder={connection?.hasSecret ? '••••••••••••••••' : 'sk-...'}
+                />
               </div>
             </div>
-          )}
 
-          {testResult && (
-            <div className={`alert-banner ${testResult.success ? 'success' : 'danger'}`} style={{ padding: '8px 12px' }}>
-              {testResult.success ? (
-                <span>✓ 连接测试成功！延迟: <strong>{testResult.latencyMs} ms</strong></span>
-              ) : (
-                <span>✗ 测试失败: {testResult.message}</span>
-              )}
-            </div>
-          )}
+            <Card className="flex items-center justify-between p-2.5 bg-[#f5efe6] border-[#e5ddd3] text-xs">
+              <span className="text-[#7d6b59]">
+                目标主机: <strong className="text-[#2c2523]">{endpointPreview}</strong>
+              </span>
+              <span className="text-[#7d6b59]">
+                指纹: <code className="font-mono text-[11px] text-[#54473b]">{fingerprint}</code>
+              </span>
+            </Card>
 
-          {error && <p className="inline-error">{error}</p>}
-        </div>
-        <footer className="dialog-footer">
-          <button type="button" className="text-button" disabled={testing} onClick={() => void handleTest()}>
-            <Activity size={14} />{testing ? '测试中...' : '测试连通性'}
-          </button>
-          <div style={{ display: 'flex', gap: 10 }}>
-            <button type="button" className="text-button" onClick={onClose}>取消</button>
-            <button type="button" className="primary-button" disabled={saving || !name.trim() || !baseUrl.trim() || !model.trim()} onClick={() => void handleSave()}>
-              <Check size={14} />{saving ? '保存中...' : '保存连接'}
-            </button>
+            {kind === 'generation' ? (
+              <>
+                <div className="grid grid-cols-3 gap-3">
+                  <div className="flex flex-col gap-1 text-xs">
+                    <label className="font-semibold text-[#7d6b59]">Context Window</label>
+                    <Input
+                      type="number"
+                      className="rounded-lg border border-[#dacdbe] bg-white px-3 py-2 text-sm text-[#2c2523] outline-none"
+                      value={contextWindow}
+                      onChange={(e) => setContextWindow(Number(e.target.value) || 128000)}
+                    />
+                  </div>
+                  <div className="flex flex-col gap-1 text-xs">
+                    <label className="font-semibold text-[#7d6b59]">Max Output Tokens</label>
+                    <Input
+                      type="number"
+                      className="rounded-lg border border-[#dacdbe] bg-white px-3 py-2 text-sm text-[#2c2523] outline-none"
+                      value={maxOutputTokens}
+                      onChange={(e) => setMaxOutputTokens(Number(e.target.value) || 4096)}
+                    />
+                  </div>
+                  <div className="flex flex-col gap-1 text-xs">
+                    <label className="font-semibold text-[#7d6b59]">安全余量比例</label>
+                    <Input
+                      type="number"
+                      step="0.05"
+                      min="0"
+                      max="0.5"
+                      className="rounded-lg border border-[#dacdbe] bg-white px-3 py-2 text-sm text-[#2c2523] outline-none"
+                      value={safetyMarginRatio}
+                      onChange={(e) => setSafetyMarginRatio(Number(e.target.value) || 0.1)}
+                    />
+                  </div>
+                </div>
+
+                <div className="flex flex-col gap-2 text-xs">
+                  <label className="font-semibold text-[#7d6b59]">特性能力支持</label>
+                  <div className="grid grid-cols-2 gap-2 rounded-xl border border-[#e5ddd3] bg-white p-3">
+                    <label className="flex items-center gap-2 cursor-pointer">
+                      <Checkbox
+                        checked={streaming}
+                        onCheckedChange={(checked) => setStreaming(Boolean(checked))}
+                      />
+                      <span>SSE 流式传输 (Streaming)</span>
+                    </label>
+                    <label className="flex items-center gap-2 cursor-pointer">
+                      <Checkbox
+                        checked={jsonSchema}
+                        onCheckedChange={(checked) => setJsonSchema(Boolean(checked))}
+                      />
+                      <span>结构化 JSON Schema</span>
+                    </label>
+                    <label className="flex items-center gap-2 cursor-pointer">
+                      <Checkbox
+                        checked={temperature}
+                        onCheckedChange={(checked) => setTemperature(Boolean(checked))}
+                      />
+                      <span>创意度参数 (Temperature)</span>
+                    </label>
+                    <label className="flex items-center gap-2 cursor-pointer">
+                      <Checkbox
+                        checked={usage}
+                        onCheckedChange={(checked) => setUsage(Boolean(checked))}
+                      />
+                      <span>Token 用量统计 (Usage)</span>
+                    </label>
+                  </div>
+                </div>
+              </>
+            ) : (
+              <div className="flex flex-col gap-1 text-xs">
+                <label className="font-semibold text-[#7d6b59]">批处理大小 (Batch Size)</label>
+                <Input
+                  type="number"
+                  className="rounded-lg border border-[#dacdbe] bg-white px-3 py-2 text-sm text-[#2c2523] outline-none max-w-xs"
+                  value={batchSize}
+                  onChange={(e) => setBatchSize(Number(e.target.value) || 16)}
+                />
+              </div>
+            )}
+
+            {testResult && (
+              <div
+                className={`alert-banner ${testResult.success ? 'success' : 'danger'}`}
+                style={{ padding: '8px 12px' }}
+              >
+                {testResult.success ? (
+                  <span>✓ 连接测试成功！延迟: <strong>{testResult.latencyMs} ms</strong></span>
+                ) : (
+                  <span>✗ 测试失败: {testResult.message}</span>
+                )}
+              </div>
+            )}
+
+            {error && <p className="inline-error text-xs text-red-600">{error}</p>}
           </div>
-        </footer>
-      </motion.div>
-    </motion.div>
+        </ScrollArea>
+
+        <DialogFooter className="flex items-center justify-between border-t border-[#e5ddd3] pt-3">
+          <Button
+            type="button"
+            variant="outline"
+            disabled={testing}
+            onClick={() => void handleTest()}
+          >
+            <Activity size={14} className={testing ? 'animate-spin' : ''} />
+            {testing ? '测试中...' : '测试连通性'}
+          </Button>
+          <div className="flex gap-2">
+            <Button type="button" variant="ghost" onClick={onClose}>
+              取消
+            </Button>
+            <Button
+              type="button"
+              disabled={saving || !name.trim() || !baseUrl.trim() || !model.trim()}
+              onClick={() => void handleSave()}
+            >
+              <Check size={14} />
+              {saving ? '保存中...' : '保存连接'}
+            </Button>
+          </div>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   )
 }

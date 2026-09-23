@@ -1,5 +1,6 @@
 import React from 'react'
 import { BookOpen, Plus, Lock } from 'lucide-react'
+import { Button } from '@appica/ui-react/button'
 
 export interface EmptyChapterStateProps {
   onCreateChapter?: () => void
@@ -29,14 +30,13 @@ export function EmptyChapterState({
               <span>当前作品为只读模式</span>
             </div>
           ) : (
-            <button
-              type="button"
+            <Button
               className="primary-button create-first-chapter-btn inline-flex items-center gap-2 px-4 py-2 bg-[#2d6a4f] text-white rounded-xl text-sm font-medium hover:bg-[#24583e] active:scale-98 transition-all shadow-sm"
               onClick={onCreateChapter}
             >
               <Plus size={16} />
               <span>新建第一章</span>
-            </button>
+            </Button>
           )}
         </div>
       </div>

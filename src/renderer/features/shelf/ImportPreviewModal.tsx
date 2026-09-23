@@ -5,8 +5,11 @@ import type { ImportPreviewResult, OpenProjectResult } from '../../../shared/pro
 import { errorText } from '../../utils/formatters'
 import { count } from '../../../shared/text-counter'
 import { getChapterNumber } from '../../utils/chapter-numbering'
-import { Button } from '../../components/ui/button'
-import { useDialogDismiss } from '../../hooks/useDialogDismiss'
+import { Button } from '@appica/ui-react/button'
+import { Dialog, DialogContent } from '@appica/ui-react/dialog'
+import { Input } from '@appica/ui-react/input'
+import { Textarea } from '@appica/ui-react/textarea'
+import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from '@appica/ui-react/select'
 
 type PreviewChapter = { id: string; title: string; content: string }
 
@@ -19,10 +22,6 @@ export function ImportPreviewModal({
   onClose: () => void
   onImported: (opened: OpenProjectResult) => void
 }) {
-  const { dialogRef, backdropProps } = useDialogDismiss<HTMLDivElement>({
-    isOpen: true,
-    onClose
-  })
   const [title, setTitle] = useState(preview.suggestedTitle)
   const [chapters, setChapters] = useState<PreviewChapter[]>(() =>
     preview.chapters.map((chapter, index) => ({
@@ -136,19 +135,11 @@ export function ImportPreviewModal({
   }
 
   return (
-    <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm p-4"
-      {...backdropProps}
-    >
-      <motion.div
-        ref={dialogRef}
-        role="dialog"
-        aria-modal="true"
+    <Dialog open onOpenChange={(open) => { if (!open) onClose() }}>
+      <DialogContent
+        closeButton={false}
+        className="flex flex-col w-full max-w-5xl h-[88vh] bg-[#faf8f5] border border-[#e5ddd3] rounded-2xl shadow-2xl overflow-hidden p-0"
         aria-label="导入小说原文预览"
-        initial={{ opacity: 0, scale: 0.96 }}
-        animate={{ opacity: 1, scale: 1 }}
-        exit={{ opacity: 0, scale: 0.96 }}
-        className="flex flex-col w-full max-w-5xl h-[88vh] bg-[#faf8f5] border border-[#e5ddd3] rounded-2xl shadow-2xl overflow-hidden"
       >
         {/* Header */}
         <div className="flex items-center justify-between px-6 py-4 border-b border-[#e5ddd3] bg-[#faf8f5]">
@@ -159,23 +150,31 @@ export function ImportPreviewModal({
           <div className="flex items-center gap-3">
             <div className="flex items-center gap-2 text-xs text-[#7d6b59]">
               <span>文件编码:</span>
-              <select
+              <Select
                 value={pendingEncoding ?? encoding}
-                onChange={(e) => setPendingEncoding(e.target.value as typeof encoding)}
-                className="bg-[#efe6da] border border-[#dacdbe] rounded-lg px-2.5 py-1 text-xs text-[#2c2523] focus:outline-none focus:ring-2 focus:ring-[#2d6a4f]/30"
+                onValueChange={(val) => setPendingEncoding(val as typeof encoding)}
+                size="sm"
               >
-                <option value="utf8">UTF-8</option>
-                <option value="utf16le">UTF-16 LE</option>
-                <option value="utf16be">UTF-16 BE</option>
-                <option value="gb18030">GB18030</option>
-              </select>
+                <SelectTrigger className="w-28 h-7 text-xs bg-[#efe6da]">
+                  <SelectValue placeholder="选择编码" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="utf8">UTF-8</SelectItem>
+                  <SelectItem value="utf16le">UTF-16 LE</SelectItem>
+                  <SelectItem value="utf16be">UTF-16 BE</SelectItem>
+                  <SelectItem value="gb18030">GB18030</SelectItem>
+                </SelectContent>
+              </Select>
             </div>
-            <button
+            <Button
+              variant="ghost"
+              size="icon-sm"
               onClick={onClose}
               className="p-1.5 text-[#7d6b59] hover:bg-[#efe6da] rounded-lg transition-colors"
+              aria-label="关闭预览"
             >
               <X size={18} />
-            </button>
+            </Button>
           </div>
         </div>
 
@@ -200,7 +199,7 @@ export function ImportPreviewModal({
         <div className="px-6 py-3 border-b border-[#e5ddd3] bg-[#f5efe6]/50 flex flex-wrap items-center justify-between gap-4">
           <div className="flex items-center gap-3 flex-1 max-w-md">
             <span className="text-xs font-medium text-[#7d6b59] shrink-0">作品名称:</span>
-            <input
+            <Input
               value={title}
               onChange={(e) => setTitle(e.target.value)}
               placeholder="请输入小说作品名称"
@@ -244,7 +243,7 @@ export function ImportPreviewModal({
                     <span className="text-[10px] opacity-70 w-5 text-center font-mono">
                       {chapterNumber ?? ''}
                     </span>
-                    <input
+                    <Input
                       value={chapter.title}
                       placeholder={titlePlaceholder}
                       onClick={(e) => e.stopPropagation()}
@@ -324,7 +323,7 @@ export function ImportPreviewModal({
               </div>
             </div>
 
-            <textarea
+            <Textarea
               ref={textarea}
               value={current.content}
               onChange={(e) => replace({ ...current, content: e.target.value })}
@@ -352,7 +351,7 @@ export function ImportPreviewModal({
             </Button>
           </div>
         </div>
-      </motion.div>
-    </div>
+      </DialogContent>
+    </Dialog>
   )
 }

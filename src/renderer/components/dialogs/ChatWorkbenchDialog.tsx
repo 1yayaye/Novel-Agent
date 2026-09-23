@@ -39,7 +39,14 @@ import { toChapterHeader } from '../../../shared/project'
 import { IconButton } from '../common/IconButton'
 import { errorText, formatDate } from '../../utils/formatters'
 import { getChapterNumber } from '../../utils/chapter-numbering'
-import { useDialogDismiss } from '../../hooks/useDialogDismiss'
+import { Dialog, DialogContent } from '@appica/ui-react/dialog'
+import { Button } from '@appica/ui-react/button'
+import { Input } from '@appica/ui-react/input'
+import { Textarea } from '@appica/ui-react/textarea'
+import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from '@appica/ui-react/select'
+import { StreamingText } from '../ai/StreamingText'
+import { ThinkingState } from '../ai/ThinkingState'
+import { PromptBar } from '../ai/PromptBar'
 import { useStreamThrottle } from '../../hooks/useStreamThrottle'
 import { useToast } from '../common/Toast'
 import { isNearBottom, decideScrollBehavior, type ScrollActionType } from '../../utils/chatScroll'
@@ -58,15 +65,25 @@ export function ChatWorkbenchDialog({
   onOpenCandidateReview,
   onOpenContextPreview,
   onChapterCreated,
-  initialPrompt
+  initialPrompt,
+  initialTaskType,
+  initialStage,
+  initialWorkflowType,
+  initialOutlineId,
+  initialOutlineVersion
 }: {
   sessionId: string
   chapters?: ChapterHeader[]
   activeChapterId?: string
   isReadOnly: boolean
-  initialPrompt?: string
   onClose: () => void
-  onNavigateChapter?: (chapterId: string, offset?: number) => void
+  onNavigateChapter?: (chapterId: string, startOffset?: number, length?: number) => void
+  initialPrompt?: string
+  initialTaskType?: TaskType
+  initialStage?: ChatWorkflowStage
+  initialWorkflowType?: ChatWorkflowType
+  initialOutlineId?: string
+  initialOutlineVersion?: number
   onInspectContext?: (contextPackageId: string) => void
   onOpenOutlineEditor?: (chapterId?: string) => void
   onOpenCandidateReview?: (candidateId?: string) => void
@@ -80,7 +97,6 @@ export function ChatWorkbenchDialog({
   ) => void
   onChapterCreated?: (chapter: Chapter) => void
 }) {
-  const { dialogRef, backdropProps } = useDialogDismiss({ onClose })
   const [sessions, setSessions] = useState<ChatSession[]>([])
   const [selectedSessionId, setSelectedSessionId] = useState<string | null>(null)
   const [messages, setMessages] = useState<ChatMessage[]>([])
@@ -428,16 +444,11 @@ export function ChatWorkbenchDialog({
     : 0
 
   return (
-    <motion.div className="action-dialog-layer" {...backdropProps} initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} role="presentation">
-      <motion.div
-        ref={dialogRef}
-        className="chat-dialog"
-        role="dialog"
-        aria-modal="true"
+    <Dialog open onOpenChange={(open) => { if (!open) onClose() }}>
+      <DialogContent
+        className="chat-dialog flex flex-col p-0 w-[90vw] max-w-[90vw] h-[90vh] overflow-hidden"
         aria-labelledby="chat-dialog-title"
-        initial={{ opacity: 0, y: 12, scale: 0.98 }}
-        animate={{ opacity: 1, y: 0, scale: 1 }}
-        exit={{ opacity: 0, y: 8 }}
+        closeButton={false}
       >
         <div className="chat-layout">
           {/* Left Session Sidebar */}
@@ -446,8 +457,8 @@ export function ChatWorkbenchDialog({
               <span id="chat-dialog-title" style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
                 <MessageSquare size={16} />项目问答与创作
               </span>
-              <button
-                type="button"
+              <Button
+                variant="ghost"
                 className="text-button"
                 style={{ fontSize: 12 }}
                 disabled={isReadOnly}
@@ -470,14 +481,14 @@ export function ChatWorkbenchDialog({
                 }}
               >
                 <Plus size={14} />新建
-              </button>
+              </Button>
             </div>
 
             {isCreatingSession && (
               <div style={{ padding: '10px 12px', borderBottom: '1px solid #e2e8f0', background: '#f8fafc', display: 'flex', flexDirection: 'column', gap: 8 }}>
                 <div style={{ display: 'flex', gap: 6 }}>
-                  <button
-                    type="button"
+                  <Button
+                    variant="ghost"
                     className={`tab-chip ${newSessionWorkflowType === 'creation_workflow' ? 'active' : ''}`}
                     style={{ flex: 1, justifyContent: 'center', padding: '4px 6px', fontSize: 11 }}
                     onClick={() => {
@@ -491,9 +502,9 @@ export function ChatWorkbenchDialog({
                     }}
                   >
                     创作工作流
-                  </button>
-                  <button
-                    type="button"
+                  </Button>
+                  <Button
+                    variant="ghost"
                     className={`tab-chip ${newSessionWorkflowType === 'free_chat' ? 'active' : ''}`}
                     style={{ flex: 1, justifyContent: 'center', padding: '4px 6px', fontSize: 11 }}
                     onClick={() => {
@@ -502,15 +513,15 @@ export function ChatWorkbenchDialog({
                     }}
                   >
                     普通问答
-                  </button>
+                  </Button>
                 </div>
 
                 {newSessionWorkflowType === 'creation_workflow' && (
                   <div>
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 2 }}>
                       <label style={{ fontSize: 11, color: '#64748b' }}>目标章节{isCreatingNewChapter ? ' (新建)' : ''}</label>
-                      <button
-                        type="button"
+                      <Button
+                        variant="ghost"
                         className="text-button"
                         style={{ fontSize: 11 }}
                         disabled={localChapters.length === 0}
@@ -527,10 +538,10 @@ export function ChatWorkbenchDialog({
                         }}
                       >
                         {isCreatingNewChapter ? '选择已有章节' : '+ 新建新一章'}
-                      </button>
+                      </Button>
                     </div>
                     {isCreatingNewChapter ? (
-                      <input
+                      <Input
                         value={newChapterTitleDraft}
                         placeholder={defaultNewChapterTitle}
                         onChange={(e) => {
@@ -541,37 +552,42 @@ export function ChatWorkbenchDialog({
                         style={{ width: '100%', padding: '4px 6px', borderRadius: 4, border: '1px solid #cbd5e1', fontSize: 12, background: '#fff' }}
                       />
                     ) : (
-                      <select
+                      <Select
                         value={newSessionChapterId}
-                        onChange={(e) => {
-                          const value = e.target.value
-                          if (value === NEW_CHAPTER_OPTION) {
+                        onValueChange={(value) => {
+                          if (!value) return
+                          const valStr = String(value)
+                          if (valStr === NEW_CHAPTER_OPTION) {
                             enterNewChapterMode()
                             return
                           }
-                          setNewSessionChapterId(value)
+                          setNewSessionChapterId(valStr)
                           if (!hasCustomSessionTitle) {
-                            const chapter = localChapters.find((item) => item.id === value)
+                            const chapter = localChapters.find((item) => item.id === valStr)
                             if (chapter) setNewSessionTitle(`创作：${chapter.title}`)
                           }
                         }}
-                        style={{ width: '100%', padding: '4px 6px', borderRadius: 4, border: '1px solid #cbd5e1', fontSize: 12, background: '#fff' }}
                       >
-                        {localChapters.map((c, index) => {
-                          const chapterNumber = getChapterNumber(localChapters, index)
-                          return (
-                            <option key={c.id} value={c.id}>
-                              {chapterNumber === undefined ? '' : `第 ${chapterNumber} 章: `}{c.title}
-                            </option>
-                          )
-                        })}
-                        <option value={NEW_CHAPTER_OPTION}>➕ 新建新一章...</option>
-                      </select>
+                        <SelectTrigger style={{ width: '100%', padding: '4px 6px', borderRadius: 4, border: '1px solid #cbd5e1', fontSize: 12, background: '#fff' }}>
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {localChapters.map((c, index) => {
+                            const chapterNumber = getChapterNumber(localChapters, index)
+                            return (
+                              <SelectItem key={c.id} value={c.id}>
+                                {chapterNumber === undefined ? '' : `第 ${chapterNumber} 章: `}{c.title}
+                              </SelectItem>
+                            )
+                          })}
+                          <SelectItem value={NEW_CHAPTER_OPTION}>➕ 新建新一章...</SelectItem>
+                        </SelectContent>
+                      </Select>
                     )}
                   </div>
                 )}
 
-                <input
+                <Input
                   autoFocus
                   placeholder={newSessionWorkflowType === 'creation_workflow' ? '会话标题（默认：章节创作）' : '输入会话主题...'}
                   value={newSessionTitle}
@@ -587,8 +603,8 @@ export function ChatWorkbenchDialog({
                   style={{ width: '100%', padding: '5px 8px', borderRadius: 4, border: '1px solid #cbd5e1', fontSize: 12 }}
                 />
                 <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 6 }}>
-                  <button type="button" className="text-button" style={{ fontSize: 11 }} onClick={() => setIsCreatingSession(false)}>取消</button>
-                  <button type="button" className="primary-button" style={{ fontSize: 11, padding: '3px 10px' }} disabled={actionLoading} onClick={() => void handleCreateSession()}>{actionLoading ? '创建中...' : '创建'}</button>
+                  <Button variant="ghost" className="text-button" style={{ fontSize: 11 }} onClick={() => setIsCreatingSession(false)}>取消</Button>
+                  <Button variant="primary" className="primary-button" style={{ fontSize: 11, padding: '3px 10px' }} disabled={actionLoading} onClick={() => void handleCreateSession()}>{actionLoading ? '创建中...' : '创建'}</Button>
                 </div>
               </div>
             )}
@@ -663,8 +679,8 @@ export function ChatWorkbenchDialog({
               </div>
               <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                 {currentSession && messages.length >= 6 && (
-                  <button
-                    type="button"
+                  <Button
+                    variant="ghost"
                     className="text-button"
                     style={{ fontSize: 12, color: '#b45309' }}
                     disabled={actionLoading || isStreaming}
@@ -672,7 +688,7 @@ export function ChatWorkbenchDialog({
                     title="压缩较早的历史对话生成滚动事实摘要"
                   >
                     <Sparkles size={13} />{actionLoading ? '压缩中...' : '压缩前期历史'}
-                  </button>
+                  </Button>
                 )}
                 <IconButton label="关闭问答" onClick={onClose}><X size={18} /></IconButton>
               </div>
@@ -715,8 +731,8 @@ export function ChatWorkbenchDialog({
                 {/* Stage Action Controls */}
                 <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                   {currentSession.stage === 'direction' && (
-                    <button
-                      type="button"
+                    <Button
+                      variant="primary"
                       className="primary-button"
                       style={{ fontSize: 12, padding: '4px 10px' }}
                       disabled={actionLoading || isStreaming || isReadOnly}
@@ -725,31 +741,31 @@ export function ChatWorkbenchDialog({
                     >
                       <span>推进至章大纲</span>
                       <ArrowRight size={13} />
-                    </button>
+                    </Button>
                   )}
 
                   {currentSession.stage === 'chapter_outline' && (
                     <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                      <button
-                        type="button"
+                      <Button
+                        variant="ghost"
                         className="text-button"
                         style={{ fontSize: 11, color: '#4b5563', padding: '4px 8px' }}
                         disabled={actionLoading || isStreaming || isReadOnly}
                         onClick={() => void handleUpdateStage('direction')}
                       >
                         <RotateCcw size={12} />返回方向
-                      </button>
-                      <button
-                        type="button"
+                      </Button>
+                      <Button
+                        variant="ghost"
                         className="text-button"
                         style={{ fontSize: 12, color: '#059669', padding: '4px 8px' }}
                         onClick={() => onOpenOutlineEditor?.(currentSession.targetChapterId || undefined)}
                         title="打开三层大纲编辑器"
                       >
                         <Compass size={13} />编辑大纲
-                      </button>
-                      <button
-                        type="button"
+                      </Button>
+                      <Button
+                        variant="primary"
                         className="primary-button"
                         style={{ fontSize: 12, padding: '4px 10px' }}
                         disabled={actionLoading || isStreaming || isReadOnly}
@@ -772,31 +788,31 @@ export function ChatWorkbenchDialog({
                         }}
                       >
                         <Check size={13} />锁定大纲并进入正文
-                      </button>
+                      </Button>
                     </div>
                   )}
 
                   {currentSession.stage === 'content' && (
                     <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                      <button
-                        type="button"
+                      <Button
+                        variant="ghost"
                         className="text-button"
                         style={{ fontSize: 11, color: '#4b5563', padding: '4px 8px' }}
                         disabled={actionLoading || isStreaming || isReadOnly}
                         onClick={() => void handleUpdateStage('chapter_outline')}
                       >
                         <RotateCcw size={12} />重修大纲
-                      </button>
-                      <button
-                        type="button"
+                      </Button>
+                      <Button
+                        variant="ghost"
                         className="text-button"
                         style={{ fontSize: 12, color: '#2563eb', padding: '4px 8px' }}
                         onClick={() => onOpenCandidateReview?.()}
                       >
                         <GitCompare size={13} />差异审阅
-                      </button>
-                      <button
-                        type="button"
+                      </Button>
+                      <Button
+                        variant="primary"
                         className="primary-button"
                         style={{ fontSize: 12, padding: '4px 10px' }}
                         onClick={() => {
@@ -811,16 +827,16 @@ export function ChatWorkbenchDialog({
                         }}
                       >
                         <Sparkles size={13} />生成正文候选
-                      </button>
-                      <button
-                        type="button"
+                      </Button>
+                      <Button
+                        variant="ghost"
                         className="text-button"
                         style={{ fontSize: 11, color: '#166534', padding: '4px 8px' }}
                         disabled={actionLoading || isStreaming || isReadOnly}
                         onClick={() => void handleUpdateStage('reviewed')}
                       >
                         <Check size={12} />标记完成
-                      </button>
+                      </Button>
                     </div>
                   )}
 
@@ -829,15 +845,15 @@ export function ChatWorkbenchDialog({
                       <span style={{ fontSize: 11, background: '#dcfce7', color: '#166534', padding: '2px 8px', borderRadius: 4, fontWeight: 600 }}>
                         ✓ 本章已审阅完成
                       </span>
-                      <button
-                        type="button"
+                      <Button
+                        variant="ghost"
                         className="text-button"
                         style={{ fontSize: 11, color: '#2563eb', padding: '4px 8px' }}
                         disabled={actionLoading || isStreaming || isReadOnly}
                         onClick={() => void handleUpdateStage('content')}
                       >
                         重新生成
-                      </button>
+                      </Button>
                     </div>
                   )}
                 </div>
@@ -858,8 +874,8 @@ export function ChatWorkbenchDialog({
                     )}
                   </div>
                   {!isEditingSummary ? (
-                    <button
-                      type="button"
+                    <Button
+                      variant="ghost"
                       className="text-button"
                       style={{ fontSize: 11, color: '#92400e' }}
                       disabled={isReadOnly}
@@ -869,18 +885,18 @@ export function ChatWorkbenchDialog({
                       }}
                     >
                       <Pencil size={12} />编辑备忘
-                    </button>
+                    </Button>
                   ) : (
                     <div style={{ display: 'flex', gap: 6 }}>
-                      <button type="button" className="text-button" style={{ fontSize: 11 }} onClick={() => setIsEditingSummary(false)}>取消</button>
-                      <button type="button" className="primary-button" style={{ fontSize: 11, padding: '2px 8px' }} onClick={() => void handleSaveSummary()}>保存修订</button>
+                      <Button variant="ghost" className="text-button" style={{ fontSize: 11 }} onClick={() => setIsEditingSummary(false)}>取消</Button>
+                      <Button variant="primary" className="primary-button" style={{ fontSize: 11, padding: '2px 8px' }} onClick={() => void handleSaveSummary()}>保存修订</Button>
                     </div>
                   )}
                 </div>
 
                 {showSummaryBox && (
                   isEditingSummary ? (
-                    <textarea
+                    <Textarea
                       value={summaryDraft}
                       onChange={(e) => setSummaryDraft(e.target.value)}
                       style={{ width: '100%', minHeight: 80, padding: 8, borderRadius: 4, border: '1px solid #fde68a', fontSize: 12, fontFamily: 'monospace' }}
@@ -930,10 +946,7 @@ export function ChatWorkbenchDialog({
                         <div className="chat-message-text">
                           {msg.content}
                           {msg.state === 'streaming' && msg.id === streamingMessageId && (
-                            <>
-                              {streaming.value.slice(msg.content.length)}
-                              <span className="typewriter-cursor" />
-                            </>
+                            <StreamingText text={streaming.value.slice(msg.content.length)} />
                           )}
                         </div>
 
@@ -965,15 +978,15 @@ export function ChatWorkbenchDialog({
                               <span>~{msg.tokenCount} tokens</span>
                             )}
                             {msg.contextPackageId && (
-                              <button
-                                type="button"
+                              <Button
+                                variant="ghost"
                                 className="text-button"
                                 style={{ fontSize: 11, color: '#2563eb', padding: 0 }}
                                 onClick={() => onInspectContext?.(msg.contextPackageId!)}
                                 title="查看本次问答装配的不可变上下文证据包"
                               >
                                 <Layers size={11} />装配证据
-                              </button>
+                              </Button>
                             )}
                             {msg.state === 'cancelled' && (
                               <span style={{ color: '#94a3b8' }}>[已取消]</span>
@@ -995,11 +1008,10 @@ export function ChatWorkbenchDialog({
                       </div>
                       <div className="chat-bubble assistant">
                         <div className="chat-message-text">
-                          {streaming.value}
-                          <span className="typewriter-cursor" />
+                          <StreamingText text={streaming.value} />
                         </div>
                         <div className="chat-message-meta">
-                          <span>正在思考与生成...</span>
+                          <ThinkingState label="正在生成" />
                         </div>
                       </div>
                     </div>
@@ -1011,51 +1023,25 @@ export function ChatWorkbenchDialog({
 
             {/* Input Footer */}
             <footer className="chat-input-area">
-              <div className="chat-input-box">
-                <textarea
-                  className="chat-input-textarea"
-                  placeholder={
-                    isReadOnly
-                      ? '项目处于只读模式'
-                      : !selectedSessionId
-                      ? '请先选择或新建一个会话'
-                      : '输入问题，如剧情逻辑、角色设定、前文细节... (Enter 发送，Shift+Enter 换行)'
-                  }
-                  value={inputContent}
-                  disabled={isReadOnly || !selectedSessionId || isStreaming}
-                  onChange={(e) => setInputContent(e.target.value)}
-                  onKeyDown={(e) => {
-                    if (e.key === 'Enter' && !e.shiftKey) {
-                      e.preventDefault()
-                      void handleSendMessage()
-                    }
-                  }}
-                />
-                {isStreaming ? (
-                  <button
-                    type="button"
-                    className="danger-button"
-                    style={{ height: 42, padding: '0 16px', display: 'flex', alignItems: 'center', gap: 6 }}
-                    onClick={() => void handleCancelChat()}
-                  >
-                    <StopCircle size={15} />停止生成
-                  </button>
-                ) : (
-                  <button
-                    type="button"
-                    className="primary-button"
-                    style={{ height: 42, padding: '0 16px', display: 'flex', alignItems: 'center', gap: 6 }}
-                    disabled={isReadOnly || !selectedSessionId || !inputContent.trim()}
-                    onClick={() => void handleSendMessage()}
-                  >
-                    <Send size={15} />发送
-                  </button>
-                )}
-              </div>
+              <PromptBar
+                value={inputContent}
+                onChange={setInputContent}
+                onSubmit={() => void handleSendMessage()}
+                disabled={isReadOnly || !selectedSessionId}
+                placeholder={
+                  isReadOnly
+                    ? '项目处于只读模式'
+                    : !selectedSessionId
+                    ? '请先选择或新建一个会话'
+                    : '输入问题，如剧情逻辑、角色设定、前文细节... (Enter 发送，Shift+Enter 换行)'
+                }
+                isStreaming={isStreaming}
+                onCancel={() => void handleCancelChat()}
+              />
             </footer>
           </main>
         </div>
-      </motion.div>
-    </motion.div>
+      </DialogContent>
+    </Dialog>
   )
 }

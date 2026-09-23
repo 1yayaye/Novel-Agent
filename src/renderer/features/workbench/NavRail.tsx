@@ -18,6 +18,7 @@ import {
   Sliders,
   Sparkles
 } from 'lucide-react'
+import { Button } from '@appica/ui-react/button'
 
 export type ActiveNavDialog = string | null
 
@@ -209,15 +210,16 @@ export function NavRail({
           )}
         </div>
         {isExpanded && (
-          <button
-            type="button"
+          <Button
+            variant="ghost"
+            size="icon-sm"
             className="nav-rail-collapse-btn p-1 text-[#7d6b59] hover:text-[#2c2523] hover:bg-[#efe6da] rounded-lg transition-colors"
             onClick={onToggleExpanded}
             title="收起为紧凑图标栏"
             aria-label="收起导航栏"
           >
             <PanelLeftClose size={15} />
-          </button>
+          </Button>
         )}
       </div>
 
@@ -237,10 +239,10 @@ export function NavRail({
               const Icon = item.icon
               const active = item.isActive(activeDialog)
               return (
-                <button
+                <Button
                   key={item.id}
-                  type="button"
-                  className={`left-rail-btn w-full flex items-center rounded-xl text-xs font-medium transition-colors ${
+                  variant="ghost"
+                  className={`left-rail-btn w-full flex items-center rounded-xl text-xs font-medium transition-colors h-auto ${
                     isExpanded ? 'gap-2.5 px-3 py-2 text-left' : 'flex-col gap-1 py-2 px-1 items-center justify-center'
                   } ${
                     active
@@ -259,7 +261,7 @@ export function NavRail({
                       {item.miniLabel}
                     </span>
                   )}
-                </button>
+                </Button>
               )
             })}
           </div>
@@ -268,9 +270,9 @@ export function NavRail({
 
       {/* Footer toggle */}
       <div className="nav-rail-footer p-2 border-t border-[#e5ddd3]">
-        <button
-          type="button"
-          className="nav-rail-toggle-btn w-full flex items-center justify-center gap-2 p-1.5 text-xs text-[#7d6b59] hover:text-[#2c2523] hover:bg-[#efe6da] rounded-xl transition-colors"
+        <Button
+          variant="ghost"
+          className="nav-rail-toggle-btn w-full flex items-center justify-center gap-2 p-1.5 text-xs text-[#7d6b59] hover:text-[#2c2523] hover:bg-[#efe6da] rounded-xl transition-colors h-auto"
           onClick={onToggleExpanded}
           title={isExpanded ? '收起侧边栏' : '展开侧边栏 (显示中文标签)'}
           aria-label={isExpanded ? '收起导航栏' : '展开导航栏'}
@@ -283,7 +285,7 @@ export function NavRail({
           ) : (
             <ChevronRight size={14} />
           )}
-        </button>
+        </Button>
       </div>
     </aside>
   )

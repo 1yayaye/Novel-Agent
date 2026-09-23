@@ -1,11 +1,14 @@
-import React, { useState, useEffect } from 'react'
-import { motion } from 'motion/react'
-import { X, Sparkles, FileBarChart, Compass, RotateCw, Play, AlertTriangle } from 'lucide-react'
+import { useState, useEffect } from 'react'
+import { Sparkles, FileBarChart, Compass, RotateCw, Play, AlertTriangle } from 'lucide-react'
 import { ChapterHeader, ModelConnectionSummary } from '../../../shared/project'
-import { IconButton } from '../common/IconButton'
 import { errorText } from '../../utils/formatters'
 import { getEndpointHost } from '../../utils/crypto'
-import { useDialogDismiss } from '../../hooks/useDialogDismiss'
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from '@appica/ui-react/dialog'
+import { Button } from '@appica/ui-react/button'
+import { Card } from '@appica/ui-react/card'
+import { ScrollArea } from '@appica/ui-react/scroll-area'
+import { Checkbox } from '@appica/ui-react/checkbox'
+import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from '@appica/ui-react/select'
 
 export function StartAnalysisDialog({
   sessionId,
@@ -22,7 +25,6 @@ export function StartAnalysisDialog({
   onClose: () => void
   onStarted: (taskId: string) => void
 }) {
-  const { dialogRef, backdropProps } = useDialogDismiss({ onClose })
   const [taskType, setTaskType] = useState<'knowledge' | 'report' | 'synopsis'>(initialType)
   const [scopeMode, setScopeMode] = useState<'all' | 'custom'>('all')
   const [selectedChapterIds, setSelectedChapterIds] = useState<string[]>(chapters.map((c) => c.id))
@@ -76,171 +78,193 @@ export function StartAnalysisDialog({
   const isConfirmed = selectedConn ? Boolean(selectedConn.confirmedContentTargetFingerprint) : false
 
   return (
-    <motion.div className="action-dialog-layer" {...backdropProps} initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
-      <motion.div ref={dialogRef} className="analysis-start-dialog" role="dialog" aria-modal="true" aria-label="发起分析任务" initial={{ opacity: 0, y: 10, scale: .98 }} animate={{ opacity: 1, y: 0, scale: 1 }} exit={{ opacity: 0, y: 4 }}>
-        <header className="dialog-header">
-          <div>
-            <h2>发起分析与生成任务</h2>
-            <p>基于配置的模型连接，后台执行单章知识抽取、全书文学剖析或连贯故事大纲</p>
-          </div>
-          <IconButton label="关闭" onClick={onClose}><X size={18} /></IconButton>
-        </header>
+    <Dialog open onOpenChange={(open) => { if (!open) onClose() }}>
+      <DialogContent className="flex flex-col max-h-[85vh] sm:max-w-4xl" closeLabel="关闭">
+        <DialogHeader>
+          <DialogTitle>发起分析与生成任务</DialogTitle>
+          <DialogDescription>
+            基于配置的模型连接，后台执行按顺序滚动知识抽取、全书文学剖析或连贯故事大纲
+          </DialogDescription>
+        </DialogHeader>
 
-        <div className="analysis-start-body">
-          {error && <div className="dialog-error"><p className="inline-error">{error}</p></div>}
+        {error && <p className="inline-error text-xs text-red-600">{error}</p>}
 
-          <div className="analysis-form-group">
-            <label className="group-label">任务类型</label>
-            <div className="task-type-selector">
-              <button
-                type="button"
-                className={`task-type-card ${taskType === 'knowledge' ? 'active' : ''}`}
-                onClick={() => setTaskType('knowledge')}
-              >
-                <div className="task-type-title">
-                  <Sparkles size={16} />
-                  <strong>知识设定提取与一致性检测</strong>
-                </div>
-                <p>逐章分析正文，提取人物/世界观/时间线事实，验证语义分块边界，并排查剧情漏洞与时间线矛盾</p>
-              </button>
+        <ScrollArea className="h-[460px] pr-2">
+          <div className="flex flex-col gap-4 p-1">
+            <div className="flex flex-col gap-2">
+              <label className="text-xs font-semibold text-[#7d6b59]">任务类型</label>
+              <div className="grid grid-cols-3 gap-3">
+                <Card
+                  className={`flex flex-col gap-2 p-3 text-left transition-colors cursor-pointer border ${
+                    taskType === 'knowledge'
+                      ? 'border-[#2d6a4f] bg-[#e8f3ee]'
+                      : 'border-[#e5ddd3] bg-white hover:border-[#dacdbe]'
+                  }`}
+                  onClick={() => setTaskType('knowledge')}
+                >
+                  <div className="flex items-center gap-2 text-xs font-bold text-[#2c2523]">
+                    <Sparkles size={16} className="text-[#2d6a4f]" />
+                    <span>知识设定与一致性</span>
+                  </div>
+                  <p className="text-[11px] leading-relaxed text-[#7d6b59]">
+                    按章节顺序滚动提取人物/世界观/时间线事实，验证语义分块边界，排查剧情漏洞与矛盾
+                  </p>
+                </Card>
 
-              <button
-                type="button"
-                className={`task-type-card ${taskType === 'report' ? 'active' : ''}`}
-                onClick={() => setTaskType('report')}
-              >
-                <div className="task-type-title">
-                  <FileBarChart size={16} />
-                  <strong>文学分析报告 (六大维度)</strong>
-                </div>
-                <p>深度剖析主题思想、叙事视角、语言文风、节奏与结构、人物成长弧光及连续性逻辑</p>
-              </button>
+                <Card
+                  className={`flex flex-col gap-2 p-3 text-left transition-colors cursor-pointer border ${
+                    taskType === 'report'
+                      ? 'border-[#2d6a4f] bg-[#e8f3ee]'
+                      : 'border-[#e5ddd3] bg-white hover:border-[#dacdbe]'
+                  }`}
+                  onClick={() => setTaskType('report')}
+                >
+                  <div className="flex items-center gap-2 text-xs font-bold text-[#2c2523]">
+                    <FileBarChart size={16} className="text-[#2d6a4f]" />
+                    <span>文学分析报告 (六维)</span>
+                  </div>
+                  <p className="text-[11px] leading-relaxed text-[#7d6b59]">
+                    深度剖析主题思想、叙事视角、语言文风、节奏与结构、人物成长及连续性
+                  </p>
+                </Card>
 
-              <button
-                type="button"
-                className={`task-type-card ${taskType === 'synopsis' ? 'active' : ''}`}
-                onClick={() => setTaskType('synopsis')}
-              >
-                <div className="task-type-title">
-                  <Compass size={16} />
-                  <strong>滚动故事梗概 (全书大纲)</strong>
-                </div>
-                <p>综合已生成的章节摘要，构建全局宏观故事演进大纲</p>
-              </button>
-            </div>
-          </div>
-
-          {taskType !== 'synopsis' && (
-            <div className="analysis-form-group">
-              <label className="group-label">分析章节范围</label>
-              <div className="radio-group" style={{ marginBottom: 10 }}>
-                <label>
-                  <input
-                    type="radio"
-                    name="scopeMode"
-                    value="all"
-                    checked={scopeMode === 'all'}
-                    onChange={() => setScopeMode('all')}
-                  />
-                  <span>全部章节 ({chapters.length} 章)</span>
-                </label>
-                <label>
-                  <input
-                    type="radio"
-                    name="scopeMode"
-                    value="custom"
-                    checked={scopeMode === 'custom'}
-                    onChange={() => setScopeMode('custom')}
-                  />
-                  <span>自定义勾选章节</span>
-                </label>
+                <Card
+                  className={`flex flex-col gap-2 p-3 text-left transition-colors cursor-pointer border ${
+                    taskType === 'synopsis'
+                      ? 'border-[#2d6a4f] bg-[#e8f3ee]'
+                      : 'border-[#e5ddd3] bg-white hover:border-[#dacdbe]'
+                  }`}
+                  onClick={() => setTaskType('synopsis')}
+                >
+                  <div className="flex items-center gap-2 text-xs font-bold text-[#2c2523]">
+                    <Compass size={16} className="text-[#2d6a4f]" />
+                    <span>滚动故事梗概 (大纲)</span>
+                  </div>
+                  <p className="text-[11px] leading-relaxed text-[#7d6b59]">
+                    综合已生成的章节摘要，构建全局宏观故事演进脉络与细分梗概
+                  </p>
+                </Card>
               </div>
+            </div>
 
-              {scopeMode === 'custom' && (
-                <div className="export-chapter-select">
-                  <div className="select-all-row">
-                    <span>已选择 {selectedChapterIds.length} / {chapters.length} 章</span>
-                    <div style={{ display: 'flex', gap: 8 }}>
-                      <button
-                        type="button"
-                        className="text-button"
-                        style={{ fontSize: 11, padding: '2px 6px' }}
-                        onClick={() => setSelectedChapterIds(chapters.map((c) => c.id))}
-                      >
-                        全选
-                      </button>
-                      <button
-                        type="button"
-                        className="text-button"
-                        style={{ fontSize: 11, padding: '2px 6px' }}
-                        onClick={() => setSelectedChapterIds([])}
-                      >
-                        清空
-                      </button>
+            {taskType !== 'synopsis' && (
+              <div className="flex flex-col gap-2">
+                <label className="text-xs font-semibold text-[#7d6b59]">分析章节范围</label>
+                <div className="flex gap-6 rounded-xl border border-[#e5ddd3] bg-[#f5efe6] p-3 text-xs">
+                  <label className="flex items-center gap-2 cursor-pointer">
+                    <Checkbox
+                      checked={scopeMode === 'all'}
+                      onCheckedChange={() => setScopeMode('all')}
+                    />
+                    <span>全部章节 ({chapters.length} 章)</span>
+                  </label>
+                  <label className="flex items-center gap-2 cursor-pointer">
+                    <Checkbox
+                      checked={scopeMode === 'custom'}
+                      onCheckedChange={() => setScopeMode('custom')}
+                    />
+                    <span>自定义勾选章节</span>
+                  </label>
+                </div>
+
+                {scopeMode === 'custom' && (
+                  <div className="flex flex-col gap-2 rounded-xl border border-[#e5ddd3] bg-white p-3">
+                    <div className="flex items-center justify-between border-b border-[#e5ddd3] pb-2 text-xs">
+                      <span className="font-medium text-[#2c2523]">
+                        已选择 {selectedChapterIds.length} / {chapters.length} 章
+                      </span>
+                      <div className="flex gap-2">
+                        <Button
+                          type="button"
+                          size="sm"
+                          variant="ghost"
+                          onClick={() => setSelectedChapterIds(chapters.map((c) => c.id))}
+                        >
+                          全选
+                        </Button>
+                        <Button
+                          type="button"
+                          size="sm"
+                          variant="ghost"
+                          onClick={() => setSelectedChapterIds([])}
+                        >
+                          清空
+                        </Button>
+                      </div>
+                    </div>
+                    <div className="flex max-h-40 flex-col gap-1 overflow-y-auto pt-1">
+                      {chapters.map((c) => (
+                        <label
+                          key={c.id}
+                          className="flex items-center gap-2 rounded-md px-2 py-1 text-xs text-[#2c2523] hover:bg-[#f5efe6] cursor-pointer"
+                        >
+                          <Checkbox
+                            checked={selectedChapterIds.includes(c.id)}
+                            onCheckedChange={() => toggleChapter(c.id)}
+                          />
+                          <span>{c.title}</span>
+                        </label>
+                      ))}
                     </div>
                   </div>
-                  <div className="chapter-checkbox-list">
-                    {chapters.map((c) => (
-                      <label key={c.id} className="chapter-check-item">
-                        <input
-                          type="checkbox"
-                          checked={selectedChapterIds.includes(c.id)}
-                          onChange={() => toggleChapter(c.id)}
-                        />
-                        <span>{c.title}</span>
-                      </label>
+                )}
+              </div>
+            )}
+
+            <div className="flex flex-col gap-2">
+              <label className="text-xs font-semibold text-[#7d6b59]">执行模型连接</label>
+              {connections.length === 0 ? (
+                <p className="text-xs text-red-600">
+                  当前尚未配置生成模型连接。请先前往「模型」配置连接。
+                </p>
+              ) : (
+                <Select
+                  value={selectedConnectionId}
+                  onValueChange={(val) => setSelectedConnectionId(val as string)}
+                >
+                  <SelectTrigger className="w-full rounded-lg border border-[#dacdbe] bg-white px-3 py-2 text-sm text-[#2c2523] outline-none">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {connections.map((c) => (
+                      <SelectItem key={c.id} value={c.id}>
+                        {c.name} ({c.model}) - {getEndpointHost(c.baseUrl)}
+                      </SelectItem>
                     ))}
-                  </div>
+                  </SelectContent>
+                </Select>
+              )}
+
+              {selectedConn && !isConfirmed && (
+                <div className="flex items-center gap-2 rounded-xl border border-amber-200 bg-amber-50 p-2.5 text-xs text-amber-800">
+                  <AlertTriangle size={15} className="shrink-0" />
+                  <span>该连接的目标指纹尚未确认。发送请求时需进行联网目标确认。</span>
                 </div>
               )}
             </div>
-          )}
-
-          <div className="analysis-form-group">
-            <label className="group-label">执行模型连接</label>
-            {connections.length === 0 ? (
-              <p className="field-help" style={{ color: '#b91c1c' }}>
-                当前尚未配置生成模型连接。请先前往「模型」配置连接。
-              </p>
-            ) : (
-              <select
-                value={selectedConnectionId}
-                onChange={(e) => setSelectedConnectionId(e.target.value)}
-                style={{ width: '100%', padding: '8px 12px', border: '1px solid #d1d5db', borderRadius: 4, background: '#fff' }}
-              >
-                {connections.map((c) => (
-                  <option key={c.id} value={c.id}>
-                    {c.name} ({c.model}) - {getEndpointHost(c.baseUrl)}
-                  </option>
-                ))}
-              </select>
-            )}
-
-            {selectedConn && !isConfirmed && (
-              <div className="alert-banner warning" style={{ marginTop: 8 }}>
-                <AlertTriangle size={15} />
-                <span>该连接的目标指纹尚未确认。发送请求时需进行联网目标确认。</span>
-              </div>
-            )}
           </div>
-        </div>
+        </ScrollArea>
 
-        <footer className="dialog-footer">
-          <span>任务在后台异步串行执行，可随时在「任务」面板查看实时进度与重试失败步骤</span>
-          <div>
-            <button type="button" className="text-button" onClick={onClose}>取消</button>
-            <button
-              type="button"
-              className="primary-button"
+        <DialogFooter className="flex items-center justify-between border-t border-[#e5ddd3] pt-3 text-[11px] text-[#7d6b59]">
+          <span>任务在后台异步串行执行，可随时在「任务」面板查看实时进度</span>
+          <div className="flex gap-2">
+            <Button variant="ghost" onClick={onClose}>
+              取消
+            </Button>
+            <Button
               disabled={isReadOnly || loading || connections.length === 0}
               onClick={() => void handleStart()}
             >
-              {loading ? <RotateCw className="spin" size={14} /> : <Play size={14} />}
+              {loading ? (
+                <RotateCw className="animate-spin" size={14} />
+              ) : (
+                <Play size={14} />
+              )}
               {loading ? '启动中...' : '开始执行任务'}
-            </button>
+            </Button>
           </div>
-        </footer>
-      </motion.div>
-    </motion.div>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   )
 }

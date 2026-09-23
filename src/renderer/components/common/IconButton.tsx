@@ -1,4 +1,6 @@
 import type React from 'react'
+import { Tooltip, TooltipTrigger, TooltipContent, TooltipProvider } from '@appica/ui-react/tooltip'
+import { Button } from '@appica/ui-react/button'
 
 export const IconButton = ({
   label,
@@ -6,7 +8,8 @@ export const IconButton = ({
   children,
   disabled = false,
   className = '',
-  title
+  title,
+  side = 'bottom'
 }: {
   label: string
   onClick: () => void
@@ -14,14 +17,27 @@ export const IconButton = ({
   disabled?: boolean
   className?: string
   title?: string
+  side?: 'top' | 'bottom' | 'left' | 'right'
 }) => (
-  <button
-    className={`icon-button ${className}`.trim()}
-    aria-label={label}
-    title={title ?? label}
-    onClick={onClick}
-    disabled={disabled}
-  >
-    {children}
-  </button>
+  <TooltipProvider delay={300}>
+    <Tooltip>
+      <TooltipTrigger
+        render={
+          <Button
+            variant="ghost"
+            size="icon-sm"
+            className={`icon-button ${className}`.trim()}
+            aria-label={label}
+            onClick={onClick}
+            onFocus={(event) => event.preventDefault()}
+            disabled={disabled}
+          >
+            {children}
+          </Button>
+        }
+      />
+      <TooltipContent side={side}>{title ?? label}</TooltipContent>
+    </Tooltip>
+  </TooltipProvider>
 )
+

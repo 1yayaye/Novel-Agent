@@ -1,5 +1,6 @@
 import React from 'react'
 import { Check, Clock, FileText, Keyboard, MousePointer } from 'lucide-react'
+import { Button } from '@appica/ui-react/button'
 import type { SaveState, SelectionInfo, WritingTheme } from '../../types/editor'
 import { stateLabel } from '../../utils/constants'
 
@@ -25,7 +26,7 @@ export function EditorStatusBar({
       <div className="status-left">
         <span className="status-item word-count" title="本章字数">
           <FileText size={13} />
-          <strong>{totalWords.toLocaleString()}</strong> 字
+          <strong className="number-pop-in">{totalWords.toLocaleString()}</strong> 字
         </span>
 
         {selectedWords > 0 && (
@@ -48,17 +49,17 @@ export function EditorStatusBar({
       </div>
 
       <div className="status-right">
-        <button
-          type="button"
+        <Button
+          variant="ghost"
           aria-label="强制保存"
-          className="status-item save-hint cursor-pointer"
+          className="status-item save-hint cursor-pointer h-auto p-0 border-none bg-transparent hover:bg-transparent"
           title="点击或按 Ctrl+S 立即强制保存"
           onClick={onForceSave}
         >
           <Keyboard size={12} />
           <span className={`save-dot ${saveState}`} />
           <span className={`save-label ${saveState}`}>{stateLabel[saveState]}</span>
-        </button>
+        </Button>
       </div>
     </div>
   )

@@ -1,5 +1,6 @@
 import React from 'react'
 import { X, Flame, Compass, BookOpen, ListOrdered, FileBarChart } from 'lucide-react'
+import { Button } from '@appica/ui-react/button'
 import { useWorkbenchStore, type DrawerType } from '../../stores/useWorkbenchStore'
 import { StoryBeatsDrawer } from './StoryBeatsDrawer'
 import { OutlineDrawer } from './OutlineDrawer'
@@ -75,14 +76,16 @@ export function DrawerHost({
             {meta.title}
           </h2>
         </div>
-        <button
-          type="button"
+        <Button
+          variant="ghost"
+          size="icon-sm"
           onClick={closeDrawer}
           className="p-1 text-[#7d6b59] hover:text-[#2c2523] hover:bg-[#efe6da] rounded-lg transition-colors"
           title="关闭侧边面板"
+          aria-label="关闭侧边面板"
         >
           <X size={15} />
-        </button>
+        </Button>
       </div>
 
       {/* Drawer Content */}

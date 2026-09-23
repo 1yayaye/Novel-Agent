@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import { FileBarChart, Sparkles, X, ArrowRight } from 'lucide-react'
+import { Button } from '@appica/ui-react/button'
 
 interface WorkflowGuideBannerProps {
   totalChapters: number
@@ -51,8 +52,7 @@ export function WorkflowGuideBanner({
 
       <div className="workflow-guide-actions">
         {needsKnowledge && (
-          <button
-            type="button"
+          <Button
             className="workflow-guide-primary-btn"
             disabled={isReadOnly}
             onClick={onStartKnowledgeAnalysis}
@@ -61,12 +61,12 @@ export function WorkflowGuideBanner({
             <Sparkles size={13} />
             <span>一键提取剧情与大纲</span>
             <ArrowRight size={12} />
-          </button>
+          </Button>
         )}
 
         {needsReport && (
-          <button
-            type="button"
+          <Button
+            variant="outline"
             className="workflow-guide-sub-btn"
             disabled={isReadOnly}
             onClick={onStartReportAnalysis}
@@ -74,18 +74,19 @@ export function WorkflowGuideBanner({
           >
             <FileBarChart size={13} />
             <span>分析文风报告</span>
-          </button>
+          </Button>
         )}
 
-        <button
-          type="button"
+        <Button
+          variant="ghost"
+          size="icon-sm"
           className="workflow-guide-dismiss-btn"
           onClick={() => setDismissed(true)}
           title="暂时收起提示"
           aria-label="关闭提示"
         >
           <X size={15} />
-        </button>
+        </Button>
       </div>
     </div>
   )

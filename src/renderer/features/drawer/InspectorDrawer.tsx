@@ -1,7 +1,7 @@
 import React from 'react'
 import { FileBarChart, Clock, Users, ShieldAlert, Sparkles, Camera } from 'lucide-react'
-import { Card } from '../../components/ui/card'
-import { Button } from '../../components/ui/button'
+import { Card } from '@appica/ui-react/card'
+import { Button } from '@appica/ui-react/button'
 import type { Chapter } from '../../../shared/project'
 import { count } from '../../../shared/text-counter'
 

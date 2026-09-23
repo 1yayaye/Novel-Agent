@@ -1,4 +1,26 @@
 @import "tailwindcss";
+@import "@appica/ui-react/styles.css";
+@import "./transitions.css";
+
+@source "../../../node_modules/@appica/ui-react/dist";
+
+:root {
+  --background: #faf8f5;
+  --background-subtle: #f5efe6;
+  --background-muted: #efe6da;
+  --foreground: #54473b;
+  --foreground-muted: #7d6b59;
+  --foreground-subtle: #baa997;
+  --foreground-intense: #2c2523;
+  --border: #e5ddd3;
+  --border-strong: #dacdbe;
+  --primary: #2d6a4f;
+  --primary-strong: #24583e;
+  --primary-soft: #e8f3ee;
+  --primary-foreground: #ffffff;
+  --focus-ring-primary: #2d6a4f4d;
+  --radius: 0.875rem;
+}
 
 @theme {
   --color-latte-50: #faf8f5;
@@ -69,6 +91,37 @@
   }
   .no-drag-region {
     -webkit-app-region: no-drag;
+  }
+
+  .window-controls {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    -webkit-app-region: no-drag;
+  }
+
+  .win-btn {
+    width: 40px;
+    height: 32px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    margin: 0;
+    padding: 0;
+    border: none;
+    border-radius: 8px;
+    background: transparent;
+    color: #54473b;
+    cursor: pointer;
+  }
+
+  .win-btn:hover {
+    background: #efe6da;
+  }
+
+  .win-btn.close:hover {
+    background: #c85a32;
+    color: #ffffff;
   }
 }
 
@@ -216,6 +269,231 @@
 .candidate-dialog {
   display: flex;
   flex-direction: column;
+}
+.dialog-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+}
+.dialog-footer {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 12px;
+  margin-top: 12px;
+  padding-top: 12px;
+  border-top: 1px solid #e5ddd3;
+}
+.icon-button,
+.text-button,
+.primary-button,
+.danger-button,
+.tab-chip,
+.workflow-guide-primary-btn,
+.workflow-guide-sub-btn,
+.workflow-guide-dismiss-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.icon-button {
+  width: 32px;
+  height: 32px;
+  justify-content: center;
+  padding: 0;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: #7d6b59;
+  cursor: pointer;
+}
+.text-button,
+.danger-button,
+.primary-button {
+  border-radius: 8px;
+  padding: 6px 12px;
+  font-size: 13px;
+  cursor: pointer;
+}
+.text-button {
+  border: 0;
+  background: transparent;
+  color: #54473b;
+}
+.primary-button {
+  border: 0;
+  background: #2d6a4f;
+  color: #ffffff;
+}
+.danger-button {
+  border: 0;
+  background: #c85a32;
+  color: #ffffff;
+}
+.primary-button:disabled,
+.text-button:disabled,
+.danger-button:disabled,
+.icon-button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+.tab-filter-bar,
+.tab-chips,
+.workflow-guide-actions,
+.workflow-guide-title,
+.outline-empty-flow,
+.outline-empty-flow-step,
+.outline-empty-actions,
+.chat-sidebar-header,
+.chat-header-bar,
+.chat-input-box,
+.sidebar-header,
+.form-row,
+.form-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.tab-filter-bar,
+.tab-chips,
+.outline-empty-actions {
+  flex-wrap: wrap;
+}
+.tab-chip {
+  border: 1px solid #e5ddd3;
+  background: #ffffff;
+  color: #54473b;
+  border-radius: 999px;
+  padding: 4px 10px;
+  font-size: 13px;
+  cursor: pointer;
+}
+.tab-chip.active {
+  background: #e8f3ee;
+  color: #2d6a4f;
+  border-color: #2d6a4f;
+}
+.workflow-guide-banner {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  margin: 8px 16px 0;
+  padding: 12px 14px;
+  border: 1px solid #e5ddd3;
+  border-radius: 12px;
+  background: #faf8f5;
+}
+.workflow-guide-content,
+.workflow-guide-texts {
+  display: flex;
+  gap: 10px;
+  min-width: 0;
+}
+.workflow-guide-texts {
+  flex-direction: column;
+  align-items: flex-start;
+}
+.workflow-guide-actions {
+  flex-shrink: 0;
+}
+.workflow-guide-primary-btn,
+.workflow-guide-sub-btn,
+.workflow-guide-dismiss-btn {
+  border-radius: 8px;
+  cursor: pointer;
+}
+.workflow-guide-primary-btn {
+  border: 0;
+  background: #2d6a4f;
+  color: #ffffff;
+  padding: 6px 12px;
+}
+.workflow-guide-sub-btn,
+.workflow-guide-dismiss-btn {
+  border: 1px solid #e5ddd3;
+  background: #ffffff;
+  color: #54473b;
+  padding: 6px 10px;
+}
+.outline-empty-card {
+  overflow: auto;
+  padding: 8px 4px 16px;
+}
+.outline-empty-flow-badge {
+  display: inline-grid;
+  place-items: center;
+  width: 20px;
+  height: 20px;
+  border-radius: 999px;
+  background: #e8f3ee;
+  color: #2d6a4f;
+  font-size: 12px;
+}
+.knowledge-body,
+.candidate-review-body,
+.chat-layout {
+  display: grid;
+  flex: 1;
+  min-height: 0;
+  grid-template-columns: 260px minmax(0, 1fr);
+}
+.knowledge-sidebar,
+.candidate-history-sidebar,
+.chat-sidebar {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  min-width: 0;
+  border-right: 1px solid #e5ddd3;
+}
+.knowledge-detail,
+.candidate-split-view,
+.chat-main {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  min-width: 0;
+}
+.sidebar-search input,
+.chat-input-textarea {
+  width: 100%;
+  min-width: 0;
+  box-sizing: border-box;
+}
+.entry-list,
+.candidate-history-list,
+.chat-sidebar-list,
+.chat-messages-container,
+.knowledge-detail,
+.candidate-split-view {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+}
+.detail-form,
+.form-field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+}
+.form-field {
+  flex: 1;
+}
+.chat-input-area {
+  padding: 12px 16px;
+  border-top: 1px solid #e5ddd3;
+}
+.chat-input-textarea {
+  flex: 1;
+  min-height: 72px;
+  resize: vertical;
+  padding: 8px 10px;
+  border: 1px solid #e5ddd3;
+  border-radius: 8px;
+  background: #ffffff;
 }
 .split-panels-container {
   display: grid;

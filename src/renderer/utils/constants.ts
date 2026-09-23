@@ -96,6 +96,11 @@ export const reportSectionTitle: Record<ReportSectionType, string> = {
   continuity_issues: '连续性与逻辑问题'
 }
 
+export const reportStateLabel: Record<string, string> = {
+  current: '有效',
+  stale: '已过时'
+}
+
 export const taskStateLabel: Record<string, string> = {
   queued: '排队中',
   running: '执行中',

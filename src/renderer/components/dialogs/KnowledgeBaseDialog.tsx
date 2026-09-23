@@ -4,8 +4,13 @@ import { ArrowRight, Check, Plus, Trash2, Users, X } from 'lucide-react'
 import { CharacterRelationship, KnowledgeEntry, KnowledgeKind, KnowledgeState } from '../../../shared/project'
 import { IconButton } from '../common/IconButton'
 import { errorText } from '../../utils/formatters'
-import { knowledgeKindLabel, foreshadowStateLabel } from '../../utils/constants'
-import { useDialogDismiss } from '../../hooks/useDialogDismiss'
+import { knowledgeKindLabel } from '../../utils/constants'
+import { Dialog, DialogContent } from '@appica/ui-react/dialog'
+import { Button } from '@appica/ui-react/button'
+import { Input } from '@appica/ui-react/input'
+import { Textarea } from '@appica/ui-react/textarea'
+import { Checkbox } from '@appica/ui-react/checkbox'
+import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from '@appica/ui-react/select'
 
 export function KnowledgeBaseDialog({
   sessionId,
@@ -16,7 +21,6 @@ export function KnowledgeBaseDialog({
   isReadOnly: boolean
   onClose: () => void
 }) {
-  const { dialogRef, backdropProps } = useDialogDismiss({ onClose })
   const [activeTab, setActiveTab] = useState<'character' | 'world' | 'timeline' | 'foreshadow' | 'relationship'>('character')
   const [stateFilter, setStateFilter] = useState<'all' | 'active' | 'archived'>('active')
   const [searchQuery, setSearchQuery] = useState('')
@@ -278,8 +282,12 @@ export function KnowledgeBaseDialog({
   }, [sessionId, activeTab, relFromId])
 
   return (
-    <motion.div className="action-dialog-layer" {...backdropProps} initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} role="presentation">
-      <motion.div ref={dialogRef} className="knowledge-dialog" role="dialog" aria-modal="true" aria-labelledby="knowledge-title" initial={{ opacity: 0, y: 8, scale: .98 }} animate={{ opacity: 1, y: 0, scale: 1 }} exit={{ opacity: 0, y: 4 }}>
+    <Dialog open onOpenChange={(open) => { if (!open) onClose() }}>
+      <DialogContent
+        className="knowledge-dialog flex flex-col p-6 w-[90vw] max-w-[90vw] h-[90vh]"
+        aria-labelledby="knowledge-title"
+        closeButton={false}
+      >
         <header className="dialog-header">
           <div>
             <h2 id="knowledge-title">作品知识库</h2>
@@ -290,34 +298,34 @@ export function KnowledgeBaseDialog({
 
         <div className="tab-filter-bar">
           <div className="tab-chips">
-            <button className={`tab-chip ${activeTab === 'character' ? 'active' : ''}`} onClick={() => { setActiveTab('character'); setSelectedEntryId(null); setIsNewEntry(false) }}>
-              人物 (Characters)
-            </button>
-            <button className={`tab-chip ${activeTab === 'world' ? 'active' : ''}`} onClick={() => { setActiveTab('world'); setSelectedEntryId(null); setIsNewEntry(false) }}>
-              世界观 (World)
-            </button>
-            <button className={`tab-chip ${activeTab === 'timeline' ? 'active' : ''}`} onClick={() => { setActiveTab('timeline'); setSelectedEntryId(null); setIsNewEntry(false) }}>
-              时间线 (Timeline)
-            </button>
-            <button className={`tab-chip ${activeTab === 'foreshadow' ? 'active' : ''}`} onClick={() => { setActiveTab('foreshadow'); setSelectedEntryId(null); setIsNewEntry(false) }}>
-              伏笔 (Foreshadow)
-            </button>
-            <button className={`tab-chip ${activeTab === 'relationship' ? 'active' : ''}`} onClick={() => setActiveTab('relationship')}>
+            <Button variant="ghost" className={`tab-chip ${activeTab === 'character' ? 'active' : ''}`} onClick={() => { setActiveTab('character'); setSelectedEntryId(null); setIsNewEntry(false) }}>
+              人物
+            </Button>
+            <Button variant="ghost" className={`tab-chip ${activeTab === 'world' ? 'active' : ''}`} onClick={() => { setActiveTab('world'); setSelectedEntryId(null); setIsNewEntry(false) }}>
+              世界观
+            </Button>
+            <Button variant="ghost" className={`tab-chip ${activeTab === 'timeline' ? 'active' : ''}`} onClick={() => { setActiveTab('timeline'); setSelectedEntryId(null); setIsNewEntry(false) }}>
+              时间线
+            </Button>
+            <Button variant="ghost" className={`tab-chip ${activeTab === 'foreshadow' ? 'active' : ''}`} onClick={() => { setActiveTab('foreshadow'); setSelectedEntryId(null); setIsNewEntry(false) }}>
+              伏笔
+            </Button>
+            <Button variant="ghost" className={`tab-chip ${activeTab === 'relationship' ? 'active' : ''}`} onClick={() => setActiveTab('relationship')}>
               <Users size={14} />人物关系图谱
-            </button>
+            </Button>
           </div>
 
           {activeTab !== 'relationship' && (
             <div className="tab-chips">
-              <button className={`tab-chip ${stateFilter === 'active' ? 'active' : ''}`} onClick={() => setStateFilter('active')}>
+              <Button variant="ghost" className={`tab-chip ${stateFilter === 'active' ? 'active' : ''}`} onClick={() => setStateFilter('active')}>
                 活跃条目
-              </button>
-              <button className={`tab-chip ${stateFilter === 'archived' ? 'active' : ''}`} onClick={() => setStateFilter('archived')}>
+              </Button>
+              <Button variant="ghost" className={`tab-chip ${stateFilter === 'archived' ? 'active' : ''}`} onClick={() => setStateFilter('archived')}>
                 已归档条目
-              </button>
-              <button className={`tab-chip ${stateFilter === 'all' ? 'active' : ''}`} onClick={() => setStateFilter('all')}>
+              </Button>
+              <Button variant="ghost" className={`tab-chip ${stateFilter === 'all' ? 'active' : ''}`} onClick={() => setStateFilter('all')}>
                 全部
-              </button>
+              </Button>
             </div>
           )}
         </div>
@@ -334,7 +342,7 @@ export function KnowledgeBaseDialog({
                 </IconButton>
               </div>
               <div className="sidebar-search">
-                <input
+                <Input
                   placeholder="搜索条目标题或正文..."
                   value={searchQuery}
                   onChange={(e) => setSearchQuery(e.target.value)}
@@ -342,8 +350,9 @@ export function KnowledgeBaseDialog({
               </div>
               <div className="entry-list">
                 {entries.map((e) => (
-                  <button
+                  <Button
                     key={e.id}
+                    variant="ghost"
                     className={`entry-card ${!isNewEntry && selectedEntryId === e.id ? 'active' : ''}`}
                     onClick={() => selectEntry(e)}
                   >
@@ -354,7 +363,7 @@ export function KnowledgeBaseDialog({
                       </span>
                     </div>
                     <span className="entry-card-preview">{e.authorContent || '暂无作者正文'}</span>
-                  </button>
+                  </Button>
                 ))}
               </div>
             </aside>
@@ -377,40 +386,45 @@ export function KnowledgeBaseDialog({
                     <div className="form-row">
                       <div className="form-field">
                         <label>标题</label>
-                        <input value={formTitle} onChange={(e) => setFormTitle(e.target.value)} placeholder="条目标题" />
+                        <Input value={formTitle} onChange={(e) => setFormTitle(e.target.value)} placeholder="条目标题" />
                       </div>
                       <div className="form-field">
                         <label>别名 (逗号分隔)</label>
-                        <input value={formAliases} onChange={(e) => setFormAliases(e.target.value)} placeholder="别名、绰号" />
+                        <Input value={formAliases} onChange={(e) => setFormAliases(e.target.value)} placeholder="别名、绰号" />
                       </div>
                     </div>
 
                     <div className="form-row">
                       <div className="form-field">
                         <label>标签 (逗号分隔)</label>
-                        <input value={formTags} onChange={(e) => setFormTags(e.target.value)} placeholder="主角, 正派, 剑宗" />
+                        <Input value={formTags} onChange={(e) => setFormTags(e.target.value)} placeholder="主角, 正派, 剑宗" />
                       </div>
                       {formKind === 'character' && (
                         <div className="form-field">
                           <label>身份 / 职业</label>
-                          <input value={formIdentity} onChange={(e) => setFormIdentity(e.target.value)} placeholder="例如：宗门长老、主角师尊" />
+                          <Input value={formIdentity} onChange={(e) => setFormIdentity(e.target.value)} placeholder="例如：宗门长老、主角师尊" />
                         </div>
                       )}
                       {formKind === 'timeline' && (
                         <div className="form-field">
                           <label>叙事顺序</label>
-                          <input type="number" value={formNarrativeOrder} onChange={(e) => setFormNarrativeOrder(e.target.value)} placeholder="1, 2, 3..." />
+                          <Input type="number" value={formNarrativeOrder} onChange={(e) => setFormNarrativeOrder(e.target.value)} placeholder="1, 2, 3..." />
                         </div>
                       )}
                       {formKind === 'foreshadow' && (
                         <div className="form-field">
                           <label>伏笔状态</label>
-                          <select value={formForeshadowState} onChange={(e) => setFormForeshadowState(e.target.value)}>
-                            <option value="planted">铺设中 (planted)</option>
-                            <option value="developing">发展中 (developing)</option>
-                            <option value="resolved">已揭示 (resolved)</option>
-                            <option value="abandoned">已废弃 (abandoned)</option>
-                          </select>
+                          <Select value={formForeshadowState} onValueChange={(val) => setFormForeshadowState(val as string)}>
+                            <SelectTrigger>
+                              <SelectValue />
+                            </SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="planted">铺设中 (planted)</SelectItem>
+                              <SelectItem value="developing">发展中 (developing)</SelectItem>
+                              <SelectItem value="resolved">已揭示 (resolved)</SelectItem>
+                              <SelectItem value="abandoned">已废弃 (abandoned)</SelectItem>
+                            </SelectContent>
+                          </Select>
                         </div>
                       )}
                     </div>
@@ -418,7 +432,7 @@ export function KnowledgeBaseDialog({
                     {formKind === 'character' && (
                       <div className="form-field">
                         <label>当前状态 / 境界</label>
-                        <input value={formCurrentState} onChange={(e) => setFormCurrentState(e.target.value)} placeholder="例如：筑基中期、负伤闭关" />
+                        <Input value={formCurrentState} onChange={(e) => setFormCurrentState(e.target.value)} placeholder="例如：筑基中期、负伤闭关" />
                       </div>
                     )}
 
@@ -426,14 +440,14 @@ export function KnowledgeBaseDialog({
                       <div className="form-row">
                         <div className="form-field">
                           <label>故事内时间</label>
-                          <input value={formStoryTime} onChange={(e) => setFormStoryTime(e.target.value)} placeholder="例如：天元历三万年春" />
+                          <Input value={formStoryTime} onChange={(e) => setFormStoryTime(e.target.value)} placeholder="例如：天元历三万年春" />
                         </div>
                         <div className="form-field">
                           <label>相对时间</label>
-                          <input value={formRelativeTime} onChange={(e) => setFormRelativeTime(e.target.value)} placeholder="例如：大战后三年" />
+                          <Input value={formRelativeTime} onChange={(e) => setFormRelativeTime(e.target.value)} placeholder="例如：大战后三年" />
                         </div>
                         <div className="checkbox-field" style={{ gridColumn: 'span 2' }}>
-                          <input type="checkbox" id="timeUncertain" checked={formTimeUncertain} onChange={(e) => setFormTimeUncertain(e.target.checked)} />
+                          <Checkbox id="timeUncertain" checked={formTimeUncertain} onCheckedChange={(checked) => setFormTimeUncertain(Boolean(checked))} />
                           <label htmlFor="timeUncertain">时间推测/不确定</label>
                         </div>
                       </div>
@@ -441,7 +455,7 @@ export function KnowledgeBaseDialog({
 
                     <div className="form-field" style={{ flex: 1 }}>
                       <label>作者正文 (权威知识正文，AI 绝不直接覆盖)</label>
-                      <textarea
+                      <Textarea
                         style={{ minHeight: 180 }}
                         value={formAuthorContent}
                         onChange={(e) => setFormAuthorContent(e.target.value)}
@@ -453,18 +467,18 @@ export function KnowledgeBaseDialog({
                       <div style={{ display: 'flex', gap: 8 }}>
                         {!isNewEntry && (
                           <>
-                            <button type="button" className="text-button" onClick={() => void toggleArchive()}>
+                            <Button type="button" variant="ghost" className="text-button" onClick={() => void toggleArchive()}>
                               {formState === 'active' ? '归档条目' : '恢复条目'}
-                            </button>
-                            <button type="button" className="text-button" style={{ color: '#b91c1c' }} onClick={() => void deleteEntry()}>
+                            </Button>
+                            <Button type="button" variant="ghost" className="text-button" style={{ color: '#b91c1c' }} onClick={() => void deleteEntry()}>
                               <Trash2 size={14} />删除条目
-                            </button>
+                            </Button>
                           </>
                         )}
                       </div>
-                      <button className="primary-button" disabled={isReadOnly || saving || !formTitle.trim()} onClick={() => void saveEntry()}>
+                      <Button className="primary-button" disabled={isReadOnly || saving || !formTitle.trim()} onClick={() => void saveEntry()}>
                         <Check size={14} />{saving ? '保存中...' : '保存条目'}
-                      </button>
+                      </Button>
                     </div>
                   </div>
                 </>
@@ -477,11 +491,11 @@ export function KnowledgeBaseDialog({
           <div className="relationship-container">
             <div className="rel-toolbar">
               <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-                <button className="primary-button" disabled={isReadOnly || characterOptions.length < 2} onClick={() => setCreatingRel(true)}>
+                <Button className="primary-button" disabled={isReadOnly || characterOptions.length < 2} onClick={() => setCreatingRel(true)}>
                   <Plus size={14} />新建人物关系
-                </button>
+                </Button>
                 <label className="checkbox-field" style={{ margin: 0 }}>
-                  <input type="checkbox" checked={includeArchivedRels} onChange={(e) => setIncludeArchivedRels(e.target.checked)} />
+                  <Checkbox checked={includeArchivedRels} onCheckedChange={(checked) => setIncludeArchivedRels(Boolean(checked))} />
                   <span>显示涉及已归档人物的关系</span>
                 </label>
               </div>
@@ -494,36 +508,46 @@ export function KnowledgeBaseDialog({
                 <div className="form-row">
                   <div className="form-field">
                     <label>起始主体 (From)</label>
-                    <select value={relFromId} onChange={(e) => setRelFromId(e.target.value)}>
-                      {characterOptions.map((c) => (
-                        <option key={c.id} value={c.id}>{c.title}</option>
-                      ))}
-                    </select>
+                    <Select value={relFromId} onValueChange={(val) => setRelFromId(val as string)}>
+                      <SelectTrigger>
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {characterOptions.map((c) => (
+                          <SelectItem key={c.id} value={c.id}>{c.title}</SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
                   </div>
                   <div className="form-field">
                     <label>目标主体 (To)</label>
-                    <select value={relToId} onChange={(e) => setRelToId(e.target.value)}>
-                      {characterOptions.map((c) => (
-                        <option key={c.id} value={c.id}>{c.title}</option>
-                      ))}
-                    </select>
+                    <Select value={relToId} onValueChange={(val) => setRelToId(val as string)}>
+                      <SelectTrigger>
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {characterOptions.map((c) => (
+                          <SelectItem key={c.id} value={c.id}>{c.title}</SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
                   </div>
                 </div>
                 <div className="form-row">
                   <div className="form-field">
                     <label>关系类型</label>
-                    <input value={relType} onChange={(e) => setRelType(e.target.value)} placeholder="例如：同门、宿敌、师徒" />
+                    <Input value={relType} onChange={(e) => setRelType(e.target.value)} placeholder="例如：同门、宿敌、师徒" />
                   </div>
                   <div className="form-field">
                     <label>关系说明</label>
-                    <input value={relDesc} onChange={(e) => setRelDesc(e.target.value)} placeholder="关系背景与细节" />
+                    <Input value={relDesc} onChange={(e) => setRelDesc(e.target.value)} placeholder="关系背景与细节" />
                   </div>
                 </div>
                 <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 8 }}>
-                  <button type="button" className="text-button" onClick={() => setCreatingRel(false)}>取消</button>
-                  <button type="button" className="primary-button" disabled={!relType.trim() || relFromId === relToId} onClick={() => void submitCreateRel()}>
+                  <Button type="button" variant="ghost" className="text-button" onClick={() => setCreatingRel(false)}>取消</Button>
+                  <Button type="button" className="primary-button" disabled={!relType.trim() || relFromId === relToId} onClick={() => void submitCreateRel()}>
                     创建关系
-                  </button>
+                  </Button>
                 </div>
               </div>
             )}
@@ -540,9 +564,9 @@ export function KnowledgeBaseDialog({
                   </div>
                   {r.description && <p className="rel-desc">{r.description}</p>}
                   <div className="rel-actions">
-                    <button type="button" className="text-button" style={{ color: '#b91c1c' }} onClick={() => void deleteRel(r)}>
+                    <Button type="button" variant="ghost" className="text-button" style={{ color: '#b91c1c' }} onClick={() => void deleteRel(r)}>
                       <Trash2 size={13} />删除
-                    </button>
+                    </Button>
                   </div>
                 </div>
               ))}
@@ -551,10 +575,9 @@ export function KnowledgeBaseDialog({
         )}
 
         <footer className="dialog-footer">
-          <span>知识条目更新后自动递增 search_revision 并触发 FTS 同步</span>
-          <button type="button" className="text-button" onClick={onClose}>关闭</button>
+          <Button type="button" variant="ghost" className="text-button" onClick={onClose}>关闭</Button>
         </footer>
-      </motion.div>
-    </motion.div>
+      </DialogContent>
+    </Dialog>
   )
 }

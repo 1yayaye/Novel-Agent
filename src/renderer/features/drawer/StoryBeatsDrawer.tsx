@@ -1,8 +1,6 @@
 import React, { useState } from 'react'
 import { Flame, Sparkles, Target, Users, Zap, Plus, CheckCircle, ChevronRight } from 'lucide-react'
-import { Card } from '../../components/ui/card'
-import { Badge } from '../../components/ui/badge'
-import { Button } from '../../components/ui/button'
+import { Card } from '@appica/ui-react/card'
 
 export interface BeatCard {
   id: string

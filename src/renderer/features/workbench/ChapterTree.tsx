@@ -2,14 +2,15 @@ import React, { useState } from 'react'
 import { Plus, Search, MoreVertical, Trash2, Edit3, ArrowUp, ArrowDown, FileText } from 'lucide-react'
 import type { ChapterHeader } from '../../../shared/project'
 import { getChapterNumber } from '../../utils/chapter-numbering'
-import { Button } from '../../components/ui/button'
+import { Button } from '@appica/ui-react/button'
+import { Input } from '@appica/ui-react/input'
 import {
   DropdownMenu,
   DropdownMenuTrigger,
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuSeparator
-} from '../../components/ui/dropdown-menu'
+} from '@appica/ui-react/dropdown-menu'
 
 export interface ChapterTreeProps {
   chapters: ChapterHeader[]
@@ -64,8 +65,8 @@ export function ChapterTree({
       {/* Quick Search */}
       <div className="p-2 border-b border-[#e5ddd3]/60">
         <div className="relative flex items-center">
-          <Search size={13} className="absolute left-2.5 text-[#baa997]" />
-          <input
+          <Search size={13} className="absolute left-2.5 text-[#baa997] z-10 pointer-events-none" />
+          <Input
             value={filterQuery}
             onChange={(e) => setFilterQuery(e.target.value)}
             placeholder="搜索章节..."
@@ -102,7 +103,7 @@ export function ChapterTree({
                   </span>
                   <div className="truncate flex-1">
                     {editingId === chapter.id ? (
-                      <input
+                      <Input
                         autoFocus
                         value={editingTitle}
                         onChange={(e) => setEditingTitle(e.target.value)}
@@ -140,15 +141,18 @@ export function ChapterTree({
 
                   {/* Context menu for chapter */}
                   <DropdownMenu>
-                    <DropdownMenuTrigger asChild>
-                      <button
-                        type="button"
-                        onClick={(e) => e.stopPropagation()}
-                        className="p-1 rounded-md text-[#7d6b59] hover:bg-[#dacdbe]/60 hidden group-hover:flex transition-colors"
-                      >
-                        <MoreVertical size={13} />
-                      </button>
-                    </DropdownMenuTrigger>
+                    <DropdownMenuTrigger
+                      render={
+                        <Button
+                          variant="ghost"
+                          size="icon-sm"
+                          onClick={(e) => e.stopPropagation()}
+                          className="p-1 rounded-md text-[#7d6b59] hover:bg-[#dacdbe]/60 hidden group-hover:flex transition-colors h-6 w-6"
+                        >
+                          <MoreVertical size={13} />
+                        </Button>
+                      }
+                    />
                     <DropdownMenuContent align="end" className="w-36">
                       <DropdownMenuItem
                         onClick={() => {

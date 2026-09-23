@@ -148,6 +148,13 @@ export function EditorHost({
     [isReadOnly]
   )
 
+  const persistRef = useRef(persist)
+  const setHandleRef = useRef(setHandle)
+  const formatDocRef = useRef(formatDoc)
+  persistRef.current = persist
+  setHandleRef.current = setHandle
+  formatDocRef.current = formatDoc
+
   useEffect(() => {
     if (!chapter) {
       if (viewRef.current) {
@@ -185,7 +192,7 @@ export function EditorHost({
               content: currentDoc,
               wordCount: words
             })
-            void persist()
+            void persistRef.current()
             return true
           }
         }
@@ -212,7 +219,7 @@ export function EditorHost({
           useEditorStore.setState({ saveState: 'dirty' })
           window.clearTimeout(timer.current)
           timer.current = window.setTimeout(() => {
-            void persist()
+            void persistRef.current()
           }, 800)
         }
       }
@@ -286,11 +293,11 @@ export function EditorHost({
     const handle: EditorHandle = {
       flush: () => {
         window.clearTimeout(timer.current)
-        return persist()
+        return persistRef.current()
       },
       retry: () => {
         blocked.current = null
-        return persist()
+        return persistRef.current()
       },
       cursor: () => view.state.selection.main.head,
       command: (name) => {
@@ -331,7 +338,7 @@ export function EditorHost({
         })
         view.focus()
       },
-      formatDocument: (formatter) => formatDoc(formatter),
+      formatDocument: (formatter) => formatDocRef.current(formatter),
       replaceSelection: (text) => {
         const sel = view.state.selection.main
         view.dispatch({
@@ -348,16 +355,19 @@ export function EditorHost({
         selectionInfoRef.current ?? { from: 0, to: 0, text: '', line: 1, column: 1, rect: null }
     }
 
-    setHandle?.(handle)
+    setHandleRef.current?.(handle)
 
     return () => {
       window.clearTimeout(timer.current)
       window.clearTimeout(countTimer.current)
       view.destroy()
       viewRef.current = null
-      setHandle?.(null)
+      setHandleRef.current?.(null)
     }
-  }, [chapter?.id, persist, isReadOnly, sessionId, setHandle, formatDoc])
+    // persist / setHandle / formatDoc stay in refs. Those callbacks are recreated
+    // whenever the workbench re-renders, and this effect writes the editor store,
+    // so listing them here rebuilds CodeMirror until React aborts the tree.
+  }, [chapter?.id, isReadOnly, sessionId])
 
   const contentWidthClass =
     preferences.contentWidth === 'wide'

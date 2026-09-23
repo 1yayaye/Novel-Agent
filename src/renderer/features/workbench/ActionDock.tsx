@@ -13,6 +13,7 @@ import {
 } from 'lucide-react'
 import { useWorkbenchStore, type DrawerType } from '../../stores/useWorkbenchStore'
 import { useEditorStore } from '../../stores/useEditorStore'
+import { Button } from '@appica/ui-react/button'
 
 export function ActionDock({
   onToggleZenMode,
@@ -91,24 +92,26 @@ export function ActionDock({
 
   return (
     <div data-tour="ai-actions" className="absolute bottom-6 left-1/2 -translate-x-1/2 z-30 select-none">
-      <div className="flex items-center gap-1.5 px-3.5 py-1.5 bg-[#faf8f5]/95 backdrop-blur-md border border-[#e5ddd3] shadow-lg shadow-stone-300/30 rounded-full transition-all">
+      <div className="flex w-max whitespace-nowrap items-center gap-1.5 px-3.5 py-1.5 bg-[#faf8f5]/95 backdrop-blur-md border border-[#e5ddd3] shadow-lg shadow-stone-300/30 rounded-full transition-all">
         {dockButtons.map((btn) => {
           const Icon = btn.icon
           return (
-            <button
+            <Button
               key={btn.id}
-              type="button"
+              variant="ghost"
+              size="sm"
               onClick={btn.onClick}
-              className={`flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium transition-all active:scale-95 ${
+              className={`flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium transition-all active:scale-95 h-auto ${
                 btn.isActive
                   ? btn.activeClass
                   : 'text-[#54473b] hover:bg-[#efe6da]/80 hover:text-[#2c2523]'
               }`}
               title={btn.label}
+              aria-label={btn.label}
             >
               <Icon size={14} className={btn.isActive ? 'currentColor' : btn.colorClass} />
               <span className="hidden sm:inline">{btn.label}</span>
-            </button>
+            </Button>
           )
         })}
 
@@ -126,14 +129,16 @@ export function ActionDock({
         {onToggleZenMode && (
           <>
             <div className="h-4 w-px bg-[#e5ddd3] mx-1" />
-            <button
-              type="button"
+            <Button
+              variant="ghost"
+              size="icon-sm"
               onClick={onToggleZenMode}
               className="p-1.5 text-[#7d6b59] hover:text-[#2c2523] hover:bg-[#efe6da] rounded-full transition-colors"
               title={isZenMode ? '退出沉浸写作模式 (Esc)' : '进入沉浸全屏写作模式 (Zen Mode)'}
+              aria-label={isZenMode ? '退出沉浸' : '沉浸模式'}
             >
               {isZenMode ? <Minimize2 size={13} /> : <Maximize2 size={13} />}
-            </button>
+            </Button>
           </>
         )}
       </div>

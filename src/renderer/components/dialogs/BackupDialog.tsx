@@ -1,14 +1,22 @@
 import { useState, useEffect, useCallback } from 'react'
-import { motion } from 'motion/react'
-import { HardDrive, FolderOpen, RotateCcw, X } from 'lucide-react'
+import { HardDrive, FolderOpen, RotateCcw } from 'lucide-react'
 import { BackupInfo, OpenProjectResult } from '../../../shared/project'
-import { IconButton } from '../common/IconButton'
 import { errorText, formatDate, formatBytes } from '../../utils/formatters'
 import { backupTagLabel } from '../../utils/constants'
-import { useDialogDismiss } from '../../hooks/useDialogDismiss'
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from '@appica/ui-react/dialog'
+import { Button } from '@appica/ui-react/button'
+import { Badge } from '@appica/ui-react/badge'
+import { ScrollArea } from '@appica/ui-react/scroll-area'
 
-export function BackupDialog({ sessionId, onClose, onRestored }: { sessionId: string; onClose: () => void; onRestored: (opened: OpenProjectResult) => void }) {
-  const { dialogRef, backdropProps } = useDialogDismiss({ onClose })
+export function BackupDialog({
+  sessionId,
+  onClose,
+  onRestored
+}: {
+  sessionId: string
+  onClose: () => void
+  onRestored: (opened: OpenProjectResult) => void
+}) {
   const [backups, setBackups] = useState<BackupInfo[]>([])
   const [loading, setLoading] = useState(true)
   const [creating, setCreating] = useState(false)
@@ -28,7 +36,9 @@ export function BackupDialog({ sessionId, onClose, onRestored }: { sessionId: st
     }
   }, [sessionId])
 
-  useEffect(() => { void load() }, [load])
+  useEffect(() => {
+    void load()
+  }, [load])
 
   const createBackup = async () => {
     setCreating(true)
@@ -61,83 +71,98 @@ export function BackupDialog({ sessionId, onClose, onRestored }: { sessionId: st
     }
   }
 
-  const getTagClass = (tag?: string) => {
-    if (tag === 'daily') return 'daily'
-    if (tag === 'manual') return 'manual'
-    if (tag === 'pre_restore') return 'prerestore'
-    return ''
-  }
-
   return (
-    <motion.div className="action-dialog-layer" {...backdropProps} initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} role="presentation">
-      <motion.div ref={dialogRef} className="backup-dialog" role="dialog" aria-modal="true" aria-labelledby="backup-manager-title" initial={{ opacity: 0, y: 8, scale: .98 }} animate={{ opacity: 1, y: 0, scale: 1 }} exit={{ opacity: 0, y: 4 }}>
-        <header className="dialog-header">
-          <div>
-            <h2 id="backup-manager-title">项目备份管理</h2>
-            <p>使用 SQLite 在线备份 API 生成一致性副本，每项目轮换保留最近 5 份。</p>
-          </div>
-          <IconButton label="关闭" onClick={onClose}><X size={18} /></IconButton>
-        </header>
+    <Dialog open onOpenChange={(open) => { if (!open) onClose() }}>
+      <DialogContent className="flex flex-col max-h-[85vh] sm:max-w-2xl" closeLabel="关闭">
+        <DialogHeader>
+          <DialogTitle>项目备份管理</DialogTitle>
+          <DialogDescription>
+            使用 SQLite 在线备份 API 生成一致性副本，每项目轮换保留最近 5 份。
+          </DialogDescription>
+        </DialogHeader>
 
-        <div className="backup-toolbar">
-          <div className="backup-actions">
-            <button className="primary-button" disabled={creating} onClick={() => void createBackup()}>
-              <HardDrive size={14} />{creating ? '正在创建备份...' : '立即备份'}
-            </button>
-            <button className="text-button" onClick={() => void openLocation()}>
-              <FolderOpen size={14} />打开目录
-            </button>
+        <div className="flex items-center justify-between border-b border-[#e5ddd3] pb-3 text-xs">
+          <div className="flex items-center gap-2">
+            <Button size="sm" disabled={creating} onClick={() => void createBackup()}>
+              <HardDrive size={14} />
+              {creating ? '正在创建备份...' : '立即备份'}
+            </Button>
+            <Button size="sm" variant="outline" onClick={() => void openLocation()}>
+              <FolderOpen size={14} />
+              打开目录
+            </Button>
           </div>
-          <span className="backup-stat-pill">
-            当前保留 <strong>{backups.length}</strong> / 5 份备份
+          <span className="rounded-full bg-[#efe6da] px-2.5 py-1 text-[#7d6b59]">
+            当前保留 <strong className="text-[#2c2523]">{backups.length}</strong> / 5 份备份
           </span>
         </div>
 
-        {error && <p className="inline-error dialog-error">{error}</p>}
+        {error && <p className="inline-error text-xs text-red-600">{error}</p>}
 
         {restoringPath && (
-          <div className="backup-confirm-box">
+          <div className="flex items-center justify-between rounded-xl border border-amber-200 bg-amber-50 p-3 text-xs text-amber-800">
             <span>⚠️ 从该备份恢复将自动为当前状态创建「恢复前快照」并重载项目。确认恢复？</span>
-            <div>
-              <button type="button" className="text-button" onClick={() => setRestoringPath(null)}>取消</button>
-              <button type="button" className="primary-button" onClick={() => void restore(restoringPath)}>确认恢复</button>
+            <div className="flex gap-2">
+              <Button size="sm" variant="ghost" onClick={() => setRestoringPath(null)}>
+                取消
+              </Button>
+              <Button size="sm" variant="destructive" onClick={() => void restore(restoringPath)}>
+                确认恢复
+              </Button>
             </div>
           </div>
         )}
 
-        <div className="backup-list">
+        <ScrollArea className="h-64 rounded-xl border border-[#e5ddd3] bg-white p-2">
           {loading ? (
-            <p className="empty-hint">加载备份列表中...</p>
+            <p className="p-8 text-center text-xs text-[#7d6b59]">加载备份列表中...</p>
           ) : backups.length === 0 ? (
-            <div style={{ textAlign: 'center', padding: '40px 20px', color: '#64748b' }}>
-              <p style={{ margin: 0, fontSize: 13 }}>暂无备份记录。点击上方「立即备份」创建首份一致性副本。</p>
+            <div className="p-10 text-center text-xs text-[#7d6b59]">
+              暂无备份记录。点击上方「立即备份」创建首份一致性副本。
             </div>
           ) : (
-            backups.map((b) => (
-              <div className="backup-item" key={b.id}>
-                <div className="backup-info">
-                  <div className="backup-title">
-                    <span className={`backup-tag ${getTagClass(b.tag)}`}>
-                      {backupTagLabel[b.tag || ''] || b.tag || '备份'}
+            <div className="flex flex-col gap-2 p-1">
+              {backups.map((b) => (
+                <div
+                  key={b.id}
+                  className="flex items-center justify-between rounded-lg border border-[#f0e8de] bg-[#faf8f5] p-3 text-xs"
+                >
+                  <div className="flex flex-col gap-1">
+                    <div className="flex items-center gap-2">
+                      <Badge variant="secondary">
+                        {backupTagLabel[b.tag || ''] || b.tag || '备份'}
+                      </Badge>
+                      <strong className="text-xs text-[#2c2523]" title={b.id}>
+                        {b.id}
+                      </strong>
+                    </div>
+                    <span className="text-[11px] text-[#7d6b59]">
+                      {formatDate(b.createdAt)} · {formatBytes(b.sizeBytes)}
                     </span>
-                    <strong title={b.id}>{b.id}</strong>
                   </div>
-                  <span className="backup-meta">{formatDate(b.createdAt)} · {formatBytes(b.sizeBytes)}</span>
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    className="text-[#2d6a4f] hover:text-[#24583e]"
+                    onClick={() => setRestoringPath(b.path)}
+                  >
+                    <RotateCcw size={14} />
+                    恢复
+                  </Button>
                 </div>
-                <button className="text-button restore-btn" onClick={() => setRestoringPath(b.path)}>
-                  <RotateCcw size={14} />恢复
-                </button>
-              </div>
-            ))
+              ))}
+            </div>
           )}
-        </div>
+        </ScrollArea>
 
-        <footer className="dialog-footer">
+        <DialogFooter className="flex items-center justify-between border-t border-[#e5ddd3] pt-3 text-[11px] text-[#7d6b59]">
           <span>达到 5 份上限后，系统在生成新备份时将自动循环覆盖最早的历史副本</span>
-          <button type="button" className="text-button" onClick={onClose}>关闭</button>
-        </footer>
-      </motion.div>
-    </motion.div>
+          <Button variant="ghost" onClick={onClose}>
+            关闭
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   )
 }
 

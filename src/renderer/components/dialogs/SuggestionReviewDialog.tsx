@@ -1,12 +1,14 @@
-import React, { useState, useEffect, useCallback } from 'react'
-import { motion, AnimatePresence } from 'motion/react'
-import { Check, X } from 'lucide-react'
+import { useState, useEffect, useCallback } from 'react'
+import { Check } from 'lucide-react'
 import { AiFactSuggestion, KnowledgeKind, SuggestionState } from '../../../shared/project'
-import { IconButton } from '../common/IconButton'
 import { errorText } from '../../utils/formatters'
 import { knowledgeKindLabel, suggestionStateLabel } from '../../utils/constants'
 import { AcceptancePreviewDialog } from './AcceptancePreviewDialog'
-import { useDialogDismiss } from '../../hooks/useDialogDismiss'
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from '@appica/ui-react/dialog'
+import { Button } from '@appica/ui-react/button'
+import { Badge } from '@appica/ui-react/badge'
+import { Card } from '@appica/ui-react/card'
+import { ScrollArea } from '@appica/ui-react/scroll-area'
 
 export function SuggestionReviewDialog({
   sessionId,
@@ -17,7 +19,6 @@ export function SuggestionReviewDialog({
   isReadOnly: boolean
   onClose: () => void
 }) {
-  const { dialogRef, backdropProps } = useDialogDismiss({ onClose })
   const [stateFilter, setStateFilter] = useState<SuggestionState>('pending')
   const [kindFilter, setKindFilter] = useState<'all' | KnowledgeKind>('all')
   const [suggestions, setSuggestions] = useState<AiFactSuggestion[]>([])
@@ -61,124 +62,167 @@ export function SuggestionReviewDialog({
   }
 
   return (
-    <motion.div className="action-dialog-layer" {...backdropProps} initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} role="presentation">
-      <motion.div ref={dialogRef} className="suggestions-dialog" role="dialog" aria-modal="true" aria-labelledby="suggestions-title" initial={{ opacity: 0, y: 8, scale: .98 }} animate={{ opacity: 1, y: 0, scale: 1 }} exit={{ opacity: 0, y: 4 }}>
-        <header className="dialog-header">
-          <div>
-            <h2 id="suggestions-title">AI 事实建议审阅</h2>
-            <p>审阅模型提炼的人物、设定与时间线事实，带章节证据追溯与可编辑采纳。</p>
-          </div>
-          <IconButton label="关闭" onClick={onClose}><X size={18} /></IconButton>
-        </header>
+    <>
+      <Dialog open onOpenChange={(open) => { if (!open) onClose() }}>
+        <DialogContent className="flex flex-col max-h-[85vh] sm:max-w-4xl" closeLabel="关闭">
+          <DialogHeader>
+            <DialogTitle>AI 事实建议审阅</DialogTitle>
+            <DialogDescription>
+              审阅模型提炼的人物、设定与时间线事实，带章节证据追溯与可编辑采纳。
+            </DialogDescription>
+          </DialogHeader>
 
-        <div className="tab-filter-bar">
-          <div className="tab-chips">
-            <button className={`tab-chip ${stateFilter === 'pending' ? 'active' : ''}`} onClick={() => setStateFilter('pending')}>
-              待审阅
-            </button>
-            <button className={`tab-chip ${stateFilter === 'conflict' ? 'active' : ''}`} onClick={() => setStateFilter('conflict')}>
-              存在冲突
-            </button>
-            <button className={`tab-chip ${stateFilter === 'accepted' ? 'active' : ''}`} onClick={() => setStateFilter('accepted')}>
-              已采纳
-            </button>
-            <button className={`tab-chip ${stateFilter === 'ignored' ? 'active' : ''}`} onClick={() => setStateFilter('ignored')}>
-              已忽略
-            </button>
+          <div className="flex flex-col gap-2 border-b border-[#e5ddd3] pb-3 text-xs">
+            <div className="flex gap-1.5">
+              {(['pending', 'conflict', 'accepted', 'ignored'] as SuggestionState[]).map((state) => (
+                <Button
+                  key={state}
+                  type="button"
+                  variant={stateFilter === state ? 'primary' : 'ghost'}
+                  size="sm"
+                  className={`rounded-lg px-2.5 py-1 text-xs font-medium transition-colors ${
+                    stateFilter === state
+                      ? 'bg-[#2d6a4f] text-white'
+                      : 'bg-[#efe6da] text-[#7d6b59] hover:bg-[#e5ddd3]'
+                  }`}
+                  onClick={() => setStateFilter(state)}
+                >
+                  {state === 'pending'
+                    ? '待审阅'
+                    : state === 'conflict'
+                    ? '存在冲突'
+                    : state === 'accepted'
+                    ? '已采纳'
+                    : '已忽略'}
+                </Button>
+              ))}
+            </div>
+            <div className="flex gap-1.5">
+              {(['all', 'character', 'world', 'timeline', 'foreshadow'] as const).map((kind) => (
+                <Button
+                  key={kind}
+                  type="button"
+                  variant={kindFilter === kind ? 'primary' : 'ghost'}
+                  size="sm"
+                  className={`rounded-lg px-2.5 py-1 text-xs font-medium transition-colors ${
+                    kindFilter === kind
+                      ? 'bg-[#2c2523] text-white'
+                      : 'bg-[#efe6da] text-[#7d6b59] hover:bg-[#e5ddd3]'
+                  }`}
+                  onClick={() => setKindFilter(kind)}
+                >
+                  {kind === 'all'
+                    ? '全部类型'
+                    : knowledgeKindLabel[kind as KnowledgeKind] || kind}
+                </Button>
+              ))}
+            </div>
           </div>
-          <div className="tab-chips">
-            <button className={`tab-chip ${kindFilter === 'all' ? 'active' : ''}`} onClick={() => setKindFilter('all')}>
-              全部类型
-            </button>
-            <button className={`tab-chip ${kindFilter === 'character' ? 'active' : ''}`} onClick={() => setKindFilter('character')}>
-              人物
-            </button>
-            <button className={`tab-chip ${kindFilter === 'world' ? 'active' : ''}`} onClick={() => setKindFilter('world')}>
-              世界观
-            </button>
-            <button className={`tab-chip ${kindFilter === 'timeline' ? 'active' : ''}`} onClick={() => setKindFilter('timeline')}>
-              时间线
-            </button>
-            <button className={`tab-chip ${kindFilter === 'foreshadow' ? 'active' : ''}`} onClick={() => setKindFilter('foreshadow')}>
-              伏笔
-            </button>
-          </div>
-        </div>
 
-        {error && <p className="inline-error dialog-error">{error}</p>}
+          {error && <p className="inline-error text-xs text-red-600">{error}</p>}
 
-        <div className="suggestions-body">
-          {loading ? (
-            <p className="empty-hint">加载建议列表中...</p>
-          ) : suggestions.length === 0 ? (
-            <p className="empty-hint">暂无符合条件的建议记录</p>
-          ) : (
-            suggestions.map((s) => (
-              <div key={s.id} className="suggestion-card">
-                <div className="suggestion-header">
-                  <div className="suggestion-subject">
-                    <span className={`source-tag ${s.knowledgeKind}`}>{knowledgeKindLabel[s.knowledgeKind]}</span>
-                    <strong>{s.normalizedSubject}</strong>
-                    <span className="suggestion-predicate">{s.predicate}</span>
-                  </div>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                    {s.confidence !== null && s.confidence !== undefined && (
-                      <span style={{ fontSize: 11, color: '#6b7280' }}>置信度 {Math.round(s.confidence * 100)}%</span>
+          <ScrollArea className="h-96 pr-2">
+            {loading ? (
+              <p className="p-8 text-center text-xs text-[#7d6b59]">加载建议列表中...</p>
+            ) : suggestions.length === 0 ? (
+              <p className="p-8 text-center text-xs text-[#7d6b59]">暂无符合条件的建议记录</p>
+            ) : (
+              <div className="flex flex-col gap-3 p-1">
+                {suggestions.map((s) => (
+                  <Card key={s.id} className="flex flex-col gap-2 p-4 bg-white border-[#e5ddd3]">
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-2">
+                        <Badge variant="secondary">
+                          {knowledgeKindLabel[s.knowledgeKind]}
+                        </Badge>
+                        <strong className="text-sm text-[#2c2523]">{s.normalizedSubject}</strong>
+                        <span className="text-xs text-[#7d6b59]">{s.predicate}</span>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        {s.confidence !== null && s.confidence !== undefined && (
+                          <span className="text-[11px] text-[#7d6b59]">
+                            置信度 {Math.round(s.confidence * 100)}%
+                          </span>
+                        )}
+                        <Badge
+                          variant={
+                            s.state === 'conflict'
+                              ? 'error'
+                              : s.state === 'accepted'
+                              ? 'success'
+                              : 'outline'
+                          }
+                        >
+                          {suggestionStateLabel[s.state] || s.state}
+                        </Badge>
+                      </div>
+                    </div>
+
+                    <div className="text-xs leading-relaxed text-[#2c2523]">{s.displayText}</div>
+
+                    {s.evidences && s.evidences.length > 0 && (
+                      <div className="rounded-lg border border-[#e5ddd3] bg-[#faf8f5] p-2.5 text-[11px] text-[#7d6b59]">
+                        <div className="mb-1 font-mono text-[10px] text-[#9c8874]">
+                          来源证据：{s.evidences[0].chapterTitle || `章节`} (v{s.evidences[0].chapterVersion}) · 字符范围 [{s.evidences[0].startOffset} - {s.evidences[0].endOffset}]
+                        </div>
+                        <div className="italic text-[#54473b]">“{s.evidences[0].excerpt}”</div>
+                      </div>
                     )}
-                    <span className={`status-badge ${s.state}`}>{suggestionStateLabel[s.state] || s.state}</span>
-                  </div>
-                </div>
 
-                <div className="suggestion-content">{s.displayText}</div>
-
-                {s.evidences && s.evidences.length > 0 && (
-                  <div className="evidence-box">
-                    <span className="evidence-meta">
-                      来源证据：{s.evidences[0].chapterTitle || `章节`} (v{s.evidences[0].chapterVersion}) · 字符范围 [{s.evidences[0].startOffset} - {s.evidences[0].endOffset}]
-                    </span>
-                    <span className="evidence-excerpt">“{s.evidences[0].excerpt}”</span>
-                  </div>
-                )}
-
-                {!isReadOnly && (s.state === 'pending' || s.state === 'conflict') && (
-                  <div className="suggestion-actions">
-                    <button type="button" className="text-button" onClick={() => void handleReview(s, 'ignored')}>
-                      忽略
-                    </button>
-                    {s.state !== 'conflict' && (
-                      <button type="button" className="text-button" style={{ color: '#b91c1c' }} onClick={() => void handleReview(s, 'conflict')}>
-                        标记冲突
-                      </button>
+                    {!isReadOnly && (s.state === 'pending' || s.state === 'conflict') && (
+                      <div className="flex justify-end gap-2 border-t border-[#f5efe6] pt-2">
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          onClick={() => void handleReview(s, 'ignored')}
+                        >
+                          忽略
+                        </Button>
+                        {s.state !== 'conflict' && (
+                          <Button
+                            size="sm"
+                            variant="ghost"
+                            className="text-red-600 hover:text-red-700"
+                            onClick={() => void handleReview(s, 'conflict')}
+                          >
+                            标记冲突
+                          </Button>
+                        )}
+                        <Button
+                          size="sm"
+                          onClick={() => setAcceptingSuggestion(s)}
+                        >
+                          <Check size={14} />
+                          采纳建议
+                        </Button>
+                      </div>
                     )}
-                    <button type="button" className="primary-button" onClick={() => setAcceptingSuggestion(s)}>
-                      <Check size={14} />采纳建议
-                    </button>
-                  </div>
-                )}
+                  </Card>
+                ))}
               </div>
-            ))
-          )}
-        </div>
+            )}
+          </ScrollArea>
 
-        <footer className="dialog-footer">
-          <span>共 {suggestions.length} 条建议记录</span>
-          <button type="button" className="text-button" onClick={onClose}>关闭</button>
-        </footer>
-      </motion.div>
+          <DialogFooter className="flex items-center justify-between border-t border-[#e5ddd3] pt-3 text-xs text-[#7d6b59]">
+            <span>共 {suggestions.length} 条建议记录</span>
+            <Button variant="ghost" onClick={onClose}>
+              关闭
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
-      <AnimatePresence>
-        {acceptingSuggestion && (
-          <AcceptancePreviewDialog
-            sessionId={sessionId}
-            suggestion={acceptingSuggestion}
-            onClose={() => setAcceptingSuggestion(null)}
-            onAccepted={() => {
-              setAcceptingSuggestion(null)
-              void load()
-            }}
-          />
-        )}
-      </AnimatePresence>
-    </motion.div>
+      {acceptingSuggestion && (
+        <AcceptancePreviewDialog
+          sessionId={sessionId}
+          suggestion={acceptingSuggestion}
+          onClose={() => setAcceptingSuggestion(null)}
+          onAccepted={() => {
+            setAcceptingSuggestion(null)
+            void load()
+          }}
+        />
+      )}
+    </>
   )
 }

@@ -1,7 +1,6 @@
 import React, { useEffect, useState } from 'react'
 import { Compass, BookOpen, ChevronRight, FileText, Sparkles } from 'lucide-react'
-import { Card } from '../../components/ui/card'
-import { Button } from '../../components/ui/button'
+import { Card } from '@appica/ui-react/card'
 import { useProjectStore } from '../../stores/useProjectStore'
 
 export function OutlineDrawer({

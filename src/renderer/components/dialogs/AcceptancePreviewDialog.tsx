@@ -1,11 +1,14 @@
-import React, { useState, useEffect, useCallback } from 'react'
-import { motion } from 'motion/react'
-import { Check, X } from 'lucide-react'
+import { useState, useEffect, useCallback } from 'react'
+import { Check } from 'lucide-react'
 import { AiFactSuggestion, KnowledgeEntry, KnowledgeKind } from '../../../shared/project'
-import { IconButton } from '../common/IconButton'
 import { errorText } from '../../utils/formatters'
 import { knowledgeKindLabel } from '../../utils/constants'
-import { useDialogDismiss } from '../../hooks/useDialogDismiss'
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from '@appica/ui-react/dialog'
+import { Button } from '@appica/ui-react/button'
+import { Input } from '@appica/ui-react/input'
+import { Textarea } from '@appica/ui-react/textarea'
+import { Checkbox } from '@appica/ui-react/checkbox'
+import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from '@appica/ui-react/select'
 
 export function AcceptancePreviewDialog({
   sessionId,
@@ -18,7 +21,6 @@ export function AcceptancePreviewDialog({
   onClose: () => void
   onAccepted: (entry: KnowledgeEntry) => void
 }) {
-  const { dialogRef, backdropProps } = useDialogDismiss({ onClose })
   const [mode, setMode] = useState<'new' | 'merge'>('new')
   const [activeEntries, setActiveEntries] = useState<KnowledgeEntry[]>([])
   const [targetEntryId, setTargetEntryId] = useState<string>('')
@@ -95,74 +97,114 @@ export function AcceptancePreviewDialog({
   }
 
   return (
-    <motion.div className="action-dialog-layer" {...backdropProps} initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} role="presentation">
-      <motion.div ref={dialogRef} className="accept-preview-dialog" role="dialog" aria-modal="true" aria-labelledby="accept-dialog-title" initial={{ opacity: 0, y: 8, scale: .98 }} animate={{ opacity: 1, y: 0, scale: 1 }} exit={{ opacity: 0, y: 4 }}>
-        <header className="dialog-header">
-          <div>
-            <h2 id="accept-dialog-title">采纳 AI 事实建议</h2>
-            <p>作者审核预览并确认后，将原子写入知识条目并更新建议状态。</p>
-          </div>
-          <IconButton label="关闭" onClick={onClose}><X size={18} /></IconButton>
-        </header>
-        {error && <p className="inline-error dialog-error">{error}</p>}
-        <div className="accept-body">
-          <div className="mode-toggle">
-            <label>
-              <input type="radio" name="acceptMode" value="new" checked={mode === 'new'} onChange={() => handleModeChange('new')} />
-              <span>新建独立知识条目</span>
+    <Dialog open onOpenChange={(open) => { if (!open) onClose() }}>
+      <DialogContent className="flex flex-col max-h-[85vh] sm:max-w-2xl" closeLabel="关闭">
+        <DialogHeader>
+          <DialogTitle>采纳 AI 事实建议</DialogTitle>
+          <DialogDescription>
+            作者审核预览并确认后，将原子写入知识条目并更新建议状态。
+          </DialogDescription>
+        </DialogHeader>
+
+        {error && <p className="inline-error text-xs text-red-600">{error}</p>}
+
+        <div className="flex flex-col gap-4 overflow-y-auto pr-1">
+          <div className="flex gap-6 rounded-xl border border-[#e5ddd3] bg-[#f5efe6] p-3 text-xs">
+            <label className="flex items-center gap-2 cursor-pointer">
+              <Checkbox
+                checked={mode === 'new'}
+                onCheckedChange={() => handleModeChange('new')}
+              />
+              <span className="text-[#2c2523] font-medium">新建独立知识条目</span>
             </label>
-            <label>
-              <input type="radio" name="acceptMode" value="merge" checked={mode === 'merge'} disabled={activeEntries.length === 0} onChange={() => handleModeChange('merge')} />
-              <span>合并追加至现有条目 {activeEntries.length === 0 && '(暂无活跃条目)'}</span>
+            <label className="flex items-center gap-2 cursor-pointer">
+              <Checkbox
+                checked={mode === 'merge'}
+                disabled={activeEntries.length === 0}
+                onCheckedChange={() => handleModeChange('merge')}
+              />
+              <span className="text-[#2c2523] font-medium">
+                合并追加至现有条目 {activeEntries.length === 0 && '(暂无活跃条目)'}
+              </span>
             </label>
           </div>
 
           {mode === 'merge' && (
-            <div className="form-field">
-              <label>目标知识条目</label>
-              <select value={targetEntryId} onChange={(e) => handleTargetChange(e.target.value)}>
-                {activeEntries.map((e) => (
-                  <option key={e.id} value={e.id}>
-                    [{knowledgeKindLabel[e.knowledgeKind]}] {e.title} (v{e.version})
-                  </option>
-                ))}
-              </select>
+            <div className="flex flex-col gap-1 text-xs">
+              <label className="text-[#7d6b59] font-medium">目标知识条目</label>
+              <Select
+                value={targetEntryId}
+                onValueChange={(val) => handleTargetChange(val as string)}
+              >
+                <SelectTrigger className="rounded-lg border border-[#dacdbe] bg-white px-3 py-2 text-sm text-[#2c2523] outline-none">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {activeEntries.map((e) => (
+                    <SelectItem key={e.id} value={e.id}>
+                      [{knowledgeKindLabel[e.knowledgeKind]}] {e.title} (v{e.version})
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
             </div>
           )}
 
-          <div className="form-row">
-            <div className="form-field">
-              <label>条目标题</label>
-              <input value={draftTitle} disabled={mode === 'merge'} onChange={(e) => setDraftTitle(e.target.value)} />
+          <div className="grid grid-cols-2 gap-4">
+            <div className="flex flex-col gap-1 text-xs">
+              <label className="text-[#7d6b59] font-medium">条目标题</label>
+              <Input
+                className="rounded-lg border border-[#dacdbe] bg-white px-3 py-2 text-sm text-[#2c2523] outline-none disabled:bg-[#f5efe6]"
+                value={draftTitle}
+                disabled={mode === 'merge'}
+                onChange={(e) => setDraftTitle(e.target.value)}
+              />
             </div>
-            <div className="form-field">
-              <label>知识类型</label>
-              <select value={draftKind} disabled={mode === 'merge'} onChange={(e) => setDraftKind(e.target.value as KnowledgeKind)}>
-                <option value="character">人物</option>
-                <option value="world">世界观</option>
-                <option value="timeline">时间线</option>
-                <option value="foreshadow">伏笔</option>
-              </select>
+            <div className="flex flex-col gap-1 text-xs">
+              <label className="text-[#7d6b59] font-medium">知识类型</label>
+              <Select
+                value={draftKind}
+                disabled={mode === 'merge'}
+                onValueChange={(val) => setDraftKind(val as KnowledgeKind)}
+              >
+                <SelectTrigger className="rounded-lg border border-[#dacdbe] bg-white px-3 py-2 text-sm text-[#2c2523] outline-none disabled:bg-[#f5efe6]">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="character">人物</SelectItem>
+                  <SelectItem value="world">世界观</SelectItem>
+                  <SelectItem value="timeline">时间线</SelectItem>
+                  <SelectItem value="foreshadow">伏笔</SelectItem>
+                </SelectContent>
+              </Select>
             </div>
           </div>
 
-          <div className="form-field" style={{ flex: 1, minHeight: 180 }}>
-            <label>最终写入作者正文 (可手工修订)</label>
-            <textarea
-              style={{ flex: 1, minHeight: 160 }}
+          <div className="flex flex-col gap-1 text-xs">
+            <label className="text-[#7d6b59] font-medium">最终写入作者正文 (可手工修订)</label>
+            <Textarea
+              className="min-h-[140px] rounded-lg border border-[#dacdbe] bg-white p-3 font-serif text-sm leading-relaxed text-[#2c2523] outline-none focus:border-[#2d6a4f]"
               value={draftContent}
               onChange={(e) => setDraftContent(e.target.value)}
               placeholder="正文内容..."
             />
           </div>
         </div>
-        <footer className="dialog-footer">
-          <button type="button" className="text-button" onClick={onClose}>取消</button>
-          <button type="button" className="primary-button" disabled={submitting || !draftTitle.trim()} onClick={() => void handleConfirm()}>
-            <Check size={15} />{submitting ? '写入中...' : '确认采纳并写入'}
-          </button>
-        </footer>
-      </motion.div>
-    </motion.div>
+
+        <DialogFooter>
+          <Button type="button" variant="ghost" onClick={onClose}>
+            取消
+          </Button>
+          <Button
+            type="button"
+            disabled={submitting || !draftTitle.trim()}
+            onClick={() => void handleConfirm()}
+          >
+            <Check size={15} />
+            {submitting ? '写入中...' : '确认采纳并写入'}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   )
 }

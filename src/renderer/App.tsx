@@ -93,7 +93,10 @@ export default function App() {
             <ImportPreviewModal
               preview={preview}
               onClose={() => setPreview(null)}
-              onImported={(opened) => void loadProject(opened)}
+              onImported={(opened) => {
+                setPreview(null)
+                void loadProject(opened)
+              }}
             />
           )}
         </AnimatePresence>

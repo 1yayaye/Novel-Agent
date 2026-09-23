@@ -1,11 +1,17 @@
-import React, { useState, useEffect, useCallback } from 'react'
-import { motion } from 'motion/react'
-import { Check, Plus, Sliders, Sparkles, Tag, Trash2, X } from 'lucide-react'
-import { CreativeRule, InstructionPreset, StyleSample, TaskType } from '../../../shared/project'
-import { IconButton } from '../common/IconButton'
+import { useState, useEffect, useCallback } from 'react'
+import { Check, Plus, Sliders, Sparkles, Tag, Trash2 } from 'lucide-react'
+import { InstructionPreset, StyleSample } from '../../../shared/project'
 import { errorText } from '../../utils/formatters'
 import { taskTypeLabel } from '../../utils/constants'
-import { useDialogDismiss } from '../../hooks/useDialogDismiss'
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from '@appica/ui-react/dialog'
+import { Tabs, TabsList, TabsTrigger, TabsContent } from '@appica/ui-react/tabs'
+import { Button } from '@appica/ui-react/button'
+import { Badge } from '@appica/ui-react/badge'
+import { Card } from '@appica/ui-react/card'
+import { ScrollArea } from '@appica/ui-react/scroll-area'
+import { Input } from '@appica/ui-react/input'
+import { Textarea } from '@appica/ui-react/textarea'
+import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from '@appica/ui-react/select'
 
 export function CreativeSettingsDialog({
   sessionId,
@@ -16,7 +22,6 @@ export function CreativeSettingsDialog({
   isReadOnly: boolean
   onClose: () => void
 }) {
-  const { dialogRef, backdropProps } = useDialogDismiss({ onClose })
   const [activeTab, setActiveTab] = useState<'rules' | 'samples' | 'presets'>('rules')
   const [error, setError] = useState('')
 
@@ -251,227 +256,322 @@ export function CreativeSettingsDialog({
   }
 
   return (
-    <motion.div className="action-dialog-layer" {...backdropProps} initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} role="presentation">
-      <motion.div ref={dialogRef} className="creative-dialog" role="dialog" aria-modal="true" aria-labelledby="creative-title" initial={{ opacity: 0, y: 8, scale: .98 }} animate={{ opacity: 1, y: 0, scale: 1 }} exit={{ opacity: 0, y: 4 }}>
-        <header className="dialog-header">
-          <div>
-            <h2 id="creative-title">创作配置管理</h2>
-            <p>维护全书长期创作规则、写作风格样本以及各任务分类指令预设。</p>
-          </div>
-          <IconButton label="关闭" onClick={onClose}><X size={18} /></IconButton>
-        </header>
+    <Dialog open onOpenChange={(open) => { if (!open) onClose() }}>
+      <DialogContent className="flex flex-col w-[90vw] max-w-[90vw] h-[90vh] p-6" closeLabel="关闭">
+        <DialogHeader>
+          <DialogTitle>创作配置管理</DialogTitle>
+          <DialogDescription>
+            维护全书长期创作规则、写作风格样本以及各任务分类指令预设。
+          </DialogDescription>
+        </DialogHeader>
 
-        <div className="tab-filter-bar">
-          <div className="tab-chips">
-            <button className={`tab-chip ${activeTab === 'rules' ? 'active' : ''}`} onClick={() => setActiveTab('rules')}>
-              <Sliders size={14} />全书创作规则
-            </button>
-            <button className={`tab-chip ${activeTab === 'samples' ? 'active' : ''}`} onClick={() => setActiveTab('samples')}>
-              <Tag size={14} />风格样本 ({samples.length})
-            </button>
-            <button className={`tab-chip ${activeTab === 'presets' ? 'active' : ''}`} onClick={() => setActiveTab('presets')}>
-              <Sparkles size={14} />指令预设 ({presets.length})
-            </button>
-          </div>
-        </div>
+        <Tabs
+          value={activeTab}
+          onValueChange={(val) => setActiveTab(val as any)}
+          className="flex flex-1 flex-col overflow-hidden"
+        >
+          <TabsList className="self-start">
+            <TabsTrigger value="rules" className="gap-1.5">
+              <Sliders size={14} />
+              全书创作规则
+            </TabsTrigger>
+            <TabsTrigger value="samples" className="gap-1.5">
+              <Tag size={14} />
+              风格样本 ({samples.length})
+            </TabsTrigger>
+            <TabsTrigger value="presets" className="gap-1.5">
+              <Sparkles size={14} />
+              指令预设 ({presets.length})
+            </TabsTrigger>
+          </TabsList>
 
-        {error && <p className="inline-error dialog-error">{error}</p>}
+          {error && <p className="inline-error text-xs text-red-600 mt-2">{error}</p>}
 
-        {activeTab === 'rules' && (
-          <div className="creative-rules-pane">
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-              <span style={{ fontSize: 13, color: '#4b5563' }}>
+          {/* Tab 1: Rules */}
+          <TabsContent value="rules" className="flex flex-1 flex-col overflow-hidden gap-3 mt-2">
+            <div className="flex items-center justify-between border-b border-[#e5ddd3] pb-2">
+              <span className="text-xs text-[#7d6b59]">
                 长期规则在所有生成任务中默认注入且优先级仅次于系统约束 (版本 v{rulesVersion})
               </span>
-              <button className="primary-button" disabled={isReadOnly || savingRules || rulesContent === savedRulesContent} onClick={() => void saveRules()}>
-                <Check size={14} />{savingRules ? '保存中...' : rulesContent === savedRulesContent ? '已保存' : '保存规则'}
-              </button>
+              <Button
+                size="sm"
+                disabled={isReadOnly || savingRules || rulesContent === savedRulesContent}
+                onClick={() => void saveRules()}
+              >
+                <Check size={14} />
+                {savingRules ? '保存中...' : rulesContent === savedRulesContent ? '已保存' : '保存规则'}
+              </Button>
             </div>
-            <textarea
+            <Textarea
               value={rulesContent}
               disabled={isReadOnly}
               onChange={(e) => setRulesContent(e.target.value)}
               placeholder="请输入全书长期有效的题材设定、人物禁忌、文风要求等硬性创作规则..."
+              className="flex-1 resize-none rounded-xl border border-[#dacdbe] bg-white p-4 font-serif text-sm leading-relaxed text-[#2c2523] outline-none focus:border-[#2d6a4f]"
             />
-          </div>
-        )}
+          </TabsContent>
 
-        {activeTab === 'samples' && (
-          <div className="creative-body">
-            <aside className="creative-sidebar">
-              <div className="sidebar-header">
-                <span>风格样本列表</span>
-                <IconButton label="新建风格样本" onClick={startNewSample} disabled={isReadOnly}>
-                  <Plus size={15} />
-                </IconButton>
-              </div>
-              <div className="entry-list">
-                {samples.map((s) => (
-                  <button
-                    key={s.id}
-                    className={`entry-card ${!isNewSample && selectedSampleId === s.id ? 'active' : ''}`}
-                    onClick={() => selectSample(s)}
-                  >
-                    <div className="entry-card-header">
-                      <span className="entry-card-title">{s.name}</span>
-                      <span className="entry-card-meta">v{s.version}</span>
-                    </div>
-                    <span className="entry-card-preview">{s.content || '无正文'}</span>
-                  </button>
-                ))}
-              </div>
-            </aside>
-            <main className="creative-detail">
-              {(selectedSampleId || isNewSample) ? (
-                <>
-                  <div className="detail-header">
-                    <h2>{isNewSample ? '新建风格样本' : sampleName}</h2>
-                    {!isNewSample && <span className="entry-card-meta">版本 v{sampleVersion}</span>}
-                  </div>
-                  <div className="detail-form">
-                    <div className="form-row">
-                      <div className="form-field">
-                        <label>样本名称</label>
-                        <input value={sampleName} onChange={(e) => setSampleName(e.target.value)} placeholder="例如：打斗高潮、细腻心理" />
-                      </div>
-                      <div className="form-field">
-                        <label>标签 (逗号分隔)</label>
-                        <input value={sampleTags} onChange={(e) => setSampleTags(e.target.value)} placeholder="打斗, 仙侠, 豪放" />
-                      </div>
-                    </div>
-                    <div className="form-field" style={{ flex: 1 }}>
-                      <label>参考文本正文</label>
-                      <textarea
-                        style={{ minHeight: 220 }}
-                        value={sampleContent}
-                        onChange={(e) => setSampleContent(e.target.value)}
-                        placeholder="输入示范正文片段..."
-                      />
-                    </div>
-                    <div className="form-actions">
-                      <div>
-                        {!isNewSample && (
-                          <button type="button" className="text-button" style={{ color: '#b91c1c' }} onClick={() => void deleteSample()}>
-                            <Trash2 size={14} />删除样本
-                          </button>
-                        )}
-                      </div>
-                      <button className="primary-button" disabled={isReadOnly || savingSample || !sampleName.trim()} onClick={() => void saveSample()}>
-                        <Check size={14} />{savingSample ? '保存中...' : '保存样本'}
-                      </button>
-                    </div>
-                  </div>
-                </>
-              ) : (
-                <p className="empty-hint" style={{ margin: 'auto' }}>请选择或新建一个风格样本</p>
-              )}
-            </main>
-          </div>
-        )}
-
-        {activeTab === 'presets' && (
-          <div className="creative-body">
-            <aside className="creative-sidebar">
-              <div className="sidebar-header">
-                <span>指令预设列表</span>
-                <IconButton label="新建指令预设" onClick={startNewPreset} disabled={isReadOnly}>
-                  <Plus size={15} />
-                </IconButton>
-              </div>
-              <div className="sidebar-search">
-                <select
-                  style={{ width: '100%', fontSize: 12, padding: '4px' }}
-                  value={taskFilter}
-                  onChange={(e) => setTaskFilter(e.target.value as typeof taskFilter)}
+          {/* Tab 2: Samples */}
+          <TabsContent value="samples" className="flex flex-1 gap-4 overflow-hidden mt-2">
+            <aside className="flex w-64 flex-col gap-2 border-r border-[#e5ddd3] pr-3 shrink-0">
+              <div className="flex items-center justify-between">
+                <span className="text-xs font-semibold text-[#7d6b59]">风格样本列表</span>
+                <Button
+                  size="icon-sm"
+                  variant="ghost"
+                  className="h-7 w-7"
+                  disabled={isReadOnly}
+                  onClick={startNewSample}
                 >
-                  <option value="all">全部任务类型</option>
-                  <option value="continue">续写 (continue)</option>
-                  <option value="rewrite">重写 (rewrite)</option>
-                  <option value="polish">润色 (polish)</option>
-                  <option value="knowledge">知识分析 (knowledge)</option>
-                  <option value="report">文学报告 (report)</option>
-                  <option value="chat">项目问答 (chat)</option>
-                </select>
+                  <Plus size={15} />
+                </Button>
               </div>
-              <div className="entry-list">
-                {presets.map((p) => (
-                  <button
-                    key={p.id}
-                    className={`entry-card ${!isNewPreset && selectedPresetId === p.id ? 'active' : ''}`}
-                    onClick={() => selectPreset(p)}
-                  >
-                    <div className="entry-card-header">
-                      <span className="entry-card-title">{p.name}</span>
-                      <span className="source-tag chapter_chunk">{taskTypeLabel[p.taskType]}</span>
-                    </div>
-                    <span className="entry-card-preview">{p.instruction || '无指令'}</span>
-                  </button>
-                ))}
-              </div>
+              <ScrollArea className="flex-1">
+                <div className="flex flex-col gap-2 p-1">
+                  {samples.map((s) => (
+                    <Card
+                      key={s.id}
+                      className={`flex flex-col gap-1 p-2.5 text-left transition-colors cursor-pointer border ${
+                        !isNewSample && selectedSampleId === s.id
+                          ? 'border-[#2d6a4f] bg-[#e8f3ee]'
+                          : 'border-[#e5ddd3] bg-white hover:border-[#dacdbe]'
+                      }`}
+                      onClick={() => selectSample(s)}
+                    >
+                      <div className="flex items-center justify-between">
+                        <span className="text-xs font-semibold text-[#2c2523] truncate">
+                          {s.name}
+                        </span>
+                        <Badge variant="secondary">v{s.version}</Badge>
+                      </div>
+                      <span className="text-[11px] text-[#7d6b59] truncate">
+                        {s.content || '无正文'}
+                      </span>
+                    </Card>
+                  ))}
+                </div>
+              </ScrollArea>
             </aside>
-            <main className="creative-detail">
-              {(selectedPresetId || isNewPreset) ? (
-                <>
-                  <div className="detail-header">
-                    <h2>{isNewPreset ? '新建指令预设' : presetName}</h2>
-                    {!isNewPreset && <span className="entry-card-meta">版本 v{presetVersion}</span>}
+
+            <main className="flex flex-1 flex-col overflow-hidden">
+              {selectedSampleId || isNewSample ? (
+                <div className="flex flex-1 flex-col gap-3 overflow-hidden">
+                  <div className="flex items-center justify-between border-b border-[#e5ddd3] pb-2">
+                    <h2 className="text-sm font-semibold text-[#2c2523]">
+                      {isNewSample ? '新建风格样本' : sampleName}
+                    </h2>
+                    {!isNewSample && <Badge variant="secondary">版本 v{sampleVersion}</Badge>}
                   </div>
-                  <div className="detail-form">
-                    <div className="form-row">
-                      <div className="form-field">
-                        <label>任务分类</label>
-                        <select
-                          value={presetType}
-                          onChange={(e) => setPresetType(e.target.value as typeof presetType)}
-                        >
-                          <option value="continue">续写 (continue)</option>
-                          <option value="rewrite">重写 (rewrite)</option>
-                          <option value="polish">润色 (polish)</option>
-                          <option value="knowledge">知识分析 (knowledge)</option>
-                          <option value="report">文学报告 (report)</option>
-                          <option value="chat">项目问答 (chat)</option>
-                        </select>
-                      </div>
-                      <div className="form-field">
-                        <label>预设名称</label>
-                        <input value={presetName} onChange={(e) => setPresetName(e.target.value)} placeholder="例如：战斗场面强化" />
-                      </div>
-                    </div>
-                    <div className="form-field" style={{ flex: 1 }}>
-                      <label>指令模板内容</label>
-                      <textarea
-                        style={{ minHeight: 220 }}
-                        value={presetInstruction}
-                        onChange={(e) => setPresetInstruction(e.target.value)}
-                        placeholder="输入在执行对应任务时使用的指令提示词模板..."
+
+                  <div className="grid grid-cols-2 gap-3">
+                    <div className="flex flex-col gap-1 text-xs">
+                      <label className="font-semibold text-[#7d6b59]">样本名称</label>
+                      <Input
+                        className="rounded-lg border border-[#dacdbe] bg-white px-3 py-1.5 text-xs text-[#2c2523] outline-none"
+                        value={sampleName}
+                        onChange={(e) => setSampleName(e.target.value)}
+                        placeholder="例如：打斗高潮、细腻心理"
                       />
                     </div>
-                    <div className="form-actions">
-                      <div>
-                        {!isNewPreset && (
-                          <button type="button" className="text-button" style={{ color: '#b91c1c' }} onClick={() => void deletePreset()}>
-                            <Trash2 size={14} />删除预设
-                          </button>
-                        )}
-                      </div>
-                      <button className="primary-button" disabled={isReadOnly || savingPreset || !presetName.trim()} onClick={() => void savePreset()}>
-                        <Check size={14} />{savingPreset ? '保存中...' : '保存预设'}
-                      </button>
+                    <div className="flex flex-col gap-1 text-xs">
+                      <label className="font-semibold text-[#7d6b59]">标签 (逗号分隔)</label>
+                      <Input
+                        className="rounded-lg border border-[#dacdbe] bg-white px-3 py-1.5 text-xs text-[#2c2523] outline-none"
+                        value={sampleTags}
+                        onChange={(e) => setSampleTags(e.target.value)}
+                        placeholder="打斗, 仙侠, 豪放"
+                      />
                     </div>
                   </div>
-                </>
+
+                  <div className="flex flex-1 flex-col gap-1 text-xs overflow-hidden">
+                    <label className="font-semibold text-[#7d6b59]">参考文本正文</label>
+                    <Textarea
+                      value={sampleContent}
+                      onChange={(e) => setSampleContent(e.target.value)}
+                      placeholder="输入示范正文片段..."
+                      className="flex-1 resize-none rounded-xl border border-[#dacdbe] bg-white p-3 font-serif text-sm leading-relaxed text-[#2c2523] outline-none focus:border-[#2d6a4f]"
+                    />
+                  </div>
+
+                  <div className="flex items-center justify-between border-t border-[#e5ddd3] pt-2">
+                    <div>
+                      {!isNewSample && (
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          className="text-red-600 hover:text-red-700 text-xs"
+                          onClick={() => void deleteSample()}
+                        >
+                          <Trash2 size={14} />
+                          删除样本
+                        </Button>
+                      )}
+                    </div>
+                    <Button
+                      size="sm"
+                      disabled={isReadOnly || savingSample || !sampleName.trim()}
+                      onClick={() => void saveSample()}
+                    >
+                      <Check size={14} />
+                      {savingSample ? '保存中...' : '保存样本'}
+                    </Button>
+                  </div>
+                </div>
               ) : (
-                <p className="empty-hint" style={{ margin: 'auto' }}>请选择或新建一个指令预设</p>
+                <p className="m-auto text-xs text-[#7d6b59]">请选择或新建一个风格样本</p>
               )}
             </main>
-          </div>
-        )}
+          </TabsContent>
 
-        <footer className="dialog-footer">
+          {/* Tab 3: Presets */}
+          <TabsContent value="presets" className="flex flex-1 gap-4 overflow-hidden mt-2">
+            <aside className="flex w-64 flex-col gap-2 border-r border-[#e5ddd3] pr-3 shrink-0">
+              <div className="flex items-center justify-between">
+                <span className="text-xs font-semibold text-[#7d6b59]">指令预设列表</span>
+                <Button
+                  size="icon-sm"
+                  variant="ghost"
+                  className="h-7 w-7"
+                  disabled={isReadOnly}
+                  onClick={startNewPreset}
+                >
+                  <Plus size={15} />
+                </Button>
+              </div>
+              <Select
+                value={taskFilter}
+                onValueChange={(val) => setTaskFilter(val as typeof taskFilter)}
+              >
+                <SelectTrigger className="rounded-lg border border-[#dacdbe] bg-white p-1.5 text-xs text-[#2c2523] outline-none">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">全部任务类型</SelectItem>
+                  <SelectItem value="continue">续写 (continue)</SelectItem>
+                  <SelectItem value="rewrite">重写 (rewrite)</SelectItem>
+                  <SelectItem value="polish">润色 (polish)</SelectItem>
+                  <SelectItem value="knowledge">知识分析 (knowledge)</SelectItem>
+                  <SelectItem value="report">文学报告 (report)</SelectItem>
+                  <SelectItem value="chat">项目问答 (chat)</SelectItem>
+                </SelectContent>
+              </Select>
+              <ScrollArea className="flex-1">
+                <div className="flex flex-col gap-2 p-1">
+                  {presets.map((p) => (
+                    <Card
+                      key={p.id}
+                      className={`flex flex-col gap-1 p-2.5 text-left transition-colors cursor-pointer border ${
+                        !isNewPreset && selectedPresetId === p.id
+                          ? 'border-[#2d6a4f] bg-[#e8f3ee]'
+                          : 'border-[#e5ddd3] bg-white hover:border-[#dacdbe]'
+                      }`}
+                      onClick={() => selectPreset(p)}
+                    >
+                      <div className="flex items-center justify-between">
+                        <span className="text-xs font-semibold text-[#2c2523] truncate">
+                          {p.name}
+                        </span>
+                        <Badge variant="secondary">{taskTypeLabel[p.taskType]}</Badge>
+                      </div>
+                      <span className="text-[11px] text-[#7d6b59] truncate">
+                        {p.instruction || '无指令'}
+                      </span>
+                    </Card>
+                  ))}
+                </div>
+              </ScrollArea>
+            </aside>
+
+            <main className="flex flex-1 flex-col overflow-hidden">
+              {selectedPresetId || isNewPreset ? (
+                <div className="flex flex-1 flex-col gap-3 overflow-hidden">
+                  <div className="flex items-center justify-between border-b border-[#e5ddd3] pb-2">
+                    <h2 className="text-sm font-semibold text-[#2c2523]">
+                      {isNewPreset ? '新建指令预设' : presetName}
+                    </h2>
+                    {!isNewPreset && <Badge variant="secondary">版本 v{presetVersion}</Badge>}
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-3">
+                    <div className="flex flex-col gap-1 text-xs">
+                      <label className="font-semibold text-[#7d6b59]">任务分类</label>
+                      <Select
+                        value={presetType}
+                        onValueChange={(val) => setPresetType(val as typeof presetType)}
+                      >
+                        <SelectTrigger className="rounded-lg border border-[#dacdbe] bg-white px-3 py-1.5 text-xs text-[#2c2523] outline-none">
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="continue">续写 (continue)</SelectItem>
+                          <SelectItem value="rewrite">重写 (rewrite)</SelectItem>
+                          <SelectItem value="polish">润色 (polish)</SelectItem>
+                          <SelectItem value="knowledge">知识分析 (knowledge)</SelectItem>
+                          <SelectItem value="report">文学报告 (report)</SelectItem>
+                          <SelectItem value="chat">项目问答 (chat)</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </div>
+                    <div className="flex flex-col gap-1 text-xs">
+                      <label className="font-semibold text-[#7d6b59]">预设名称</label>
+                      <Input
+                        className="rounded-lg border border-[#dacdbe] bg-white px-3 py-1.5 text-xs text-[#2c2523] outline-none"
+                        value={presetName}
+                        onChange={(e) => setPresetName(e.target.value)}
+                        placeholder="例如：战斗场面强化"
+                      />
+                    </div>
+                  </div>
+
+                  <div className="flex flex-1 flex-col gap-1 text-xs overflow-hidden">
+                    <label className="font-semibold text-[#7d6b59]">指令模板内容</label>
+                    <Textarea
+                      value={presetInstruction}
+                      onChange={(e) => setPresetInstruction(e.target.value)}
+                      placeholder="输入在执行对应任务时使用的指令提示词模板..."
+                      className="flex-1 resize-none rounded-xl border border-[#dacdbe] bg-white p-3 font-serif text-sm leading-relaxed text-[#2c2523] outline-none focus:border-[#2d6a4f]"
+                    />
+                  </div>
+
+                  <div className="flex items-center justify-between border-t border-[#e5ddd3] pt-2">
+                    <div>
+                      {!isNewPreset && (
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          className="text-red-600 hover:text-red-700 text-xs"
+                          onClick={() => void deletePreset()}
+                        >
+                          <Trash2 size={14} />
+                          删除预设
+                        </Button>
+                      )}
+                    </div>
+                    <Button
+                      size="sm"
+                      disabled={isReadOnly || savingPreset || !presetName.trim()}
+                      onClick={() => void savePreset()}
+                    >
+                      <Check size={14} />
+                      {savingPreset ? '保存中...' : '保存预设'}
+                    </Button>
+                  </div>
+                </div>
+              ) : (
+                <p className="m-auto text-xs text-[#7d6b59]">请选择或新建一个指令预设</p>
+              )}
+            </main>
+          </TabsContent>
+        </Tabs>
+
+        <DialogFooter className="flex items-center justify-between border-t border-[#e5ddd3] pt-3 text-[11px] text-[#7d6b59]">
           <span>创作配置修改后自动递增 revision 并同步检索</span>
-          <button type="button" className="text-button" onClick={onClose}>关闭</button>
-        </footer>
-      </motion.div>
-    </motion.div>
+          <Button variant="ghost" onClick={onClose}>
+            关闭
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   )
 }

@@ -1,13 +1,21 @@
-import React, { useState, useEffect, useCallback } from 'react'
-import { motion, AnimatePresence } from 'motion/react'
-import { CheckCircle2, Pencil, Plus, Sparkles, Trash2, X } from 'lucide-react'
-import { LiteraryReportDetail, LiteraryReportSummary, ReportSectionType, ReportAnnotation, ReportSection } from '../../../shared/project'
-import { IconButton } from '../common/IconButton'
+import { useState, useEffect, useCallback } from 'react'
+import { CheckCircle2, Pencil, Plus, Sparkles, Trash2 } from 'lucide-react'
+import {
+  LiteraryReportDetail,
+  LiteraryReportSummary,
+  ReportSectionType
+} from '../../../shared/project'
 import { errorText, formatDate } from '../../utils/formatters'
-import { reportSectionTitle } from '../../utils/constants'
-import { useDialogDismiss } from '../../hooks/useDialogDismiss'
+import { reportSectionTitle, reportStateLabel } from '../../utils/constants'
 import { useToast } from '../common/Toast'
 import { ConfirmActionDialog } from './ConfirmActionDialog'
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from '@appica/ui-react/dialog'
+import { Button } from '@appica/ui-react/button'
+import { Badge } from '@appica/ui-react/badge'
+import { Card } from '@appica/ui-react/card'
+import { ScrollArea } from '@appica/ui-react/scroll-area'
+import { Input } from '@appica/ui-react/input'
+import { Textarea } from '@appica/ui-react/textarea'
 
 export function LiteraryReportsDialog({
   sessionId,
@@ -20,7 +28,6 @@ export function LiteraryReportsDialog({
   onClose: () => void
   onLaunchNew: () => void
 }) {
-  const { dialogRef, backdropProps } = useDialogDismiss({ onClose })
   const [reports, setReports] = useState<LiteraryReportSummary[]>([])
   const [selectedReportId, setSelectedReportId] = useState<string | null>(null)
   const [reportDetail, setReportDetail] = useState<LiteraryReportDetail | null>(null)
@@ -132,186 +139,248 @@ export function LiteraryReportsDialog({
   ]
 
   return (
-    <motion.div className="action-dialog-layer" {...backdropProps} initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
-      <motion.div ref={dialogRef} className="report-dialog" role="dialog" aria-modal="true" aria-label="文学分析报告" initial={{ opacity: 0, y: 10, scale: .98 }} animate={{ opacity: 1, y: 0, scale: 1 }} exit={{ opacity: 0, y: 4 }}>
-        <header className="dialog-header">
-          <div>
-            <h2>文学分析报告</h2>
-            <p>全书六大维度深度文学批评：主题、视角、文风、节奏结构、人物弧光与连续性</p>
-          </div>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-            <button className="primary-button" disabled={isReadOnly} onClick={onLaunchNew}>
-              <Sparkles size={14} />生成新报告
-            </button>
-            <IconButton label="关闭" onClick={onClose}><X size={18} /></IconButton>
-          </div>
-        </header>
-
-        {error && <div className="dialog-error"><p className="inline-error">{error}</p></div>}
-
-        <div className="report-dialog-body">
-          <aside className="report-sidebar">
-            <div className="panel-caption">历史分析报告 ({reports.length})</div>
-            <div className="report-list">
-              {reports.length === 0 ? (
-                <p className="empty-hint">暂无报告，请点击右上角生成</p>
-              ) : (
-                reports.map((r) => (
-                  <button
-                    key={r.id}
-                    className={`report-row ${r.id === selectedReportId ? 'selected' : ''}`}
-                    onClick={() => setSelectedReportId(r.id)}
-                  >
-                    <div className="report-row-header">
-                      <strong>文学深度分析</strong>
-                      <span className={`badge-tag ${r.state === 'current' ? 'confirmed' : 'unconfirmed'}`}>
-                        {r.state === 'current' ? '最新有效' : '已过时'}
-                      </span>
-                    </div>
-                    <span className="report-time">{formatDate(r.createdAt)}</span>
-                  </button>
-                ))
-              )}
-            </div>
-          </aside>
-
-          <main className="report-main">
-            {!reportDetail ? (
-              <div className="empty-copy" style={{ textAlign: 'center', padding: '80px 0' }}>
-                <p>请选择或生成一份文学分析报告</p>
+    <>
+      <Dialog open onOpenChange={(open) => { if (!open) onClose() }}>
+      <DialogContent className="flex flex-col w-[90vw] max-w-[90vw] h-[90vh] p-6" closeLabel="关闭">
+          <DialogHeader>
+            <div className="flex items-center justify-between pr-8">
+              <div>
+                <DialogTitle>文学分析报告</DialogTitle>
+                <DialogDescription>
+                  全书六大维度深度文学批评：主题、视角、文风、节奏结构、人物弧光与连续性
+                </DialogDescription>
               </div>
-            ) : (
-              <div className="report-detail-layout">
-                <div className="dimension-tabs">
-                  {sectionsList.map((secType) => (
-                    <button
-                      key={secType}
-                      className={`dimension-tab ${selectedSection === secType ? 'active' : ''}`}
-                      onClick={() => setSelectedSection(secType)}
-                    >
-                      {reportSectionTitle[secType]}
-                    </button>
-                  ))}
-                </div>
+              <Button size="sm" disabled={isReadOnly} onClick={onLaunchNew}>
+                <Sparkles size={14} />
+                生成新报告
+              </Button>
+            </div>
+          </DialogHeader>
 
-                <div className="dimension-content-area">
-                  {activeSectionData ? (
-                    <div className="dimension-section-view">
-                      <div className="conclusion-callout">
-                        <div className="conclusion-label">
-                          <CheckCircle2 size={16} />
-                          <strong>核心结论提炼</strong>
+          {error && <p className="inline-error text-xs text-red-600">{error}</p>}
+
+          <div className="flex flex-1 gap-4 overflow-hidden border-t border-[#e5ddd3] pt-3">
+            {/* Sidebar */}
+            <aside className="flex w-64 flex-col gap-2 border-r border-[#e5ddd3] pr-3 shrink-0">
+              <span className="text-xs font-semibold text-[#7d6b59]">
+                历史分析报告 ({reports.length})
+              </span>
+              <ScrollArea className="flex-1">
+                {reports.length === 0 ? (
+                  <p className="p-4 text-center text-xs text-[#7d6b59]">
+                    {loading ? '加载中...' : '暂无报告，请点击右上角生成'}
+                  </p>
+                ) : (
+                  <div className="flex flex-col gap-2 p-1">
+                    {reports.map((r) => (
+                      <Card
+                        key={r.id}
+                        className={`flex flex-col gap-1.5 p-3 text-left transition-colors cursor-pointer border ${
+                          r.id === selectedReportId
+                            ? 'border-[#2d6a4f] bg-[#e8f3ee]'
+                            : 'border-[#e5ddd3] bg-white hover:border-[#dacdbe]'
+                        }`}
+                        onClick={() => setSelectedReportId(r.id)}
+                      >
+                        <div className="flex items-center justify-between">
+                          <strong className="text-xs text-[#2c2523]">文学深度分析</strong>
+                          <Badge variant={r.state === 'current' ? 'primary' : 'secondary'}>
+                            {reportStateLabel[r.state]}
+                          </Badge>
                         </div>
-                        <p>{activeSectionData.conclusion}</p>
-                      </div>
+                        <span className="text-[10px] text-[#9c8874]">
+                          {formatDate(r.createdAt)}
+                        </span>
+                      </Card>
+                    ))}
+                  </div>
+                )}
+              </ScrollArea>
+            </aside>
 
-                      <div className="markdown-report-content">
-                        <h4>深度剖析与论证</h4>
-                        <div className="report-text-render">{activeSectionData.content}</div>
-                      </div>
+            {/* Main Content */}
+            <main className="flex flex-1 flex-col overflow-hidden">
+              {!reportDetail ? (
+                <div className="flex flex-1 items-center justify-center text-xs text-[#7d6b59]">
+                  请选择或生成一份文学分析报告
+                </div>
+              ) : (
+                <div className="flex flex-1 flex-col overflow-hidden gap-3">
+                  <div className="flex gap-1.5 border-b border-[#e5ddd3] pb-2 text-xs">
+                    {sectionsList.map((secType) => (
+                      <Button
+                        key={secType}
+                        type="button"
+                        variant={selectedSection === secType ? 'primary' : 'ghost'}
+                        size="sm"
+                        className={`rounded-lg px-2.5 py-1 text-xs font-medium transition-colors ${
+                          selectedSection === secType
+                            ? 'bg-[#2d6a4f] text-white'
+                            : 'bg-[#efe6da] text-[#7d6b59] hover:bg-[#e5ddd3]'
+                        }`}
+                        onClick={() => setSelectedSection(secType)}
+                      >
+                        {reportSectionTitle[secType]}
+                      </Button>
+                    ))}
+                  </div>
 
-                      {activeSectionData.evidences.length > 0 && (
-                        <div className="report-evidences-box">
-                          <h4>引用论据 ({activeSectionData.evidences.length})</h4>
-                          <div className="evidence-grid">
-                            {activeSectionData.evidences.map((ev) => (
-                              <div key={ev.id} className="evidence-chip-card">
-                                <span>第 {ev.chapterVersion} 版: "{ev.excerpt}"</span>
-                              </div>
-                            ))}
+                  <ScrollArea className="flex-1 pr-3">
+                    {activeSectionData ? (
+                      <div className="flex flex-col gap-4 p-1">
+                        <div className="flex items-start gap-2.5 rounded-xl border border-emerald-200 bg-emerald-50 p-3.5 text-xs text-emerald-900">
+                          <CheckCircle2 size={16} className="shrink-0 text-emerald-600 mt-0.5" />
+                          <div className="flex flex-col gap-1">
+                            <strong className="font-semibold text-emerald-800">核心结论提炼</strong>
+                            <p className="m-0 leading-relaxed">{activeSectionData.conclusion}</p>
                           </div>
                         </div>
-                      )}
 
-                      <div className="annotations-section">
-                        <h4>作者心得与批注 ({activeSectionData.annotations.length})</h4>
-                        <div className="annotations-list">
-                          {activeSectionData.annotations.map((ann) => (
-                            <div key={ann.id} className="annotation-card">
-                              {editingAnnotationId === ann.id ? (
-                                <div style={{ display: 'flex', flexDirection: 'column', gap: 8, width: '100%' }}>
-                                  <textarea
-                                    value={editingText}
-                                    onChange={(e) => setEditingText(e.target.value)}
-                                    rows={3}
-                                    style={{ width: '100%', padding: 8, borderRadius: 3, border: '1px solid #d1d5db' }}
-                                  />
-                                  <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 6 }}>
-                                    <button type="button" className="text-button" onClick={() => setEditingAnnotationId(null)}>取消</button>
-                                    <button type="button" className="primary-button" onClick={() => void handleUpdateAnnotation(ann.id)}>保存</button>
-                                  </div>
+                        <Card className="flex flex-col gap-2 p-4 bg-white border-[#e5ddd3]">
+                          <h4 className="text-xs font-semibold text-[#7d6b59]">深度剖析与论证</h4>
+                          <div className="font-serif text-sm leading-relaxed text-[#2c2523] whitespace-pre-wrap">
+                            {activeSectionData.content}
+                          </div>
+                        </Card>
+
+                        {activeSectionData.evidences.length > 0 && (
+                          <div className="flex flex-col gap-2">
+                            <h4 className="text-xs font-semibold text-[#7d6b59]">
+                              引用论据 ({activeSectionData.evidences.length})
+                            </h4>
+                            <div className="grid grid-cols-2 gap-2">
+                              {activeSectionData.evidences.map((ev) => (
+                                <div
+                                  key={ev.id}
+                                  className="rounded-lg border border-[#e5ddd3] bg-[#faf8f5] p-2.5 text-xs italic text-[#54473b]"
+                                >
+                                  第 {ev.chapterVersion} 版: "{ev.excerpt}"
                                 </div>
-                              ) : (
-                                <>
-                                  <div className="annotation-body">
-                                    <p>{ann.content}</p>
-                                    <span className="annotation-time">{formatDate(ann.updatedAt)}</span>
-                                  </div>
-                                  <div className="annotation-actions">
-                                    <IconButton label="编辑批注" onClick={() => { setEditingAnnotationId(ann.id); setEditingText(ann.content) }}>
-                                      <Pencil size={13} />
-                                    </IconButton>
-                                    <IconButton label="删除批注" onClick={() => void handleDeleteAnnotation(ann.id)}>
-                                      <Trash2 size={13} />
-                                    </IconButton>
-                                  </div>
-                                </>
-                              )}
+                              ))}
                             </div>
-                          ))}
-                        </div>
+                          </div>
+                        )}
 
-                        <div className="add-annotation-box">
-                          <input
-                            type="text"
-                            placeholder="在此输入对此维度的作者批注或调整计划..."
-                            value={newAnnotationText}
-                            onChange={(e) => setNewAnnotationText(e.target.value)}
-                            onKeyDown={(e) => {
-                              if (e.key === 'Enter') void handleAddAnnotation()
-                            }}
-                          />
-                          <button
-                            type="button"
-                            className="primary-button"
-                            disabled={isReadOnly || !newAnnotationText.trim()}
-                            onClick={() => void handleAddAnnotation()}
-                          >
-                            <Plus size={13} />添加批注
-                          </button>
+                        <div className="flex flex-col gap-2.5 border-t border-[#e5ddd3] pt-3">
+                          <h4 className="text-xs font-semibold text-[#7d6b59]">
+                            作者心得与批注 ({activeSectionData.annotations.length})
+                          </h4>
+                          <div className="flex flex-col gap-2">
+                            {activeSectionData.annotations.map((ann) => (
+                              <Card key={ann.id} className="p-3 bg-white border-[#e5ddd3]">
+                                {editingAnnotationId === ann.id ? (
+                                  <div className="flex flex-col gap-2">
+                                    <Textarea
+                                      value={editingText}
+                                      onChange={(e) => setEditingText(e.target.value)}
+                                      rows={3}
+                                      className="rounded-lg border border-[#dacdbe] p-2 text-xs text-[#2c2523] outline-none focus:border-[#2d6a4f]"
+                                    />
+                                    <div className="flex justify-end gap-2">
+                                      <Button
+                                        size="sm"
+                                        variant="ghost"
+                                        onClick={() => setEditingAnnotationId(null)}
+                                      >
+                                        取消
+                                      </Button>
+                                      <Button
+                                        size="sm"
+                                        onClick={() => void handleUpdateAnnotation(ann.id)}
+                                      >
+                                        保存
+                                      </Button>
+                                    </div>
+                                  </div>
+                                ) : (
+                                  <div className="flex items-start justify-between gap-3">
+                                    <div className="flex flex-col gap-1">
+                                      <p className="m-0 text-xs text-[#2c2523] leading-relaxed">
+                                        {ann.content}
+                                      </p>
+                                      <span className="text-[10px] text-[#9c8874]">
+                                        {formatDate(ann.updatedAt)}
+                                      </span>
+                                    </div>
+                                    <div className="flex gap-1">
+                                      <Button
+                                        size="icon-sm"
+                                        variant="ghost"
+                                        className="h-7 w-7 text-[#7d6b59]"
+                                        onClick={() => {
+                                          setEditingAnnotationId(ann.id)
+                                          setEditingText(ann.content)
+                                        }}
+                                      >
+                                        <Pencil size={13} />
+                                      </Button>
+                                      <Button
+                                        size="icon-sm"
+                                        variant="ghost"
+                                        className="h-7 w-7 text-red-600 hover:text-red-700"
+                                        onClick={() => handleDeleteAnnotation(ann.id)}
+                                      >
+                                        <Trash2 size={13} />
+                                      </Button>
+                                    </div>
+                                  </div>
+                                )}
+                              </Card>
+                            ))}
+                          </div>
+
+                          <div className="flex gap-2">
+                            <Input
+                              type="text"
+                              placeholder="在此输入对此维度的作者批注或调整计划..."
+                              value={newAnnotationText}
+                              onChange={(e) => setNewAnnotationText(e.target.value)}
+                              onKeyDown={(e) => {
+                                if (e.key === 'Enter') void handleAddAnnotation()
+                              }}
+                              className="flex-1 rounded-lg border border-[#dacdbe] bg-white px-3 py-1.5 text-xs text-[#2c2523] outline-none focus:border-[#2d6a4f]"
+                            />
+                            <Button
+                              size="sm"
+                              disabled={isReadOnly || !newAnnotationText.trim()}
+                              onClick={() => void handleAddAnnotation()}
+                            >
+                              <Plus size={13} />
+                              添加批注
+                            </Button>
+                          </div>
                         </div>
                       </div>
-                    </div>
-                  ) : (
-                    <p className="empty-hint">该维度暂无分析数据</p>
-                  )}
+                    ) : (
+                      <p className="p-8 text-center text-xs text-[#7d6b59]">该维度暂无分析数据</p>
+                    )}
+                  </ScrollArea>
                 </div>
-              </div>
-            )}
-          </main>
-        </div>
+              )}
+            </main>
+          </div>
 
-        <footer className="dialog-footer">
-          <span>报告覆盖全书六大维度，作者批注独立保存并持久关联到具体分析章节</span>
-          <button type="button" className="text-button" onClick={onClose}>关闭</button>
-        </footer>
-      </motion.div>
+          <DialogFooter className="flex items-center justify-between border-t border-[#e5ddd3] pt-3 text-[11px] text-[#7d6b59]">
+            <span>报告覆盖全书六大维度，作者批注独立保存并持久关联到具体分析章节</span>
+            <Button variant="ghost" onClick={onClose}>
+              关闭
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
-      <AnimatePresence>
-        {deletingAnnotationId && (
-          <ConfirmActionDialog
-            key="confirm-delete-annotation"
-            isOpen={Boolean(deletingAnnotationId)}
-            title="确认删除作者批注"
-            message="确定删除该作者批注吗？删除后不可恢复。"
-            confirmText="删除批注"
-            confirmVariant="danger"
-            isLoading={deleteLoading}
-            onConfirm={handleConfirmDeleteAnnotation}
-            onCancel={() => setDeletingAnnotationId(null)}
-          />
-        )}
-      </AnimatePresence>
-    </motion.div>
+      {deletingAnnotationId && (
+        <ConfirmActionDialog
+          isOpen={Boolean(deletingAnnotationId)}
+          title="确认删除作者批注"
+          message="确定删除该作者批注吗？删除后不可恢复。"
+          confirmText="删除批注"
+          confirmVariant="danger"
+          isLoading={deleteLoading}
+          onConfirm={handleConfirmDeleteAnnotation}
+          onCancel={() => setDeletingAnnotationId(null)}
+        />
+      )}
+    </>
   )
 }

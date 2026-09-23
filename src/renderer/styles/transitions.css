@@ -1,0 +1,331 @@
+/* ==========================================================================
+   Transitions from transitions.dev
+   Card 1: Text states swap
+   Card 2: Skeleton loader and reveal
+   Card 3: Texts reveal
+   Card 4: Number pop-in
+   ========================================================================== */
+
+/* --------------------------------------------------------------------------
+   1. Text states swap
+   -------------------------------------------------------------------------- */
+:root {
+  --duration-quick: 150ms;
+  --distance-micro: 4px;
+  --blur-small: 2px;
+  --ease-in-out: ease-in-out;
+
+  --text-swap-dur: var(--p6-dur, var(--duration-quick, 150ms));
+  --text-swap-translate-y: var(--p6-translate-y, var(--distance-micro, 4px));
+  --text-swap-blur: var(--p6-blur, var(--blur-small, 2px));
+  --text-swap-ease: var(--p6-ease, var(--ease-in-out, ease-in-out));
+}
+
+.t-text-swap,
+.text-states-swap {
+  display: inline-block;
+  transform: translateY(0);
+  filter: blur(0);
+  opacity: 1;
+  transition:
+    transform var(--text-swap-dur, 150ms) var(--text-swap-ease, ease-in-out),
+    filter    var(--text-swap-dur, 150ms) var(--text-swap-ease, ease-in-out),
+    opacity   var(--text-swap-dur, 150ms) var(--text-swap-ease, ease-in-out);
+  will-change: transform, filter, opacity;
+}
+
+.t-text-swap.is-exit,
+.text-states-swap.is-exit {
+  transform: translateY(calc(var(--text-swap-translate-y, 4px) * -1));
+  filter: blur(var(--text-swap-blur, 2px));
+  opacity: 0;
+}
+
+.t-text-swap.is-enter-start,
+.text-states-swap.is-enter-start {
+  transform: translateY(var(--text-swap-translate-y, 4px));
+  filter: blur(var(--text-swap-blur, 2px));
+  opacity: 0;
+  transition: none;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .t-text-swap,
+  .text-states-swap {
+    transition: none !important;
+  }
+
+  .t-text-swap.is-exit,
+  .text-states-swap.is-exit,
+  .t-text-swap.is-enter-start,
+  .text-states-swap.is-enter-start {
+    transform: none;
+    filter: none;
+    opacity: 1;
+  }
+}
+
+/* --------------------------------------------------------------------------
+   2. Skeleton loader and reveal
+   -------------------------------------------------------------------------- */
+:root {
+  --duration-slow: 400ms;
+  --pulse-dur: var(--p14-pulse-dur, 1000ms);
+  --pulse-count: var(--p14-pulse-count, 1);
+  --pulse-min: var(--p14-pulse-min, 0.5);
+  --reveal-dur: var(--p14-reveal-dur, var(--duration-slow, 400ms));
+  --reveal-blur: var(--p14-reveal-blur, var(--blur-small, 2px));
+  --reveal-ease: var(--p14-reveal-ease, var(--ease-in-out, ease-in-out));
+}
+
+.t-skel,
+.skeleton-reveal {
+  position: relative;
+}
+
+.t-skel-skeleton,
+.skeleton-reveal-skeleton,
+.t-skel-content,
+.skeleton-reveal-content {
+  position: absolute;
+  inset: 0;
+}
+
+.t-skel-skeleton,
+.skeleton-reveal-skeleton {
+  z-index: 1;
+  opacity: 1;
+  filter: blur(0);
+  transition:
+    opacity var(--reveal-dur, 400ms) var(--reveal-ease, ease-in-out),
+    filter  var(--reveal-dur, 400ms) var(--reveal-ease, ease-in-out);
+}
+
+.t-skel-content,
+.skeleton-reveal-content {
+  z-index: 2;
+  opacity: 0;
+  filter: blur(var(--reveal-blur, 2px));
+  transition:
+    opacity var(--reveal-dur, 400ms) var(--reveal-ease, ease-in-out),
+    filter  var(--reveal-dur, 400ms) var(--reveal-ease, ease-in-out);
+}
+
+.t-skel.is-revealed .t-skel-skeleton,
+.skeleton-reveal.is-revealed .skeleton-reveal-skeleton {
+  opacity: 0;
+  filter: blur(var(--reveal-blur, 2px));
+}
+
+.t-skel.is-revealed .t-skel-content,
+.skeleton-reveal.is-revealed .skeleton-reveal-content {
+  opacity: 1;
+  filter: blur(0);
+}
+
+.t-skel.is-resetting .t-skel-skeleton,
+.t-skel.is-resetting .t-skel-content,
+.skeleton-reveal.is-resetting .skeleton-reveal-skeleton,
+.skeleton-reveal.is-resetting .skeleton-reveal-content {
+  transition: none !important;
+}
+
+.t-skel-skeleton.is-pulsing > *,
+.skeleton-reveal.is-pulsing > *,
+.skeleton-reveal-skeleton.is-pulsing > * {
+  animation: t-skel-pulse var(--pulse-dur, 1000ms) ease-in-out var(--pulse-count, 1);
+}
+
+@keyframes t-skel-pulse {
+  0%, 100% { opacity: 1; }
+  50%      { opacity: var(--pulse-min, 0.5); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .t-skel-skeleton,
+  .t-skel-content,
+  .skeleton-reveal-skeleton,
+  .skeleton-reveal-content {
+    transition: none !important;
+  }
+}
+
+.task-empty-state {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.task-empty-state > .skeleton-reveal-skeleton,
+.task-empty-state > .skeleton-reveal-content {
+  position: relative;
+  inset: auto;
+  grid-area: 1 / 1;
+}
+
+.task-empty-state > .skeleton-reveal-skeleton {
+  background: linear-gradient(
+    to bottom,
+    transparent 0 18px,
+    #e5ddd3 18px 30px,
+    transparent 30px 38px,
+    #e5ddd3 38px 48px,
+    transparent 48px 56px,
+    #e5ddd3 56px 66px,
+    transparent 66px
+  );
+}
+
+/* --------------------------------------------------------------------------
+   3. Texts reveal
+   -------------------------------------------------------------------------- */
+:root {
+  --duration-very-slow: 500ms;
+  --duration-stagger: 40ms;
+  --distance-medium: 12px;
+  --blur-medium: 3px;
+  --ease-smooth-out: cubic-bezier(0, 0, 0.2, 1);
+
+  --stagger-dur: var(--p18-dur, var(--duration-very-slow, 500ms));
+  --stagger-distance: var(--p18-distance, var(--distance-medium, 12px));
+  --stagger-stagger: var(--p18-stagger, var(--duration-stagger, 40ms));
+  --stagger-blur: var(--p18-blur, var(--blur-medium, 3px));
+  --stagger-ease: var(--p18-ease, var(--ease-smooth-out, cubic-bezier(0, 0, 0.2, 1)));
+}
+
+.t-stagger-line,
+.texts-reveal > *,
+.texts-reveal-line {
+  display: block;
+  opacity: 0;
+  transform: translateY(var(--stagger-distance, 12px));
+  filter: blur(var(--stagger-blur, 3px));
+  transition:
+    opacity   var(--stagger-dur, 500ms) var(--stagger-ease, cubic-bezier(0, 0, 0.2, 1)),
+    transform var(--stagger-dur, 500ms) var(--stagger-ease, cubic-bezier(0, 0, 0.2, 1)),
+    filter    var(--stagger-dur, 500ms) var(--stagger-ease, cubic-bezier(0, 0, 0.2, 1));
+  will-change: transform, opacity, filter;
+}
+
+.t-stagger-line--2,
+.texts-reveal > *:nth-child(2) {
+  transition-delay: var(--stagger-stagger, 40ms);
+}
+
+.texts-reveal > *:nth-child(3) {
+  transition-delay: calc(var(--stagger-stagger, 40ms) * 2);
+}
+
+.texts-reveal > *:nth-child(4) {
+  transition-delay: calc(var(--stagger-stagger, 40ms) * 3);
+}
+
+.t-stagger.is-shown .t-stagger-line,
+.texts-reveal.is-shown > *,
+.texts-reveal:not(.is-hiding) > * {
+  opacity: 1;
+  transform: translateY(0);
+  filter: blur(0);
+}
+
+.t-stagger.is-hiding .t-stagger-line,
+.texts-reveal.is-hiding > * {
+  opacity: 0;
+  transform: translateY(0);
+  filter: blur(0);
+  transition:
+    opacity 200ms ease,
+    transform 0s linear,
+    filter 0s linear;
+  transition-delay: 0s;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .t-stagger-line,
+  .texts-reveal > *,
+  .texts-reveal-line {
+    transition: none !important;
+  }
+}
+
+@keyframes streaming-word-appear {
+  from {
+    filter: blur(2px);
+    opacity: 0;
+  }
+  to {
+    filter: blur(0);
+    opacity: 1;
+  }
+}
+
+.streaming-text-word {
+  animation: streaming-word-appear 180ms ease-out both;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .streaming-text-word {
+    animation: none !important;
+  }
+}
+
+/* --------------------------------------------------------------------------
+   4. Number pop-in
+   -------------------------------------------------------------------------- */
+:root {
+  --distance-base: 8px;
+  --digit-dur: var(--p9-dur, var(--duration-very-slow, 500ms));
+  --digit-distance: var(--p9-distance, var(--distance-base, 8px));
+  --digit-stagger: var(--p9-stagger, 70ms);
+  --digit-blur: var(--p9-blur, var(--blur-small, 2px));
+  --digit-ease: var(--p9-ease, cubic-bezier(0.34, 1.45, 0.64, 1));
+  --digit-dir-x: var(--p9-dir-x, 0);
+  --digit-dir-y: var(--p9-dir-y, 1);
+}
+
+@keyframes t-digit-pop-in {
+  0% {
+    transform: translate(
+      calc(var(--digit-distance, 8px) * var(--digit-dir-x, 0)),
+      calc(var(--digit-distance, 8px) * var(--digit-dir-y, 1))
+    );
+    opacity: 0;
+    filter: blur(var(--digit-blur, 2px));
+  }
+  100% {
+    transform: translate(0, 0);
+    opacity: 1;
+    filter: blur(0);
+  }
+}
+
+.t-digit-group {
+  display: inline-flex;
+  align-items: baseline;
+}
+
+.t-digit,
+.number-pop-in {
+  display: inline-block;
+  will-change: transform, opacity, filter;
+  animation: t-digit-pop-in var(--digit-dur, 500ms) var(--digit-ease, cubic-bezier(0.34, 1.45, 0.64, 1)) both;
+}
+
+.t-digit-group.is-animating .t-digit {
+  animation: t-digit-pop-in var(--digit-dur, 500ms) var(--digit-ease, cubic-bezier(0.34, 1.45, 0.64, 1)) both;
+}
+
+.t-digit-group.is-animating .t-digit[data-stagger="1"] {
+  animation-delay: var(--digit-stagger, 70ms);
+}
+
+.t-digit-group.is-animating .t-digit[data-stagger="2"] {
+  animation-delay: calc(var(--digit-stagger, 70ms) * 2);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .t-digit,
+  .number-pop-in {
+    animation: none !important;
+  }
+}
+

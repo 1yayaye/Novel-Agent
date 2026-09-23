@@ -1,11 +1,13 @@
 import { useState, useEffect, useCallback } from 'react'
-import { motion } from 'motion/react'
 import { Bookmark, Check, CheckCircle2, Eye, X } from 'lucide-react'
 import { ChapterHeader, ConsistencyIssue, ConsistencyIssueSeverity, ConsistencyIssueState } from '../../../shared/project'
-import { IconButton } from '../common/IconButton'
 import { errorText, formatDate } from '../../utils/formatters'
 import { consistencySeverityLabel, consistencyIssueTypeLabel, consistencyStateLabel } from '../../utils/constants'
-import { useDialogDismiss } from '../../hooks/useDialogDismiss'
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from '@appica/ui-react/dialog'
+import { Button } from '@appica/ui-react/button'
+import { Badge } from '@appica/ui-react/badge'
+import { Card } from '@appica/ui-react/card'
+import { ScrollArea } from '@appica/ui-react/scroll-area'
 
 export function ConsistencyIssuesDialog({
   sessionId,
@@ -20,7 +22,6 @@ export function ConsistencyIssuesDialog({
   onClose: () => void
   onNavigateChapter: (chapterId: string, startOffset?: number, length?: number) => void
 }) {
-  const { dialogRef, backdropProps } = useDialogDismiss({ onClose })
   const [issues, setIssues] = useState<ConsistencyIssue[]>([])
   const [stateFilter, setStateFilter] = useState<'all' | ConsistencyIssueState>('open')
   const [severityFilter, setSeverityFilter] = useState<'all' | ConsistencyIssueSeverity>('all')
@@ -63,143 +64,206 @@ export function ConsistencyIssuesDialog({
   }
 
   return (
-    <motion.div className="action-dialog-layer" {...backdropProps} initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
-      <motion.div ref={dialogRef} className="consistency-dialog" role="dialog" aria-modal="true" aria-label="一致性问题审阅" initial={{ opacity: 0, y: 10, scale: .98 }} animate={{ opacity: 1, y: 0, scale: 1 }} exit={{ opacity: 0, y: 4 }}>
-        <header className="dialog-header">
-          <div>
-            <h2>故事一致性与矛盾检测</h2>
-            <p>审阅 AI 知识分析发现的剧情漏洞、人设偏差、时间线错位与设定冲突</p>
-          </div>
-          <IconButton label="关闭" onClick={onClose}><X size={18} /></IconButton>
-        </header>
+    <Dialog open onOpenChange={(open) => { if (!open) onClose() }}>
+      <DialogContent className="flex flex-col max-h-[85vh] sm:max-w-4xl" closeLabel="关闭">
+        <DialogHeader>
+          <DialogTitle>故事一致性与矛盾检测</DialogTitle>
+          <DialogDescription>
+            审阅 AI 知识分析发现的剧情漏洞、人设偏差、时间线错位与设定冲突
+          </DialogDescription>
+        </DialogHeader>
 
-        <div className="search-filter-bar" style={{ justifyContent: 'space-between' }}>
-          <div className="source-filter-chips">
-            <span style={{ fontSize: 11, fontWeight: 700, color: '#4b5563', marginRight: 4 }}>状态:</span>
-            <button className={stateFilter === 'all' ? 'filter-chip active' : 'filter-chip'} onClick={() => setStateFilter('all')}>全部</button>
-            <button className={stateFilter === 'open' ? 'filter-chip active' : 'filter-chip'} onClick={() => setStateFilter('open')}>待处理</button>
-            <button className={stateFilter === 'acknowledged' ? 'filter-chip active' : 'filter-chip'} onClick={() => setStateFilter('acknowledged')}>已确认</button>
-            <button className={stateFilter === 'dismissed' ? 'filter-chip active' : 'filter-chip'} onClick={() => setStateFilter('dismissed')}>已忽略</button>
-            <button className={stateFilter === 'stale' ? 'filter-chip active' : 'filter-chip'} onClick={() => setStateFilter('stale')}>已过时</button>
+        <div className="flex items-center justify-between border-b border-[#e5ddd3] pb-2.5 text-xs">
+          <div className="flex items-center gap-1.5">
+            <span className="font-bold text-[#7d6b59] mr-1">状态:</span>
+            {[
+              { id: 'all', label: '全部' },
+              { id: 'open', label: '待处理' },
+              { id: 'acknowledged', label: '已确认' },
+              { id: 'dismissed', label: '已忽略' },
+              { id: 'stale', label: '已过时' }
+            ].map((item) => (
+              <Button
+                key={item.id}
+                type="button"
+                variant={stateFilter === item.id ? 'primary' : 'ghost'}
+                size="sm"
+                className={`rounded-lg px-2.5 py-1 font-medium transition-colors ${
+                  stateFilter === item.id
+                    ? 'bg-[#2d6a4f] text-white'
+                    : 'bg-[#efe6da] text-[#7d6b59] hover:bg-[#e5ddd3]'
+                }`}
+                onClick={() => setStateFilter(item.id as any)}
+              >
+                {item.label}
+              </Button>
+            ))}
           </div>
 
-          <div className="source-filter-chips">
-            <span style={{ fontSize: 11, fontWeight: 700, color: '#4b5563', marginRight: 4 }}>严重程度:</span>
-            <button className={severityFilter === 'all' ? 'filter-chip active' : 'filter-chip'} onClick={() => setSeverityFilter('all')}>全部</button>
-            <button className={severityFilter === 'high' ? 'filter-chip active' : 'filter-chip'} onClick={() => setSeverityFilter('high')}>严重</button>
-            <button className={severityFilter === 'medium' ? 'filter-chip active' : 'filter-chip'} onClick={() => setSeverityFilter('medium')}>中等</button>
-            <button className={severityFilter === 'low' ? 'filter-chip active' : 'filter-chip'} onClick={() => setSeverityFilter('low')}>轻微</button>
+          <div className="flex items-center gap-1.5">
+            <span className="font-bold text-[#7d6b59] mr-1">严重度:</span>
+            {[
+              { id: 'all', label: '全部' },
+              { id: 'high', label: '严重' },
+              { id: 'medium', label: '中等' },
+              { id: 'low', label: '轻微' }
+            ].map((item) => (
+              <Button
+                key={item.id}
+                type="button"
+                variant={severityFilter === item.id ? 'primary' : 'ghost'}
+                size="sm"
+                className={`rounded-lg px-2.5 py-1 font-medium transition-colors ${
+                  severityFilter === item.id
+                    ? 'bg-[#2c2523] text-white'
+                    : 'bg-[#efe6da] text-[#7d6b59] hover:bg-[#e5ddd3]'
+                }`}
+                onClick={() => setSeverityFilter(item.id as any)}
+              >
+                {item.label}
+              </Button>
+            ))}
           </div>
         </div>
 
-        {error && <div className="dialog-error"><p className="inline-error">{error}</p></div>}
+        {error && <p className="inline-error text-xs text-red-600">{error}</p>}
 
-        <div className="consistency-body">
+        <ScrollArea className="h-[460px] pr-2">
           {loading ? (
-            <p className="empty-hint">加载中...</p>
+            <p className="p-12 text-center text-xs text-[#7d6b59]">加载中...</p>
           ) : issues.length === 0 ? (
-            <div className="empty-copy" style={{ textAlign: 'center', padding: '60px 0' }}>
-              <CheckCircle2 size={32} style={{ color: '#2d5a27', marginBottom: 12 }} />
-              <h3>暂无匹配的一致性问题</h3>
-              <p>当前筛选条件下未发现叙事矛盾或一致性缺陷。</p>
+            <div className="flex flex-col items-center justify-center gap-3 py-16 text-center">
+              <CheckCircle2 size={36} className="text-[#2d6a4f]" />
+              <h3 className="text-sm font-semibold text-[#2c2523]">暂无匹配的一致性问题</h3>
+              <p className="text-xs text-[#7d6b59]">当前筛选条件下未发现叙事矛盾或一致性缺陷。</p>
             </div>
           ) : (
-            <div className="consistency-list">
+            <div className="flex flex-col gap-3 p-1">
               {issues.map((issue) => {
                 const chap = chapters.find((c) => c.id === issue.chapterId)
                 const evidence = issue.evidences[0]
                 return (
-                  <div key={issue.id} className={`issue-card ${issue.severity}`}>
-                    <div className="issue-card-header">
-                      <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                        <span className={`severity-tag ${issue.severity}`}>{consistencySeverityLabel[issue.severity]}</span>
-                        <span className="issue-type-badge">{consistencyIssueTypeLabel[issue.issueType]}</span>
-                        <span className="issue-chap-badge">
+                  <Card key={issue.id} className="flex flex-col gap-2.5 p-4 bg-white border-[#e5ddd3]">
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-2">
+                        <Badge
+                          variant={
+                            issue.severity === 'high'
+                              ? 'error'
+                              : issue.severity === 'medium'
+                              ? 'warning'
+                              : 'secondary'
+                          }
+                        >
+                          {consistencySeverityLabel[issue.severity]}
+                        </Badge>
+                        <Badge variant="outline">
+                          {consistencyIssueTypeLabel[issue.issueType]}
+                        </Badge>
+                        <span className="text-xs font-semibold text-[#2c2523]">
                           {chap ? chap.title : `章节 (v${issue.chapterVersion})`}
                         </span>
-                        <span className={`issue-state-badge ${issue.state}`}>
+                        <Badge variant="secondary">
                           {consistencyStateLabel[issue.state]}
-                        </span>
+                        </Badge>
                       </div>
-                      <span className="issue-time">{formatDate(issue.createdAt)}</span>
+                      <span className="text-[11px] text-[#9c8874]">
+                        {formatDate(issue.createdAt)}
+                      </span>
                     </div>
 
-                    <div className="issue-desc">
-                      <p>{issue.description}</p>
+                    <div className="text-xs leading-relaxed text-[#2c2523]">
+                      <p className="m-0">{issue.description}</p>
                     </div>
 
                     {evidence && (
-                      <div className="issue-evidence-box">
-                        <div className="evidence-label">
-                          <Bookmark size={11} />
-                          <span>原文证据 (偏移量: {evidence.startOffset} - {evidence.endOffset})</span>
+                      <div className="rounded-lg border border-[#e5ddd3] bg-[#faf8f5] p-2.5 text-xs text-[#7d6b59]">
+                        <div className="flex items-center gap-1 text-[11px] font-medium text-[#9c8874] mb-1">
+                          <Bookmark size={12} />
+                          <span>
+                            原文证据 (偏移量: {evidence.startOffset} - {evidence.endOffset})
+                          </span>
                         </div>
-                        <blockquote className="evidence-quote">"{evidence.excerpt}"</blockquote>
+                        <blockquote className="m-0 italic text-[#54473b] font-serif">
+                          "{evidence.excerpt}"
+                        </blockquote>
                       </div>
                     )}
 
-                    <div className="issue-actions">
-                      {evidence && (
-                        <button
-                          type="button"
-                          className="text-button"
-                          style={{ fontSize: 12 }}
+                    <div className="flex items-center justify-between border-t border-[#f5efe6] pt-2">
+                      {evidence ? (
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          className="h-7 text-xs text-[#2d6a4f]"
                           onClick={() => {
-                            onNavigateChapter(issue.chapterId, evidence.startOffset, evidence.endOffset - evidence.startOffset)
+                            onNavigateChapter(
+                              issue.chapterId,
+                              evidence.startOffset,
+                              evidence.endOffset - evidence.startOffset
+                            )
                             onClose()
                           }}
                         >
-                          <Eye size={13} />定位原文
-                        </button>
+                          <Eye size={13} />
+                          定位原文
+                        </Button>
+                      ) : (
+                        <div />
                       )}
-                      <div style={{ display: 'flex', gap: 8, marginLeft: 'auto' }}>
+                      <div className="flex gap-2">
                         {issue.state === 'open' && (
                           <>
-                            <button
-                              type="button"
-                              className="text-button"
-                              style={{ color: '#2d5a27', fontSize: 12 }}
+                            <Button
+                              size="sm"
+                              variant="ghost"
+                              className="h-7 text-xs text-[#2d6a4f]"
                               disabled={isReadOnly}
                               onClick={() => void handleReview(issue, 'acknowledged')}
                             >
-                              <Check size={13} />确认已知
-                            </button>
-                            <button
-                              type="button"
-                              className="text-button"
-                              style={{ color: '#6b7280', fontSize: 12 }}
+                              <Check size={13} />
+                              确认已知
+                            </Button>
+                            <Button
+                              size="sm"
+                              variant="ghost"
+                              className="h-7 text-xs text-[#7d6b59]"
                               disabled={isReadOnly}
                               onClick={() => void handleReview(issue, 'dismissed')}
                             >
-                              <X size={13} />忽略
-                            </button>
+                              <X size={13} />
+                              忽略
+                            </Button>
                           </>
                         )}
                         {issue.state === 'acknowledged' && (
-                          <button
-                            type="button"
-                            className="text-button"
-                            style={{ color: '#6b7280', fontSize: 12 }}
+                          <Button
+                            size="sm"
+                            variant="ghost"
+                            className="h-7 text-xs text-[#7d6b59]"
                             disabled={isReadOnly}
                             onClick={() => void handleReview(issue, 'dismissed')}
                           >
-                            <X size={13} />改为忽略
-                          </button>
+                            <X size={13} />
+                            改为忽略
+                          </Button>
                         )}
                       </div>
                     </div>
-                  </div>
+                  </Card>
                 )
               })}
             </div>
           )}
-        </div>
+        </ScrollArea>
 
-        <footer className="dialog-footer">
+        <DialogFooter className="flex items-center justify-between border-t border-[#e5ddd3] pt-3 text-[11px] text-[#7d6b59]">
           <span>章节正文修改后，相关未处理问题将自动标记为已过时 (stale)</span>
-          <button type="button" className="text-button" onClick={onClose}>关闭</button>
-        </footer>
-      </motion.div>
-    </motion.div>
+          <Button variant="ghost" onClick={onClose}>
+            关闭
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   )
 }

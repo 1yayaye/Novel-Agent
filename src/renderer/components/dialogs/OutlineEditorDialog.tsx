@@ -29,7 +29,11 @@ import type {
 import { IconButton } from '../common/IconButton'
 import { errorText, formatDate } from '../../utils/formatters'
 import { getChapterNumber } from '../../utils/chapter-numbering'
-import { useDialogDismiss } from '../../hooks/useDialogDismiss'
+import { Dialog, DialogContent } from '@appica/ui-react/dialog'
+import { Button } from '@appica/ui-react/button'
+import { Input } from '@appica/ui-react/input'
+import { Textarea } from '@appica/ui-react/textarea'
+import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from '@appica/ui-react/select'
 import { useToast } from '../common/Toast'
 import { ConfirmActionDialog } from './ConfirmActionDialog'
 
@@ -78,7 +82,6 @@ export function OutlineEditorDialog({
   onClose: () => void
   onLaunchAnalysis?: (type: 'knowledge' | 'report' | 'synopsis') => void
 }) {
-  const { dialogRef, backdropProps } = useDialogDismiss({ onClose })
   const [activeTab, setActiveTab] = useState<'book' | 'volume' | 'chapter' | 'synopsis'>('book')
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(false)
@@ -447,18 +450,13 @@ export function OutlineEditorDialog({
   }
 
   return (
-    <motion.div className="action-dialog-layer" {...backdropProps} initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
-      <motion.div
-        ref={dialogRef}
-        className="synopsis-dialog"
-        role="dialog"
-        aria-modal="true"
-        aria-label="小说项目大纲"
-        style={{ width: 'min(980px, 94vw)', height: 'min(740px, 88vh)' }}
-        initial={{ opacity: 0, y: 10, scale: 0.98 }}
-        animate={{ opacity: 1, y: 0, scale: 1 }}
-        exit={{ opacity: 0, y: 4 }}
-      >
+    <>
+      <Dialog open onOpenChange={(open) => { if (!open) onClose() }}>
+        <DialogContent
+          className="synopsis-dialog flex flex-col p-6 max-w-[980px] h-[88vh]"
+          aria-label="小说项目大纲"
+          closeButton={false}
+        >
         <header className="dialog-header">
           <div>
             <h2>项目大纲管理</h2>
@@ -466,7 +464,8 @@ export function OutlineEditorDialog({
           </div>
           <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
             <div className="tab-group" style={{ display: 'flex', gap: 6, background: '#f3f4f6', padding: 3, borderRadius: 6 }}>
-              <button
+              <Button
+                variant="ghost"
                 className={`tab-btn ${activeTab === 'book' ? 'active' : ''}`}
                 style={{
                   border: 0,
@@ -482,8 +481,9 @@ export function OutlineEditorDialog({
               >
                 <Compass size={14} style={{ display: 'inline', marginRight: 5, verticalAlign: -2 }} />
                 全书大纲
-              </button>
-              <button
+              </Button>
+              <Button
+                variant="ghost"
                 className={`tab-btn ${activeTab === 'volume' ? 'active' : ''}`}
                 style={{
                   border: 0,
@@ -499,8 +499,9 @@ export function OutlineEditorDialog({
               >
                 <Layers size={14} style={{ display: 'inline', marginRight: 5, verticalAlign: -2 }} />
                 分卷大纲 ({volumes.length})
-              </button>
-              <button
+              </Button>
+              <Button
+                variant="ghost"
                 className={`tab-btn ${activeTab === 'chapter' ? 'active' : ''}`}
                 style={{
                   border: 0,
@@ -516,8 +517,9 @@ export function OutlineEditorDialog({
               >
                 <FileText size={14} style={{ display: 'inline', marginRight: 5, verticalAlign: -2 }} />
                 章大纲
-              </button>
-              <button
+              </Button>
+              <Button
+                variant="ghost"
                 className={`tab-btn ${activeTab === 'synopsis' ? 'active' : ''}`}
                 style={{
                   border: 0,
@@ -533,7 +535,7 @@ export function OutlineEditorDialog({
               >
                 <ScrollText size={14} style={{ display: 'inline', marginRight: 5, verticalAlign: -2 }} />
                 故事脉络与章节摘要 ({summaries.length})
-              </button>
+              </Button>
             </div>
             <IconButton label="关闭" onClick={onClose}><X size={18} /></IconButton>
           </div>
@@ -542,7 +544,7 @@ export function OutlineEditorDialog({
         {error && (
           <div className="dialog-error" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
             <p className="inline-error">{error}</p>
-            <button className="text-button" onClick={() => setError('')} style={{ fontSize: 11 }}>清除</button>
+            <Button variant="ghost" className="text-button" onClick={() => setError('')} style={{ fontSize: 11 }}>清除</Button>
           </div>
         )}
 
@@ -562,15 +564,15 @@ export function OutlineEditorDialog({
                   )}
                 </div>
                 <div style={{ display: 'flex', gap: 8 }}>
-                  <button className="text-button" disabled={isReadOnly || saving} onClick={() => void handleGenerateBookDraft()}>
+                  <Button variant="outline" className="text-button" disabled={isReadOnly || saving} onClick={() => void handleGenerateBookDraft()}>
                     <Sparkles size={14} />从分析汇总草稿
-                  </button>
-                  <button className="text-button" disabled={isReadOnly || saving} onClick={() => void handleSaveBookOutline()}>
+                  </Button>
+                  <Button variant="outline" className="text-button" disabled={isReadOnly || saving} onClick={() => void handleSaveBookOutline()}>
                     保存草稿
-                  </button>
-                  <button className="primary-button" disabled={isReadOnly || saving || !bookOutline} onClick={() => void handleConfirmBookOutline()}>
+                  </Button>
+                  <Button variant="primary" className="primary-button" disabled={isReadOnly || saving || !bookOutline} onClick={() => void handleConfirmBookOutline()}>
                     <Check size={14} />确认生效
-                  </button>
+                  </Button>
                 </div>
               </div>
 
@@ -595,8 +597,8 @@ export function OutlineEditorDialog({
                     </span>
                   </div>
                   <div className="outline-empty-actions">
-                    <button
-                      type="button"
+                    <Button
+                      variant="primary"
                       className="primary-button"
                       disabled={isReadOnly}
                       onClick={() => {
@@ -610,20 +612,20 @@ export function OutlineEditorDialog({
                     >
                       <Sparkles size={14} />
                       <span>立即开始分析并生成大纲</span>
-                    </button>
-                    <button
-                      type="button"
+                    </Button>
+                    <Button
+                      variant="outline"
                       className="text-button"
                       style={{ border: '1px solid #d1d5db', padding: '6px 14px', borderRadius: 4 }}
                       disabled={isReadOnly}
                       onClick={() => setBookContent(DEFAULT_OUTLINE_TEMPLATE)}
                     >
                       ✍️ 使用标准三幕式模板手动填写
-                    </button>
+                    </Button>
                   </div>
                 </div>
               ) : (
-                <textarea
+                <Textarea
                   value={bookContent}
                   disabled={isReadOnly}
                   placeholder="# 全书大纲\n\n## 故事主线与核心冲突\n\n## 主角动机与主要人物关系\n\n## 各阶段情节规划\n"
@@ -642,6 +644,7 @@ export function OutlineEditorDialog({
                   }}
                 />
               )}
+
             </div>
           )}
 
@@ -651,9 +654,9 @@ export function OutlineEditorDialog({
               <div style={{ borderRight: '1px solid #e5e7eb', paddingRight: 14, display: 'flex', flexDirection: 'column', minHeight: 0 }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
                   <h4 style={{ margin: 0, fontSize: 13, color: '#4b5563' }}>分卷列表</h4>
-                  <button className="text-button" style={{ padding: '4px 8px', fontSize: 12 }} disabled={isReadOnly} onClick={handleStartCreateVolume}>
+                  <Button variant="ghost" className="text-button" style={{ padding: '4px 8px', fontSize: 12 }} disabled={isReadOnly} onClick={handleStartCreateVolume}>
                     <Plus size={14} />新建分卷
-                  </button>
+                  </Button>
                 </div>
 
                 <div style={{ flex: 1, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: 6 }}>
@@ -700,8 +703,7 @@ export function OutlineEditorDialog({
 
               <div style={{ display: 'flex', flexDirection: 'column', minHeight: 0, gap: 12 }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                  <input
-                    type="text"
+                  <Input
                     value={volumeTitle}
                     disabled={isReadOnly}
                     placeholder="输入分卷名称（例如：第一卷 凡人问道）"
@@ -714,13 +716,13 @@ export function OutlineEditorDialog({
                         <Trash2 size={16} />
                       </IconButton>
                     )}
-                    <button className="primary-button" disabled={isReadOnly || saving} onClick={() => void handleSaveVolume()}>
+                    <Button variant="primary" className="primary-button" disabled={isReadOnly || saving} onClick={() => void handleSaveVolume()}>
                       {isCreatingVolume ? '创建分卷' : '保存修改'}
-                    </button>
+                    </Button>
                   </div>
                 </div>
 
-                <textarea
+                <Textarea
                   value={volumeContent}
                   disabled={isReadOnly}
                   placeholder="# 分卷大纲\n\n## 本卷核心主线\n\n## 登场人物与冲突\n\n## 卷末高潮与收束"
@@ -748,25 +750,30 @@ export function OutlineEditorDialog({
               <div style={{ borderRight: '1px solid #e5e7eb', paddingRight: 14, display: 'flex', flexDirection: 'column', minHeight: 0, gap: 12 }}>
                 <div>
                   <label style={{ display: 'block', fontSize: 12, color: '#4b5563', marginBottom: 4, fontWeight: 600 }}>选择章节</label>
-                  <select
+                  <Select
                     value={selectedChapterId}
-                    onChange={(e) => setSelectedChapterId(e.target.value)}
-                    style={{ width: '100%', padding: '7px 10px', border: '1px solid #e5e7eb', borderRadius: 4, background: '#fff', fontSize: 13 }}
+                    onValueChange={(val) => { if (val) setSelectedChapterId(String(val)) }}
                   >
-                    {chapters.map((chap, idx) => {
-                      const chapterNumber = getChapterNumber(chapters, idx)
-                      return (
-                        <option key={chap.id} value={chap.id}>
-                          {chapterNumber === undefined ? '' : `${chapterNumber}. `}{chap.title}
-                        </option>
-                      )
-                    })}
-                  </select>
+                    <SelectTrigger style={{ width: '100%', padding: '7px 10px', border: '1px solid #e5e7eb', borderRadius: 4, background: '#fff', fontSize: 13 }}>
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {chapters.map((chap, idx) => {
+                        const chapterNumber = getChapterNumber(chapters, idx)
+                        return (
+                          <SelectItem key={chap.id} value={chap.id}>
+                            {chapterNumber === undefined ? '' : `${chapterNumber}. `}{chap.title}
+                          </SelectItem>
+                        )
+                      })}
+                    </SelectContent>
+                  </Select>
                 </div>
 
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: 4 }}>
                   <h4 style={{ margin: 0, fontSize: 12, color: '#4b5563' }}>大纲版本历史 ({chapterOutlines.length})</h4>
-                  <button
+                  <Button
+                    variant="ghost"
                     className="text-button"
                     style={{ padding: '2px 6px', fontSize: 11 }}
                     disabled={isReadOnly}
@@ -778,7 +785,7 @@ export function OutlineEditorDialog({
                     }}
                   >
                     <Plus size={12} />新建草稿
-                  </button>
+                  </Button>
                 </div>
 
                 <div style={{ flex: 1, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: 6 }}>
@@ -817,17 +824,21 @@ export function OutlineEditorDialog({
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                   <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
                     <span style={{ fontSize: 13, fontWeight: 600 }}>所属分卷:</span>
-                    <select
-                      value={chapterOutlineVolumeId || ''}
+                    <Select
+                      value={chapterOutlineVolumeId || 'none'}
                       disabled={isReadOnly}
-                      onChange={(e) => setChapterOutlineVolumeId(e.target.value || null)}
-                      style={{ padding: '4px 8px', border: '1px solid #e5e7eb', borderRadius: 4, background: '#fff', fontSize: 12 }}
+                      onValueChange={(val) => setChapterOutlineVolumeId(!val || String(val) === 'none' ? null : String(val))}
                     >
-                      <option value="">（不分配分卷）</option>
-                      {volumes.map((v) => (
-                        <option key={v.id} value={v.id}>{v.title}</option>
-                      ))}
-                    </select>
+                      <SelectTrigger style={{ padding: '4px 8px', border: '1px solid #e5e7eb', borderRadius: 4, background: '#fff', fontSize: 12 }}>
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="none">（不分配分卷）</SelectItem>
+                        {volumes.map((v) => (
+                          <SelectItem key={v.id} value={v.id}>{v.title}</SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
                     {renderStateBadge(chapterOutlineState)}
                   </div>
 
@@ -837,10 +848,10 @@ export function OutlineEditorDialog({
                         <Trash2 size={16} />
                       </IconButton>
                     )}
-                    <button className="text-button" disabled={isReadOnly || saving} onClick={() => void handleSaveChapterOutline(true)}>
+                    <Button variant="outline" className="text-button" disabled={isReadOnly || saving} onClick={() => void handleSaveChapterOutline(true)}>
                       保存草稿
-                    </button>
-                    <button className="primary-button" disabled={isReadOnly || saving} onClick={async () => {
+                    </Button>
+                    <Button variant="primary" className="primary-button" disabled={isReadOnly || saving} onClick={async () => {
                       if (!selectedOutlineId) {
                         // First save then confirm
                         const saved = await window.novelAgent.outline.saveChapterOutline({
@@ -861,11 +872,11 @@ export function OutlineEditorDialog({
                       }
                     }}>
                       <Check size={14} />确认锁定
-                    </button>
+                    </Button>
                   </div>
                 </div>
 
-                <textarea
+                <Textarea
                   value={chapterOutlineContent}
                   disabled={isReadOnly}
                   placeholder="### 【本章目标】\n\n### 【场景节拍】\n1. \n2. \n3. \n\n### 【人物与动机】\n\n### 【冲突与信息增量】\n\n### 【连续性风险】\n\n### 【结尾钩子】\n"
@@ -905,8 +916,8 @@ export function OutlineEditorDialog({
                         <span style={{ fontSize: 11, color: '#6b7280' }}>{formatDate(synopsis.createdAt)}</span>
                       </>
                     )}
-                    <button
-                      type="button"
+                    <Button
+                      variant="primary"
                       className="primary-button"
                       style={{ padding: '4px 10px', fontSize: 12 }}
                       disabled={isReadOnly}
@@ -922,7 +933,7 @@ export function OutlineEditorDialog({
                     >
                       <Sparkles size={13} />
                       <span>{summaries.length === 0 ? '一键提取剧情并生成' : '重新生成故事脉络'}</span>
-                    </button>
+                    </Button>
                   </div>
                 </div>
 
@@ -934,8 +945,8 @@ export function OutlineEditorDialog({
                         : '已提取章节摘要，可点击右上角「重新生成故事脉络」自动提炼全书大纲。'}
                     </p>
                     {summaries.length === 0 && (
-                      <button
-                        type="button"
+                      <Button
+                        variant="primary"
                         className="primary-button"
                         style={{ display: 'inline-flex', alignItems: 'center', gap: 6, margin: '0 auto', fontSize: 12.5 }}
                         disabled={isReadOnly}
@@ -948,7 +959,7 @@ export function OutlineEditorDialog({
                       >
                         <Sparkles size={13} />
                         <span>立即开始全书章节剧情分析</span>
-                      </button>
+                      </Button>
                     )}
                   </div>
                 ) : (
@@ -966,8 +977,8 @@ export function OutlineEditorDialog({
                       <p className="empty-hint" style={{ marginBottom: 12 }}>
                         暂无章节摘要，请先通过剧情分析提取各章事实与摘要
                       </p>
-                      <button
-                        type="button"
+                      <Button
+                        variant="outline"
                         className="text-button"
                         style={{ fontSize: 12, color: '#2d5a27', padding: '6px 12px', border: '1px solid #c0d4be', borderRadius: 4 }}
                         disabled={isReadOnly}
@@ -980,7 +991,7 @@ export function OutlineEditorDialog({
                       >
                         <Sparkles size={13} />
                         <span>启动章节剧情与知识分析</span>
-                      </button>
+                      </Button>
                     </div>
                   ) : (
                     summaries.map((sum) => (
@@ -1001,7 +1012,8 @@ export function OutlineEditorDialog({
             </div>
           )}
         </div>
-      </motion.div>
+        </DialogContent>
+      </Dialog>
 
       <AnimatePresence>
         {confirmDeleteVolume && (
@@ -1031,6 +1043,6 @@ export function OutlineEditorDialog({
           />
         )}
       </AnimatePresence>
-    </motion.div>
+    </>
   )
 }

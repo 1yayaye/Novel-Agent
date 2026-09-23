@@ -303,7 +303,7 @@ test('phase 5: supports knowledge base management, creative configuration, and A
   await expect(page.locator('.entry-list').getByText('林萧')).toBeVisible()
 
   // Create World Entry
-  await page.getByRole('button', { name: '世界观 (World)' }).click()
+  await page.getByRole('button', { name: '世界观', exact: true }).click()
   await page.getByRole('button', { name: '新建条目' }).click()
   await page.getByPlaceholder('条目标题', { exact: true }).fill('青云仙山')
   await page.getByPlaceholder('输入作者维护的知识详情描述...').fill('东域第一仙门祖庭。')
@@ -665,7 +665,7 @@ test('phase 9 creation toolbar, candidate diff review modal, hunk toggling, and 
 
   console.log('[Phase 9 Test] Opening Candidate Diff Review Dialog...')
   await page.locator('.left-rail').getByRole('button', { name: '差异审阅', exact: true }).click()
-  await expect(page.getByRole('heading', { name: '差异审阅 (Candidate Diff Review)' })).toBeVisible()
+  await expect(page.getByRole('heading', { name: '差异审阅', exact: true })).toBeVisible()
   await expect(page.getByText('暂无候选版本')).toBeVisible()
 
   // Close dialog

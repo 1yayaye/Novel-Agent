@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react'
 import { motion, AnimatePresence, usePresence } from 'motion/react'
+import { Button } from '@appica/ui-react/button'
 import {
   Radio,
   BookOpen,
@@ -408,14 +409,14 @@ export function SpotlightTour({
                   <span>实景沉浸中</span>
                 </div>
               )}
-              <button
-                type="button"
+              <Button
+                variant="ghost"
                 className="tour-close-btn"
                 title="退出引导 (Esc)"
                 onClick={() => handleFinish(false)}
               >
                 <X size={16} />
-              </button>
+              </Button>
             </div>
 
             {/* Card Content */}
@@ -440,9 +441,9 @@ export function SpotlightTour({
             <div className="tour-card-footer">
               <div className="tour-dots">
                 {steps.map((_, idx) => (
-                  <button
+                  <Button
                     key={idx}
-                    type="button"
+                    variant="ghost"
                     className={`tour-dot ${idx === currentIndex ? 'active' : ''} ${
                       idx < currentIndex ? 'passed' : ''
                     }`}
@@ -453,27 +454,27 @@ export function SpotlightTour({
               </div>
 
               <div className="tour-actions">
-                <button
-                  type="button"
+                <Button
+                  variant="ghost"
                   className="tour-btn text"
                   onClick={() => handleFinish(false)}
                 >
                   跳过引导
-                </button>
+                </Button>
 
                 {currentIndex > 0 && (
-                  <button
-                    type="button"
+                  <Button
+                    variant="outline"
                     className="tour-btn secondary"
                     onClick={handlePrev}
                   >
                     <ChevronLeft size={14} />
                     上一步
-                  </button>
+                  </Button>
                 )}
 
-                <button
-                  type="button"
+                <Button
+                  variant="primary"
                   className="tour-btn primary"
                   onClick={handleNext}
                 >
@@ -488,7 +489,7 @@ export function SpotlightTour({
                       完成探索
                     </>
                   )}
-                </button>
+                </Button>
               </div>
             </div>
           </motion.div>

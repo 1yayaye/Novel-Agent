@@ -2,8 +2,9 @@ import React from 'react'
 import { motion } from 'motion/react'
 import { AlertCircle, BookOpen, ChevronRight, Clock, FolderInput, FolderOpen } from 'lucide-react'
 import type { RecentProject } from '../../../shared/project'
-import { Button } from '../../components/ui/button'
-import { Card } from '../../components/ui/card'
+import { Button } from '@appica/ui-react/button'
+import { Card } from '@appica/ui-react/card'
+import { Alert, AlertDescription } from '@appica/ui-react/alert'
 
 function formatLastOpened(timestamp: number): string {
   const diff = Date.now() - timestamp
@@ -51,10 +52,10 @@ export function ProjectShelf({
           </div>
 
           {error && (
-            <div className="p-3 bg-red-50 border border-red-200 text-red-700 text-xs rounded-xl flex items-center gap-2 justify-center">
+            <Alert variant="error" className="text-xs flex items-center gap-2 justify-center">
               <AlertCircle size={15} />
-              <span>{error}</span>
-            </div>
+              <AlertDescription>{error}</AlertDescription>
+            </Alert>
           )}
 
           <div className="flex flex-wrap items-center justify-center gap-3 pt-2">
@@ -95,13 +96,13 @@ export function ProjectShelf({
       </div>
 
       {error && (
-        <div className="p-3 bg-red-50 border border-red-200 text-red-700 text-xs rounded-xl flex items-center gap-2">
+        <Alert variant="error" className="text-xs flex items-center gap-2">
           <AlertCircle size={15} />
-          <span>{error}</span>
-        </div>
+          <AlertDescription>{error}</AlertDescription>
+        </Alert>
       )}
 
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5 texts-reveal">
         {displayProjects.map((item, index) => (
           <motion.article
             key={item.path}

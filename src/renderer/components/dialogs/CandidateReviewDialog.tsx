@@ -5,7 +5,11 @@ import { CandidateApplyResult, CandidateDetail, CandidateHunk, CandidateSummary,
 import { IconButton } from '../common/IconButton'
 import { errorText, formatDate } from '../../utils/formatters'
 import { taskTypeLabel } from '../../utils/constants'
-import { useDialogDismiss } from '../../hooks/useDialogDismiss'
+import { Dialog, DialogContent } from '@appica/ui-react/dialog'
+import { Button } from '@appica/ui-react/button'
+import { Textarea } from '@appica/ui-react/textarea'
+import { StreamingText } from '../ai/StreamingText'
+import { ApprovalCard } from '../ai/ApprovalCard'
 import { useStreamThrottle } from '../../hooks/useStreamThrottle'
 import { computeProportionalScroll, renderDeleteHunkPreview } from '../../utils/diffScrollSync'
 
@@ -24,7 +28,6 @@ export function CandidateReviewDialog({
   onClose: () => void
   onApplied: (appliedResult: CandidateApplyResult) => void
 }) {
-  const { dialogRef, backdropProps } = useDialogDismiss({ onClose })
   const [candidates, setCandidates] = useState<CandidateSummary[]>([])
   const [selectedCandidateId, setSelectedCandidateId] = useState<string | null>(initialCandidateId || null)
   const [candidateDetail, setCandidateDetail] = useState<CandidateDetail | null>(null)
@@ -269,20 +272,15 @@ export function CandidateReviewDialog({
     : { total: 0, selected: 0 }
 
   return (
-    <motion.div className="action-dialog-layer" {...backdropProps} initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
-      <motion.div
-        ref={dialogRef}
-        className="candidate-dialog"
-        role="dialog"
-        aria-modal="true"
+    <Dialog open onOpenChange={(open) => { if (!open) onClose() }}>
+      <DialogContent
+        className="candidate-dialog flex flex-col p-6 w-[90vw] max-w-[90vw] h-[90vh]"
         aria-label="差异审阅与写回"
-        initial={{ opacity: 0, y: 10, scale: 0.98 }}
-        animate={{ opacity: 1, y: 0, scale: 1 }}
-        exit={{ opacity: 0, y: 4 }}
+        closeButton={false}
       >
         <header className="dialog-header">
           <div>
-            <h2>差异审阅 (Candidate Diff Review)</h2>
+            <h2>差异审阅</h2>
             <p>
               逐块选择原文或 AI 候选文本，支持作者直接编辑与两级中文差异重算，单事务原子写回并创建永久快照
             </p>
@@ -294,19 +292,19 @@ export function CandidateReviewDialog({
         {isStale && (
           <div style={{ background: '#fff7ed', borderBottom: '1px solid #fed7aa', color: '#c2410c', padding: '8px 16px', display: 'flex', alignItems: 'center', gap: 8, fontSize: 13, fontWeight: 500 }}>
             <AlertTriangle size={16} />
-            <span>候选已过期 (Candidate Expired)：目标章节正文在生成后已被修改，禁止写回正文。请重新生成或比对。</span>
+            <span>候选已过期：目标章节正文在生成后已被修改，禁止写回正文。请重新生成或比对。</span>
           </div>
         )}
         {candidateDetail?.state === 'failed' && (
           <div style={{ background: '#fef2f2', borderBottom: '1px solid #fecaca', color: '#991b1b', padding: '8px 16px', display: 'flex', alignItems: 'center', gap: 8, fontSize: 13 }}>
             <AlertCircle size={16} />
-            <span>生成失败 (Failed)：网络或协议异常，已保留已生成的文本内容（只读不可写回）。</span>
+            <span>生成失败：网络或协议异常，已保留已生成的文本内容（只读不可写回）。</span>
           </div>
         )}
         {candidateDetail?.state === 'cancelled' && (
           <div style={{ background: '#f8fafc', borderBottom: '1px solid #e2e8f0', color: '#475569', padding: '8px 16px', display: 'flex', alignItems: 'center', gap: 8, fontSize: 13 }}>
             <Clock size={16} />
-            <span>生成已中止 (Cancelled)：点击下方「保留草稿」可恢复并进入审阅写回流程。</span>
+            <span>生成已中止：点击下方「保留草稿」可恢复并进入审阅写回流程。</span>
           </div>
         )}
 
@@ -323,8 +321,9 @@ export function CandidateReviewDialog({
                 <p className="empty-hint" style={{ padding: 12 }}>暂无候选版本</p>
               ) : (
                 candidates.map((c) => (
-                  <button
+                  <Button
                     key={c.id}
+                    variant="ghost"
                     className={`candidate-card ${c.id === selectedCandidateId ? 'active' : ''}`}
                     onClick={() => setSelectedCandidateId(c.id)}
                   >
@@ -340,7 +339,7 @@ export function CandidateReviewDialog({
                     <span style={{ fontSize: 10, color: '#94a3b8' }}>
                       {formatDate(c.createdAt)} · v{c.version}
                     </span>
-                  </button>
+                  </Button>
                 ))
               )}
             </div>
@@ -355,18 +354,18 @@ export function CandidateReviewDialog({
                     <RotateCw className="spin" size={15} />
                     <span>AI 正在流式打字生成中... (已接收 {streaming.value.length} 字)</span>
                   </div>
-                  <button
+                  <Button
                     type="button"
+                    variant="ghost"
                     className="text-button"
                     style={{ color: '#b91c1c', fontSize: 12 }}
                     onClick={() => void handleCancelStreaming()}
                   >
                     <Square size={13} />中止生成
-                  </button>
+                  </Button>
                 </div>
                 <div className="streaming-typing-area" style={{ marginTop: 12, flex: 1 }}>
-                  {streaming.value}
-                  <span className="typewriter-cursor" />
+                  <StreamingText text={streaming.value} />
                 </div>
               </div>
             ) : !candidateDetail ? (
@@ -380,13 +379,13 @@ export function CandidateReviewDialog({
                     编辑 AI 候选草稿（编辑后将重新计算两级差异，清除旧勾选）:
                   </span>
                   <div style={{ display: 'flex', gap: 8 }}>
-                    <button type="button" className="text-button" onClick={() => setIsEditingDraft(false)}>取消</button>
-                    <button type="button" className="primary-button" disabled={actionLoading || !editingText.trim()} onClick={() => void handleUpdateText()}>
+                    <Button type="button" variant="ghost" className="text-button" onClick={() => setIsEditingDraft(false)}>取消</Button>
+                    <Button type="button" className="primary-button" disabled={actionLoading || !editingText.trim()} onClick={() => void handleUpdateText()}>
                       <Check size={14} />重算差异
-                    </button>
+                    </Button>
                   </div>
                 </div>
-                <textarea
+                <Textarea
                   value={editingText}
                   onChange={(e) => setEditingText(e.target.value)}
                   style={{ flex: 1, width: '100%', padding: 14, fontFamily: '"Noto Serif SC", serif', fontSize: 15, lineHeight: 1.8, border: '1px solid #cbd5e1', borderRadius: 4 }}
@@ -405,14 +404,15 @@ export function CandidateReviewDialog({
                   </span>
                   <div style={{ marginLeft: 'auto', display: 'flex', gap: 8 }}>
                     {candidateDetail.state === 'ready' && (
-                      <button
+                      <Button
                         type="button"
+                        variant="ghost"
                         className="text-button"
                         style={{ fontSize: 12 }}
                         onClick={() => setIsEditingDraft(true)}
                       >
                         <Pencil size={13} />编辑草稿
-                      </button>
+                      </Button>
                     )}
                   </div>
                 </div>
@@ -515,47 +515,48 @@ export function CandidateReviewDialog({
         <footer className="dialog-footer" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12, color: '#64748b' }}>
             <History size={15} />
-            <span>写回正文前将自动在快照历史中创建永久 AI 快照 (ai_apply)</span>
+            <span>写回正文前将自动在快照历史中创建永久快照</span>
           </div>
           <div style={{ display: 'flex', gap: 10 }}>
             {candidateDetail?.state === 'cancelled' && (
-              <button
+              <Button
                 type="button"
+                variant="ghost"
                 className="text-button"
                 style={{ color: '#2563eb' }}
                 disabled={actionLoading}
                 onClick={() => void handleRetain()}
               >
                 <Check size={14} />保留草稿为待审阅
-              </button>
+              </Button>
             )}
             {candidateDetail?.state === 'ready' && (
-              <button
+              <Button
                 type="button"
+                variant="ghost"
                 className="text-button"
                 disabled={actionLoading}
                 onClick={() => void handleReject()}
               >
                 <X size={14} />放弃更改
-              </button>
+              </Button>
             )}
-            <button type="button" className="text-button" onClick={onClose}>关闭</button>
-            <button
-              type="button"
-              className="primary-button"
+            <ApprovalCard
+              title="写回正文"
+              confirmLabel={actionLoading ? '写回中...' : '写回正文'}
+              cancelLabel="关闭"
+              onConfirm={() => void handleApply()}
+              onCancel={onClose}
               disabled={
                 isReadOnly ||
                 actionLoading ||
                 candidateDetail?.state !== 'ready' ||
                 isStale
               }
-              onClick={() => void handleApply()}
-            >
-              <Save size={14} />{actionLoading ? '写回中...' : '写回正文 (Apply & Snapshot)'}
-            </button>
+            />
           </div>
         </footer>
-      </motion.div>
-    </motion.div>
+      </DialogContent>
+    </Dialog>
   )
 }

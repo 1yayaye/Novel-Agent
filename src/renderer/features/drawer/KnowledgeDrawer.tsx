@@ -1,8 +1,9 @@
 import React, { useEffect, useState } from 'react'
 import { BookOpen, User, Tag, Plus, Search, Sparkles } from 'lucide-react'
-import { Card } from '../../components/ui/card'
-import { Badge } from '../../components/ui/badge'
-import { Button } from '../../components/ui/button'
+import { Card } from '@appica/ui-react/card'
+import { Badge } from '@appica/ui-react/badge'
+import { Button } from '@appica/ui-react/button'
+import { Input } from '@appica/ui-react/input'
 import { useProjectStore } from '../../stores/useProjectStore'
 
 interface KnowledgeItem {
@@ -52,8 +53,8 @@ export function KnowledgeDrawer() {
       {/* Search & Filter */}
       <div className="space-y-2">
         <div className="relative">
-          <Search size={13} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-[#baa997]" />
-          <input
+          <Search size={13} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-[#baa997] z-10 pointer-events-none" />
+          <Input
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
             placeholder="搜索角色名、功法或设定..."
@@ -63,17 +64,19 @@ export function KnowledgeDrawer() {
 
         <div className="flex items-center gap-1 text-xs">
           {(['all', 'character', 'world', 'item'] as const).map((cat) => (
-            <button
+            <Button
               key={cat}
+              variant="ghost"
+              size="sm"
               onClick={() => setFilterCategory(cat)}
-              className={`px-2 py-0.5 rounded-full text-[11px] transition-colors ${
+              className={`px-2 py-0.5 rounded-full text-[11px] transition-colors h-auto ${
                 filterCategory === cat
-                  ? 'bg-[#2d6a4f] text-white'
+                  ? 'bg-[#2d6a4f] text-white hover:bg-[#2d6a4f] hover:text-white'
                   : 'bg-[#efe6da] text-[#7d6b59] hover:bg-[#e5ddd3]'
               }`}
             >
               {cat === 'all' ? '全部' : cat === 'character' ? '人物' : cat === 'world' ? '世界观' : '物品'}
-            </button>
+            </Button>
           ))}
         </div>
       </div>
