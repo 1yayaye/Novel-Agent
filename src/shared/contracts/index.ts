@@ -121,6 +121,7 @@ import {
   ResumeTaskInput,
   RetainCandidateInput,
   RetryStepInput,
+  RetryTaskInput,
   SendChatMessageInput,
   SkipStepInput,
   StageCandidateHunkInput,
@@ -296,12 +297,14 @@ export type NovelAgentApi = {
   analysis: {
     start(input: StartAnalysisInput): Promise<StartAnalysisResult>
     cancel(input: CancelTaskInput): Promise<SuccessResult>
+    pause(input: CancelTaskInput): Promise<SuccessResult>
     resume(input: ResumeTaskInput): Promise<StartAnalysisResult>
     getProgress(input: GetTaskProgressInput): Promise<TaskProgressEvent>
   }
   task: {
     list(input: ListTasksInput): Promise<TaskSummary[]>
     get(input: GetTaskInput): Promise<TaskDetail>
+    retry(input: RetryTaskInput): Promise<TaskSummary>
     retryStep(input: RetryStepInput): Promise<TaskSummary>
     skipStep(input: SkipStepInput): Promise<TaskSummary>
     onProgress?(callback: (event: TaskProgressEvent) => void): () => void

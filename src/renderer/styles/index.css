@@ -64,9 +64,29 @@
     background-color: var(--color-latte-50);
     color: var(--color-latte-900);
     font-family:Inter,-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,"PingFang SC","Hiragino Sans GB","Microsoft YaHei","Source Han Sans SC","Noto Sans SC",sans-serif;
-    -webkit-font-smoothing: antialiased;
-    -moz-osx-font-smoothing: grayscale;
+    -webkit-font-smoothing: subpixel-antialiased;
+    -moz-osx-font-smoothing: auto;
+    text-rendering: optimizeLegibility;
     user-select: none;
+  }
+
+  /* Prevent font horizontal slicing & subpixel tearing on Windows GPU composite layers */
+  button,
+  [data-slot="dialog-popup"],
+  [data-slot="alert-dialog-popup"] {
+    -webkit-font-smoothing: subpixel-antialiased;
+    -moz-osx-font-smoothing: auto;
+    text-rendering: geometricPrecision;
+  }
+
+  [data-slot="dialog-popup"]:not([data-starting-style]):not([data-ending-style]),
+  [data-slot="alert-dialog-popup"]:not([data-starting-style]):not([data-ending-style]) {
+    transform: none;
+    backdrop-filter: none;
+  }
+
+  button:not(:active):not([data-starting-style]):not([data-ending-style]) {
+    transform: none;
   }
 
   /* Custom scrollbar styling in warm palette */

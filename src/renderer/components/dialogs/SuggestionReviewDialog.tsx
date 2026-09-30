@@ -64,7 +64,7 @@ export function SuggestionReviewDialog({
   return (
     <>
       <Dialog open onOpenChange={(open) => { if (!open) onClose() }}>
-        <DialogContent className="flex flex-col max-h-[85vh] sm:max-w-4xl" closeLabel="关闭">
+        <DialogContent frame={false} className="flex flex-col max-h-[85vh] sm:max-w-4xl" closeLabel="关闭">
           <DialogHeader>
             <DialogTitle>AI 事实建议审阅</DialogTitle>
             <DialogDescription>
@@ -72,7 +72,7 @@ export function SuggestionReviewDialog({
             </DialogDescription>
           </DialogHeader>
 
-          <div className="flex flex-col gap-2 border-b border-[#e5ddd3] pb-3 text-xs">
+          <div className="flex flex-col gap-2 border-b border-[#e5ddd3] pb-3 text-xs px-6">
             <div className="flex gap-1.5">
               {(['pending', 'conflict', 'accepted', 'ignored'] as SuggestionState[]).map((state) => (
                 <Button
@@ -119,9 +119,9 @@ export function SuggestionReviewDialog({
             </div>
           </div>
 
-          {error && <p className="inline-error text-xs text-red-600">{error}</p>}
+          {error && <p className="inline-error text-xs text-red-600 px-6">{error}</p>}
 
-          <ScrollArea className="h-96 pr-2">
+          <ScrollArea className="h-96 px-6">
             {loading ? (
               <p className="p-8 text-center text-xs text-[#7d6b59]">加载建议列表中...</p>
             ) : suggestions.length === 0 ? (

@@ -21,7 +21,7 @@ export function SnapshotPreviewDialog({
 
   return (
     <Dialog open onOpenChange={(open) => { if (!open) onClose() }}>
-      <DialogContent className="flex flex-col max-h-[85vh] sm:max-w-2xl" closeLabel="关闭">
+      <DialogContent frame={false} className="flex flex-col max-h-[85vh] sm:max-w-2xl" closeLabel="关闭">
         <DialogHeader>
           <div className="flex flex-col gap-1">
             <DialogTitle>{snapshot.name || snapshot.title}</DialogTitle>
@@ -36,7 +36,7 @@ export function SnapshotPreviewDialog({
           </div>
         </DialogHeader>
 
-        <div className="flex-1 min-h-[260px] max-h-[50vh] overflow-hidden rounded-xl border border-[#e5ddd3] bg-white p-3">
+        <div className="flex-1 min-h-[260px] max-h-[50vh] overflow-hidden rounded-xl border border-[#e5ddd3] bg-white p-3 mx-6">
           <Textarea
             readOnly
             value={snapshot.content}
@@ -46,7 +46,7 @@ export function SnapshotPreviewDialog({
         </div>
 
         {confirming && (
-          <div className="flex items-center justify-between rounded-xl border border-amber-200 bg-amber-50 p-3 text-xs text-amber-800">
+          <div className="mx-6 flex items-center justify-between rounded-xl border border-amber-200 bg-amber-50 p-3 text-xs text-amber-800">
             <span>恢复快照将先备份当前正文并覆盖当前章节。是否继续？</span>
             <div className="flex gap-2">
               <Button type="button" size="sm" variant="ghost" onClick={() => setConfirming(false)}>

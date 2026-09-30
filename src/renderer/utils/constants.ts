@@ -55,7 +55,9 @@ export const taskTypeLabel: Record<string, string> = {
   polish: '润色',
   knowledge: '知识分析',
   report: '文学报告',
-  chat: '项目问答'
+  chat: '项目问答',
+  style_distill: '文风蒸馏',
+  book_summary: '全书总结'
 }
 
 export const suggestionStateLabel: Record<SuggestionState, string> = {
@@ -116,5 +118,7 @@ export const taskTypeLabels: Record<TaskType, { title: string; desc: string }> =
   polish: { title: '文字润色', desc: '修正病句、错别字，优化修辞与文笔' },
   knowledge: { title: '知识提取与分析', desc: '从正文中提取人物设定、地点事实建议' },
   report: { title: '文学与剧情报告', desc: '生成全书/分卷剧情大纲、伏笔与人物弧光报告' },
-  chat: { title: '项目设定问答', desc: '针对小说世界观与设定进行自由探讨与推演' }
+  chat: { title: '项目设定问答', desc: '针对小说世界观与设定进行自由探讨与推演' },
+  style_distill: { title: '文风蒸馏', desc: '分段提炼文风公式并生成可复用的写作提示词' },
+  book_summary: { title: '全书总结', desc: '按章节滚动更新主线、人物、世界观、伏笔和时间线' }
 }

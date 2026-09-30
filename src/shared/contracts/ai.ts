@@ -1,7 +1,7 @@
 import { z } from 'zod'
 import { ChapterSchema, ChapterSnapshotSchema } from './chapter'
 
-export const TaskTypeSchema = z.enum(['chat', 'knowledge', 'report', 'continue', 'rewrite', 'polish'])
+export const TaskTypeSchema = z.enum(['chat', 'knowledge', 'report', 'continue', 'rewrite', 'polish', 'style_distill', 'book_summary'])
 export type TaskType = z.infer<typeof TaskTypeSchema>
 
 export const TaskRouteSummarySchema = z.object({
@@ -336,12 +336,16 @@ export type TaskProgressEvent = z.infer<typeof TaskProgressEventSchema>
 
 export const StartAnalysisInputSchema = z.object({
   sessionId: z.string().uuid(),
-  type: z.enum(['knowledge', 'report', 'synopsis']),
+  type: z.enum(['knowledge', 'report', 'synopsis', 'style_distill', 'book_summary']),
   scope: z.object({
     chapterIds: z.array(z.string().uuid()).optional(),
-    all: z.boolean().optional()
+    all: z.boolean().optional(),
+    segmentSize: z.number().int().positive().optional(),
+    stageSize: z.number().int().positive().optional()
   }),
-  connectionId: z.string().uuid().optional()
+  connectionId: z.string().uuid().optional(),
+  presetId: z.string().uuid().optional(),
+  instruction: z.string().optional()
 })
 export type StartAnalysisInput = z.infer<typeof StartAnalysisInputSchema>
 
@@ -387,6 +391,9 @@ export const RetryStepInputSchema = z.object({
   stepId: z.string().uuid()
 })
 export type RetryStepInput = z.infer<typeof RetryStepInputSchema>
+
+export const RetryTaskInputSchema = GetTaskInputSchema
+export type RetryTaskInput = z.infer<typeof RetryTaskInputSchema>
 
 export const SkipStepInputSchema = z.object({
   sessionId: z.string().uuid(),

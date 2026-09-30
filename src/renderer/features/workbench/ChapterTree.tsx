@@ -15,6 +15,7 @@ import {
 export interface ChapterTreeProps {
   chapters: ChapterHeader[]
   selectedChapterId: string | null
+  isReadOnly?: boolean
   onSelectChapter: (id: string) => void
   onCreateChapter: () => void
   onRenameChapter: (id: string, currentTitle: string) => void
@@ -25,6 +26,7 @@ export interface ChapterTreeProps {
 export function ChapterTree({
   chapters,
   selectedChapterId,
+  isReadOnly = false,
   onSelectChapter,
   onCreateChapter,
   onRenameChapter,
@@ -53,6 +55,7 @@ export function ChapterTree({
         </div>
         <Button
           size="sm"
+          disabled={isReadOnly}
           onClick={onCreateChapter}
           className="h-7 px-2.5 gap-1 text-xs"
           title="新建下一章节"
@@ -82,9 +85,10 @@ export function ChapterTree({
             {filterQuery ? '未找到匹配章节' : '暂无章节'}
           </div>
         ) : (
-          filteredChapters.map((chapter, index) => {
+          filteredChapters.map((chapter) => {
             const isSelected = chapter.id === selectedChapterId
-            const chapterNum = getChapterNumber(chapters, index)
+            const originalIndex = chapters.findIndex((item) => item.id === chapter.id)
+            const chapterNum = getChapterNumber(chapters, originalIndex)
             const numLabel = chapterNum !== undefined ? `第 ${chapterNum} 章` : '正文'
 
             return (
@@ -156,6 +160,7 @@ export function ChapterTree({
                     <DropdownMenuContent align="end" className="w-36">
                       <DropdownMenuItem
                         onClick={() => {
+                          if (isReadOnly) return
                           setEditingId(chapter.id)
                           setEditingTitle(chapter.title || '')
                         }}
@@ -166,14 +171,14 @@ export function ChapterTree({
                       {onMoveChapter && (
                         <>
                           <DropdownMenuItem
-                            disabled={index === 0}
+                            disabled={isReadOnly || originalIndex <= 0}
                             onClick={() => onMoveChapter(chapter.id, -1)}
                           >
                             <ArrowUp size={13} className="mr-2" />
                             <span>上移章节</span>
                           </DropdownMenuItem>
                           <DropdownMenuItem
-                            disabled={index === chapters.length - 1}
+                            disabled={isReadOnly || originalIndex < 0 || originalIndex === chapters.length - 1}
                             onClick={() => onMoveChapter(chapter.id, 1)}
                           >
                             <ArrowDown size={13} className="mr-2" />
@@ -183,7 +188,10 @@ export function ChapterTree({
                       )}
                       <DropdownMenuSeparator />
                       <DropdownMenuItem
-                        onClick={() => onDeleteChapter(chapter.id)}
+                        onClick={() => {
+                          if (!isReadOnly) onDeleteChapter(chapter.id)
+                        }}
+                        disabled={isReadOnly}
                         className="text-red-600 focus:text-red-600 focus:bg-red-50"
                       >
                         <Trash2 size={13} className="mr-2" />

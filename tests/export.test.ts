@@ -93,6 +93,26 @@ describe('Project Export', () => {
     store.close(opened.sessionId)
   })
 
+  it('appends generated synopsis and style samples when requested', async () => {
+    const { folder, project, store } = fixture()
+    const opened = await store.open(project)
+    const chapterIds = new ChapterRepository(store).list(opened.sessionId).map((chapter) => chapter.id)
+    const task = store.createTask(opened.sessionId, 'book_summary', '{}', null, chapterIds)
+    store.commitBookSynopsis(opened.sessionId, '主角完成旅程。', '{}', task.id)
+    store.read(opened.sessionId, (database) => {
+      database.prepare('INSERT INTO style_sample(id, name, content, tags_json, version, created_at, updated_at) VALUES (?, ?, ?, ?, 1, ?, ?)')
+        .run(randomUUID(), '蒸馏文风', '短句推进，重视动作细节。', '[]', Date.now(), Date.now())
+    })
+    const exportPath = join(folder, 'with-analysis.md')
+
+    store.exportProject(opened.sessionId, 'md', undefined, exportPath, true)
+
+    const text = readFileSync(exportPath, 'utf8')
+    expect(text).toContain('# 全书总结\n\n主角完成旅程。')
+    expect(text).toContain('# 蒸馏文风\n\n短句推进，重视动作细节。')
+    store.close(opened.sessionId)
+  })
+
   it('keeps an existing target when replacement fails', async () => {
     const { folder, project, store } = fixture()
     const opened = await store.open(project)

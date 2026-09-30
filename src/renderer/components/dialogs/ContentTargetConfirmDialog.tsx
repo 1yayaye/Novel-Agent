@@ -44,7 +44,7 @@ export function ContentTargetConfirmDialog({
 
   return (
     <Dialog open onOpenChange={(open) => { if (!open) onClose() }}>
-      <DialogContent className="flex flex-col" closeLabel="关闭">
+      <DialogContent frame={false} className="flex flex-col" closeLabel="关闭">
         <DialogHeader>
           <DialogTitle>确认联网目标端点</DialogTitle>
           <DialogDescription>
@@ -52,7 +52,7 @@ export function ContentTargetConfirmDialog({
           </DialogDescription>
         </DialogHeader>
 
-        <div className="flex flex-col gap-3 text-xs">
+        <div className="flex flex-col gap-3 text-xs px-6">
           <div className="flex items-start gap-2.5 rounded-xl border border-amber-200 bg-amber-50 p-3 text-amber-800">
             <AlertTriangle size={18} className="shrink-0 mt-0.5" />
             <span className="leading-relaxed">

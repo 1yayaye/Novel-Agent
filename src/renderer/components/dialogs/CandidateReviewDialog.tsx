@@ -1,5 +1,4 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
-import { motion } from 'motion/react'
 import { AlertCircle, AlertTriangle, Check, Clock, History, Pencil, RotateCcw, RotateCw, Save, Square, X } from 'lucide-react'
 import { CandidateApplyResult, CandidateDetail, CandidateHunk, CandidateSummary, ChapterHeader, CandidateState } from '../../../shared/project'
 import { IconButton } from '../common/IconButton'
@@ -274,11 +273,12 @@ export function CandidateReviewDialog({
   return (
     <Dialog open onOpenChange={(open) => { if (!open) onClose() }}>
       <DialogContent
-        className="candidate-dialog flex flex-col p-6 w-[90vw] max-w-[90vw] h-[90vh]"
+        frame={false}
+        className="candidate-dialog flex flex-col w-[90vw] max-w-[90vw] h-[90vh]"
         aria-label="差异审阅与写回"
         closeButton={false}
       >
-        <header className="dialog-header">
+        <header className="dialog-header px-6 pt-5 pb-3 border-b border-[#e5ddd3]">
           <div>
             <h2>差异审阅</h2>
             <p>
@@ -308,7 +308,7 @@ export function CandidateReviewDialog({
           </div>
         )}
 
-        {error && <div className="dialog-error"><p className="inline-error">{error}</p></div>}
+        {error && <div className="dialog-error px-6"><p className="inline-error">{error}</p></div>}
 
         <div className="candidate-review-body">
           {/* Left History Sidebar */}
@@ -512,7 +512,7 @@ export function CandidateReviewDialog({
         </div>
 
         {/* Bottom Actions Footer */}
-        <footer className="dialog-footer" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+        <footer className="dialog-footer px-6 py-3" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12, color: '#64748b' }}>
             <History size={15} />
             <span>写回正文前将自动在快照历史中创建永久快照</span>

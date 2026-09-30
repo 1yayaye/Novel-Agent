@@ -50,7 +50,7 @@ export function SynopsisDialog({
 
   return (
     <Dialog open onOpenChange={(open) => { if (!open) onClose() }}>
-      <DialogContent closeLabel="关闭" className="sm:max-w-4xl flex flex-col max-h-[85vh]">
+      <DialogContent frame={false} closeLabel="关闭" className="sm:max-w-4xl flex flex-col max-h-[85vh]">
         <DialogHeader>
           <div className="flex items-center justify-between pr-8">
             <div>
@@ -81,9 +81,9 @@ export function SynopsisDialog({
           </div>
         </DialogHeader>
 
-        {error && <p className="inline-error text-xs text-red-600">{error}</p>}
+        {error && <p className="inline-error text-xs text-red-600 px-6">{error}</p>}
 
-        <ScrollArea className="h-[480px] pr-2">
+        <ScrollArea className="h-[480px] px-6">
           <div className="flex flex-col gap-4 p-1">
             <Card className="flex flex-col gap-3 p-4 bg-white border-[#e5ddd3]">
               <div className="flex items-center justify-between border-b border-[#f5efe6] pb-2">

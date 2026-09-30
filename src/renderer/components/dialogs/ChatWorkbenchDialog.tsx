@@ -1,5 +1,4 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
-import { motion } from 'motion/react'
 import {
   AlertTriangle,
   ArrowRight,
@@ -446,7 +445,8 @@ export function ChatWorkbenchDialog({
   return (
     <Dialog open onOpenChange={(open) => { if (!open) onClose() }}>
       <DialogContent
-        className="chat-dialog flex flex-col p-0 w-[90vw] max-w-[90vw] h-[90vh] overflow-hidden"
+        frame={false}
+        className="chat-dialog flex flex-col w-[90vw] max-w-[90vw] h-[90vh] overflow-hidden"
         aria-labelledby="chat-dialog-title"
         closeButton={false}
       >

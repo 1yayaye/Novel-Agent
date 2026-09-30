@@ -136,13 +136,16 @@ describe('CreationRunner - Streaming Typewriter Pipeline (SPEC 6.9, 6.10, 8.2, 8
 
     const deltas: Array<{ delta: string; fullText: string }> = []
     let doneCandidate: any = null
-    runner.setCallbacks({
-      onDelta: (event) => {
-        deltas.push({ delta: event.delta, fullText: event.fullText })
-      },
-      onDone: (event) => {
-        doneCandidate = event.candidate
-      }
+    const donePromise = new Promise<void>((resolve) => {
+      runner.setCallbacks({
+        onDelta: (event) => {
+          deltas.push({ delta: event.delta, fullText: event.fullText })
+        },
+        onDone: (event) => {
+          doneCandidate = event.candidate
+          resolve()
+        }
+      })
     })
 
     const started = await runner.startCreation(sessionId, pkg.id)
@@ -151,7 +154,7 @@ describe('CreationRunner - Streaming Typewriter Pipeline (SPEC 6.9, 6.10, 8.2, 8
     expect(started.taskId).toBeDefined()
 
     // Wait for streaming completion
-    await new Promise((resolve) => setTimeout(resolve, 300))
+    await donePromise
 
     const candDetail = candidateService.getCandidate(sessionId, started.candidateId)
     expect(candDetail.state).toBe('ready')
@@ -257,13 +260,19 @@ describe('CreationRunner - Streaming Typewriter Pipeline (SPEC 6.9, 6.10, 8.2, 8
       target: { chapterId }
     })
 
+    const donePromise = new Promise<void>((resolve) => {
+      runner.setCallbacks({
+        onDone: () => resolve()
+      })
+    })
+
     const started = await runner.startCreation(sessionId, pkg.id)
 
     // Concurrently edit the chapter in DB!
     chapters.update(sessionId, chapterId, '作者修改了正文', 1)
 
     // Wait for streaming completion
-    await new Promise((resolve) => setTimeout(resolve, 300))
+    await donePromise
 
     const candDetail = candidateService.getCandidate(sessionId, started.candidateId)
     expect(candDetail.state).toBe('stale') // Transitioned directly to stale!

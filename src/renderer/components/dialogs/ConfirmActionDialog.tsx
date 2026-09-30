@@ -46,15 +46,15 @@ export function ConfirmActionDialog({
 
   return (
     <AlertDialog open={isOpen} onOpenChange={(open) => { if (!open) onCancel() }}>
-      <AlertDialogContent ref={dialogRef} className="max-w-sm p-[22px]" role="alertdialog">
-        <AlertDialogHeader>
+      <AlertDialogContent frame={false} ref={dialogRef} className="max-w-sm" role="alertdialog">
+        <AlertDialogHeader className="pb-2">
           <div className="flex items-center gap-2.5">
             {variantIcon[confirmVariant]}
             <AlertDialogTitle className="text-base">{title}</AlertDialogTitle>
           </div>
         </AlertDialogHeader>
 
-        <div className="text-[#4b5563] text-[13px] leading-[1.6]">
+        <div className="px-6 text-[#4b5563] text-[13px] leading-[1.6]">
           {typeof message === 'string' ? <p className="m-0">{message}</p> : message}
         </div>
 

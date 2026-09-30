@@ -65,7 +65,7 @@ export function ConsistencyIssuesDialog({
 
   return (
     <Dialog open onOpenChange={(open) => { if (!open) onClose() }}>
-      <DialogContent className="flex flex-col max-h-[85vh] sm:max-w-4xl" closeLabel="关闭">
+      <DialogContent frame={false} className="flex flex-col max-h-[85vh] sm:max-w-4xl" closeLabel="关闭">
         <DialogHeader>
           <DialogTitle>故事一致性与矛盾检测</DialogTitle>
           <DialogDescription>
@@ -73,7 +73,7 @@ export function ConsistencyIssuesDialog({
           </DialogDescription>
         </DialogHeader>
 
-        <div className="flex items-center justify-between border-b border-[#e5ddd3] pb-2.5 text-xs">
+        <div className="flex items-center justify-between border-b border-[#e5ddd3] pb-2.5 text-xs px-6">
           <div className="flex items-center gap-1.5">
             <span className="font-bold text-[#7d6b59] mr-1">状态:</span>
             {[
@@ -126,9 +126,9 @@ export function ConsistencyIssuesDialog({
           </div>
         </div>
 
-        {error && <p className="inline-error text-xs text-red-600">{error}</p>}
+        {error && <p className="inline-error text-xs text-red-600 px-6">{error}</p>}
 
-        <ScrollArea className="h-[460px] pr-2">
+        <ScrollArea className="h-[460px] px-6">
           {loading ? (
             <p className="p-12 text-center text-xs text-[#7d6b59]">加载中...</p>
           ) : issues.length === 0 ? (

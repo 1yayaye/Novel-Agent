@@ -1,5 +1,4 @@
 import React, { Suspense, useEffect, useState } from 'react'
-import { AnimatePresence, MotionConfig } from 'motion/react'
 import type { ImportPreviewResult, OpenProjectResult } from '../shared/project'
 import { errorText } from './utils/formatters'
 import { WindowControls } from './components/common/WindowControls'
@@ -46,8 +45,7 @@ export default function App() {
   }
 
   return (
-    <MotionConfig reducedMotion="user">
-      <ToastProvider>
+    <ToastProvider>
         {project ? (
           <Suspense fallback={<div className="flex items-center justify-center h-screen bg-[#faf8f5]" aria-busy="true" />}>
             <WorkbenchLayout
@@ -88,8 +86,7 @@ export default function App() {
           </div>
         )}
 
-        <AnimatePresence>
-          {preview && (
+        {preview && (
             <ImportPreviewModal
               preview={preview}
               onClose={() => setPreview(null)}
@@ -99,8 +96,6 @@ export default function App() {
               }}
             />
           )}
-        </AnimatePresence>
       </ToastProvider>
-    </MotionConfig>
   )
 }

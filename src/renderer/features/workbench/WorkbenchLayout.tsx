@@ -45,9 +45,9 @@ export function WorkbenchLayout({
     activeChapter,
     loadChapter,
     preferences,
-    setPreferences,
-    isReadOnly
+    setPreferences
   } = useEditorStore()
+  const projectReadOnly = project.mode === 'read_only'
 
   const {
     isNavExpanded,
@@ -77,20 +77,22 @@ export function WorkbenchLayout({
   const [summaryCount, setSummaryCount] = useState(0)
   const [reportCount, setReportCount] = useState(0)
 
-  // Initialize chapters into project store on mount
+  // Reset shared chapter state whenever the opened project changes, including empty projects.
   useEffect(() => {
-    if (initialChapters.length > 0) {
-      setChapters(initialChapters)
-      if (!selectedChapterId) {
-        selectChapter(initialChapters[0].id)
-      }
+    setChapters(initialChapters)
+    if (!selectedChapterId || !initialChapters.some((chapter) => chapter.id === selectedChapterId)) {
+      selectChapter(initialChapters[0]?.id ?? null)
     }
-  }, [initialChapters])
+  }, [initialChapters, selectedChapterId, selectChapter, setChapters])
+
+  useEffect(() => {
+    loadChapter(null, projectReadOnly)
+  }, [loadChapter, project.sessionId, projectReadOnly])
 
   // Load active chapter from backend when selectedChapterId changes
   useEffect(() => {
     if (!selectedChapterId) {
-      loadChapter(null, isReadOnly)
+      loadChapter(null, projectReadOnly)
       return
     }
 
@@ -102,7 +104,7 @@ export function WorkbenchLayout({
       })
       .then((chap) => {
         if (active) {
-          loadChapter(chap, isReadOnly)
+          loadChapter(chap, projectReadOnly)
         }
       })
       .catch((err) => {
@@ -112,7 +114,7 @@ export function WorkbenchLayout({
     return () => {
       active = false
     }
-  }, [selectedChapterId, project.sessionId, isReadOnly])
+  }, [loadChapter, projectReadOnly, project.sessionId, selectedChapterId])
 
   // Fetch model connections & analysis summary on mount
   useEffect(() => {
@@ -184,10 +186,11 @@ export function WorkbenchLayout({
   }, [isZenMode, activeDialog, setZenMode])
 
   const handleCreateChapter = async () => {
+    if (projectReadOnly) return
     await editorRef.current?.flush()
     const newChap = await createChapter()
     if (newChap) {
-      loadChapter(newChap, isReadOnly)
+      loadChapter(newChap, projectReadOnly)
     }
   }
 
@@ -198,6 +201,7 @@ export function WorkbenchLayout({
   }
 
   const handleMoveChapter = (id: string, direction: -1 | 1) => {
+    if (projectReadOnly) return
     const idx = chapters.findIndex((c) => c.id === id)
     if (idx < 0) return
     const targetIdx = idx + direction
@@ -209,6 +213,7 @@ export function WorkbenchLayout({
   }
 
   const handleDeleteChapter = (id: string) => {
+    if (projectReadOnly) return
     const chap = chapters.find((c) => c.id === id)
     openDialog('confirm', {
       title: '删除章节',
@@ -296,10 +301,11 @@ export function WorkbenchLayout({
             <ChapterTree
               chapters={chapters}
               selectedChapterId={selectedChapterId}
+              isReadOnly={projectReadOnly}
               onSelectChapter={handleSelectChapter}
               onCreateChapter={handleCreateChapter}
               onRenameChapter={(id, newTitle) => {
-                void renameChapter(id, newTitle)
+                if (!projectReadOnly) void renameChapter(id, newTitle)
               }}
               onDeleteChapter={handleDeleteChapter}
               onMoveChapter={handleMoveChapter}
@@ -315,9 +321,9 @@ export function WorkbenchLayout({
               totalChapters={chapters.length}
               summaryCount={summaryCount}
               reportCount={reportCount}
-              isReadOnly={isReadOnly}
-              onStartKnowledgeAnalysis={() => openDialog('analysis')}
-              onStartReportAnalysis={() => openDialog('analysis')}
+              isReadOnly={projectReadOnly}
+              onStartKnowledgeAnalysis={() => openDialog('analysis', { initialType: 'knowledge' })}
+              onStartReportAnalysis={() => openDialog('analysis', { initialType: 'report' })}
             />
           )}
 
@@ -325,12 +331,12 @@ export function WorkbenchLayout({
             <EditorHost
               sessionId={project.sessionId}
               chapter={activeChapter}
-              isReadOnly={isReadOnly}
+              isReadOnly={projectReadOnly}
               preferences={preferences}
               isZenMode={isZenMode}
               onToggleZenMode={toggleZenMode}
               onSaved={(updated) => {
-                loadChapter(updated, isReadOnly)
+                loadChapter(updated, projectReadOnly)
               }}
               onPreferencesChange={setPreferences}
               setHandle={(h) => {
@@ -353,7 +359,7 @@ export function WorkbenchLayout({
             />
           ) : (
             <EmptyChapterState
-              isReadOnly={isReadOnly}
+              isReadOnly={projectReadOnly}
               onCreateChapter={handleCreateChapter}
             />
           )}

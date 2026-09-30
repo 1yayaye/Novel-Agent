@@ -1,5 +1,4 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react'
-import { motion, AnimatePresence, usePresence } from 'motion/react'
 import { Button } from '@appica/ui-react/button'
 import {
   Radio,
@@ -163,8 +162,7 @@ export function SpotlightTour({
   onStepChange?: (index: number, step: TourStep) => void
   storageKey?: string
 }) {
-  const [isPresent, safeToRemove] = usePresence()
-  const active = isOpen && isPresent
+  const active = isOpen
   const [currentIndex, setCurrentIndex] = useState(0)
   const [targetRect, setTargetRect] = useState<SpotlightRect | null>(null)
   const [tooltipPos, setTooltipPos] = useState<{ top: number; left: number }>({ top: 0, left: 0 })
@@ -341,55 +339,28 @@ export function SpotlightTour({
     }
   }
 
-  return (
-    <AnimatePresence
-      onExitComplete={() => {
-        setCurrentIndex(0)
-        safeToRemove?.()
-      }}
-    >
-      {active && currentStep && (
-        <motion.div
+  return active && currentStep ? (
+        <div
           key="spotlight-tour-layer"
           className="spotlight-tour-layer"
           role="dialog"
           aria-modal="true"
           aria-label="沉浸式新手实景引导"
-          initial={{ opacity: 0 }}
-          animate={{ opacity: 1 }}
-          exit={{ opacity: 0 }}
-          transition={{ duration: 0.2 }}
         >
           {/* Spotlight cutout mask */}
           {targetRect && (
-            <motion.div
+            <div
               className="spotlight-cutout"
-              initial={false}
-              animate={{
-                top: targetRect.top,
-                left: targetRect.left,
-                width: targetRect.width,
-                height: targetRect.height
-              }}
-              exit={{ opacity: 0 }}
-              transition={{
-                type: 'spring',
-                stiffness: 350,
-                damping: 32
-              }}
+              style={{ top: targetRect.top, left: targetRect.left, width: targetRect.width, height: targetRect.height }}
             >
               <div className="spotlight-pulse" />
-            </motion.div>
+            </div>
           )}
 
           {/* Floating Tooltip Card */}
-          <motion.div
+          <div
             ref={tooltipRef}
             className="spotlight-tooltip-card"
-            initial={{ opacity: 0, scale: 0.96, y: 8 }}
-            animate={{ opacity: 1, scale: 1, y: 0 }}
-            exit={{ opacity: 0, scale: 0.96 }}
-            transition={{ duration: 0.2 }}
             style={{
               top: `${tooltipPos.top}px`,
               left: `${tooltipPos.left}px`
@@ -492,9 +463,7 @@ export function SpotlightTour({
                 </Button>
               </div>
             </div>
-          </motion.div>
-        </motion.div>
-      )}
-    </AnimatePresence>
-  )
+          </div>
+        </div>
+  ) : null
 }

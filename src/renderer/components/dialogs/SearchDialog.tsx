@@ -87,12 +87,12 @@ export function SearchDialog({
 
   return (
     <Dialog open onOpenChange={(open) => { if (!open) onClose() }}>
-      <DialogContent className="flex flex-col max-h-[85vh] p-5 sm:max-w-4xl" closeLabel="关闭">
+      <DialogContent frame={false} className="flex flex-col max-h-[85vh] sm:max-w-4xl" closeLabel="关闭">
         <DialogHeader className="sr-only">
           <DialogTitle>全文搜索</DialogTitle>
         </DialogHeader>
 
-        <div className="flex items-center gap-3 pr-8">
+        <div className="flex items-center gap-3 pr-12 px-6 pt-5">
           <div className="flex flex-1 items-center gap-2 rounded-xl border border-[#dacdbe] bg-white px-3 py-2 text-sm focus-within:border-[#2d6a4f] focus-within:ring-2 focus-within:ring-[#2d6a4f]/20">
             <Search size={18} className="text-[#7d6b59] shrink-0" />
             <Input
@@ -118,7 +118,7 @@ export function SearchDialog({
           </div>
         </div>
 
-        <div className="flex gap-1.5 border-b border-[#e5ddd3] pb-2 text-xs">
+        <div className="flex gap-1.5 border-b border-[#e5ddd3] pb-2 text-xs px-6 pt-2">
           {[
             { id: 'all', label: '全部来源' },
             { id: 'chapter_chunk', label: '章节正文' },
@@ -143,9 +143,9 @@ export function SearchDialog({
           ))}
         </div>
 
-        {error && <p className="inline-error text-xs text-red-600">{error}</p>}
+        {error && <p className="inline-error text-xs text-red-600 px-6">{error}</p>}
 
-        <ScrollArea className="h-96 pr-2">
+        <ScrollArea className="h-96 px-6">
           {!query.trim() ? (
             <div className="flex flex-col items-center justify-center gap-2 py-16 text-center text-[#7d6b59]">
               <BookOpen size={32} className="text-[#d6cbbf]" />

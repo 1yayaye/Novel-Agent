@@ -1,5 +1,4 @@
 import React, { useState, useEffect, useCallback } from 'react'
-import { motion } from 'motion/react'
 import { ArrowRight, Check, Plus, Trash2, Users, X } from 'lucide-react'
 import { CharacterRelationship, KnowledgeEntry, KnowledgeKind, KnowledgeState } from '../../../shared/project'
 import { IconButton } from '../common/IconButton'
@@ -284,11 +283,12 @@ export function KnowledgeBaseDialog({
   return (
     <Dialog open onOpenChange={(open) => { if (!open) onClose() }}>
       <DialogContent
-        className="knowledge-dialog flex flex-col p-6 w-[90vw] max-w-[90vw] h-[90vh]"
+        frame={false}
+        className="knowledge-dialog flex flex-col w-[90vw] max-w-[90vw] h-[90vh]"
         aria-labelledby="knowledge-title"
         closeButton={false}
       >
-        <header className="dialog-header">
+        <header className="dialog-header px-6 pt-5 pb-2">
           <div>
             <h2 id="knowledge-title">作品知识库</h2>
             <p>管理人物档案、世界观设定、事件时间线、伏笔追踪及人物有向关系。</p>
@@ -296,7 +296,7 @@ export function KnowledgeBaseDialog({
           <IconButton label="关闭" onClick={onClose}><X size={18} /></IconButton>
         </header>
 
-        <div className="tab-filter-bar">
+        <div className="tab-filter-bar px-6 pb-2">
           <div className="tab-chips">
             <Button variant="ghost" className={`tab-chip ${activeTab === 'character' ? 'active' : ''}`} onClick={() => { setActiveTab('character'); setSelectedEntryId(null); setIsNewEntry(false) }}>
               人物
@@ -330,7 +330,7 @@ export function KnowledgeBaseDialog({
           )}
         </div>
 
-        {error && <p className="inline-error dialog-error">{error}</p>}
+        {error && <p className="inline-error dialog-error px-6">{error}</p>}
 
         {activeTab !== 'relationship' ? (
           <div className="knowledge-body">
@@ -488,7 +488,7 @@ export function KnowledgeBaseDialog({
             </main>
           </div>
         ) : (
-          <div className="relationship-container">
+          <div className="relationship-container px-6 flex flex-1 flex-col overflow-auto">
             <div className="rel-toolbar">
               <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
                 <Button className="primary-button" disabled={isReadOnly || characterOptions.length < 2} onClick={() => setCreatingRel(true)}>
@@ -574,7 +574,7 @@ export function KnowledgeBaseDialog({
           </div>
         )}
 
-        <footer className="dialog-footer">
+        <footer className="dialog-footer px-6 py-3">
           <Button type="button" variant="ghost" className="text-button" onClick={onClose}>关闭</Button>
         </footer>
       </DialogContent>

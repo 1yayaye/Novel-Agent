@@ -48,6 +48,7 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
   selectChapter: (id) => set({ selectedChapterId: id }),
 
   loadProject: async (opened: OpenProjectResult) => {
+    useEditorStore.getState().loadChapter(null, opened.mode === 'read_only')
     set({ isLoading: true, error: null })
     try {
       const list = await window.novelAgent.chapter.list({ sessionId: opened.sessionId })
@@ -98,6 +99,7 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
   },
 
   closeProject: () => {
+    useEditorStore.getState().loadChapter(null, false)
     set({
       project: null,
       chapters: [],
@@ -109,7 +111,7 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
 
   createChapter: async (title?: string) => {
     const { project, chapters } = get()
-    if (!project) return null
+    if (!project || project.mode === 'read_only') return null
 
     const defaultTitle = title || `第${chapters.length + 1}章`
     try {
@@ -132,7 +134,7 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
 
   deleteChapter: async (id: string) => {
     const { project, selectedChapterId, chapters } = get()
-    if (!project) return
+    if (!project || project.mode === 'read_only') return
 
     const target = chapters.find((c) => c.id === id)
     try {
@@ -157,7 +159,7 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
 
   renameChapter: async (id: string, title: string) => {
     const { project, chapters } = get()
-    if (!project) return
+    if (!project || project.mode === 'read_only') return
 
     const target = chapters.find((c) => c.id === id)
     try {
@@ -182,7 +184,7 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
 
   reorderChapters: async (newOrder: ChapterHeader[]) => {
     const { project } = get()
-    if (!project) return
+    if (!project || project.mode === 'read_only') return
 
     set({ chapters: newOrder })
     try {

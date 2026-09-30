@@ -105,6 +105,7 @@ import {
   RestoreSnapshotInputSchema,
   ResumeTaskInputSchema,
   RetryStepInputSchema,
+  RetryTaskInputSchema,
   ReviewConsistencyIssueInputSchema,
   ReviewSuggestionInputSchema,
   SaveBookOutlineInputSchema,
@@ -303,7 +304,7 @@ export function registerProjectIpc(
   handle('project.create', CreateProjectInputSchema, ProjectSummarySchema, (input) => store.create(input))
   handle('project.open', OpenProjectInputSchema, OpenProjectResultSchema, async (input) => {
     const result = await store.open(input.path)
-    void searchIndex.sync(result.sessionId).catch(() => {})
+    if (result.mode === 'read_write') void searchIndex.sync(result.sessionId).catch(() => {})
     return result
   })
   handle('project.close', CloseProjectInputSchema, SuccessResultSchema, (input) => store.close(input.sessionId))
@@ -318,7 +319,7 @@ export function registerProjectIpc(
     const selectedPath = dialogRes.filePaths[0]
     if (!selectedPath) return null
     const result = await store.open(selectedPath)
-    void searchIndex.sync(result.sessionId).catch(() => {})
+    if (result.mode === 'read_write') void searchIndex.sync(result.sessionId).catch(() => {})
     return result
   })
   handle('project.previewImport', ImportPreviewInputSchema, ImportPreviewResultSchema, async (input) => {
@@ -381,7 +382,7 @@ export function registerProjectIpc(
       destination = dialogRes.filePath
     }
     if (!destination) return null
-    return store.exportProject(input.sessionId, input.format, input.chapterIds, destination)
+    return store.exportProject(input.sessionId, input.format, input.chapterIds, destination, input.includeAnalysis)
   })
 
   handle('chapter.list', ListChaptersInputSchema, z.array(ChapterHeaderSchema), (input) => chapters.list(input.sessionId))
@@ -505,6 +506,10 @@ export function registerProjectIpc(
     if (!analysisRunner) throw new ProjectError('DATABASE_ERROR', '分析运行器未初始化')
     return analysisRunner.cancelTask(input)
   })
+  handle('analysis.pause', CancelTaskInputSchema, SuccessResultSchema, async (input) => {
+    if (!analysisRunner) throw new ProjectError('DATABASE_ERROR', '分析运行器未初始化')
+    return analysisRunner.pauseTask(input)
+  })
   handle('analysis.resume', ResumeTaskInputSchema, StartAnalysisResultSchema, async (input) => {
     if (!analysisRunner) throw new ProjectError('DATABASE_ERROR', '分析运行器未初始化')
     return analysisRunner.resumeTask(input)
@@ -523,6 +528,10 @@ export function registerProjectIpc(
   handle('task.retryStep', RetryStepInputSchema, TaskSummarySchema, async (input) => {
     if (!analysisRunner) throw new ProjectError('DATABASE_ERROR', '分析运行器未初始化')
     return analysisRunner.retryStep(input)
+  })
+  handle('task.retry', RetryTaskInputSchema, TaskSummarySchema, async (input) => {
+    if (!analysisRunner) throw new ProjectError('DATABASE_ERROR', '分析运行器未初始化')
+    return analysisRunner.retryTask(input)
   })
   handle('task.skipStep', SkipStepInputSchema, TaskSummarySchema, async (input) => {
     if (!analysisRunner) throw new ProjectError('DATABASE_ERROR', '分析运行器未初始化')

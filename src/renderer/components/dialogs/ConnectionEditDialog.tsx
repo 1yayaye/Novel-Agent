@@ -159,7 +159,7 @@ export function ConnectionEditDialog({
 
   return (
     <Dialog open onOpenChange={(open) => { if (!open) onClose() }}>
-      <DialogContent className="flex flex-col max-h-[90vh] sm:max-w-4xl" closeLabel="关闭">
+      <DialogContent frame={false} className="flex flex-col max-h-[90vh] sm:max-w-4xl" closeLabel="关闭">
         <DialogHeader>
           <DialogTitle>{isEditing ? '编辑模型连接' : '新建模型连接'}</DialogTitle>
           <DialogDescription>
@@ -167,7 +167,7 @@ export function ConnectionEditDialog({
           </DialogDescription>
         </DialogHeader>
 
-        <ScrollArea className="h-[480px] pr-2">
+        <ScrollArea className="h-[480px] px-6">
           <div className="flex flex-col gap-4 p-1">
             <div className="grid grid-cols-3 gap-3">
               <div className="col-span-2 flex flex-col gap-1 text-xs">

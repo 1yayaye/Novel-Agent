@@ -8,7 +8,8 @@
 - CodeMirror 6 编辑器：中文排版、Zen 模式、按章加载
 - 大纲与知识库：全书/分章细纲、人物与时间线、一致性提示
 - 混合检索：FTS5 中文全文检索，向量检索不可用时自动降级
-- AI 流水线：续写、重写、润色、全书问答；外发前预览上下文并确认目标接口
+- AI 流水线：续写、重写、润色、全书问答、滚动知识分析、文风蒸馏、全书总结；外发前预览上下文并确认目标接口
+- 任务控制与分析导出：支持暂停、恢复、失败步骤重试，以及当前 schema 项目的全书总结、文风样本和章节正文导出
 - 差异审阅：字符级对比，按段勾选合并，版本冲突时拒绝覆盖
 - 温润拿铁视觉系统：针对小说作者量身打造的卡片叙事流（Warm Latte），14px 圆角书房质感，内置明亮纸张、羊皮手稿、夜幕写作三套主题
 - 交互分层与 Action Dock：底部悬浮胶囊工具坞（大纲速查/人物卡/一键润色/字数环），右侧无干扰滑入式抽屉（故事节拍、大纲、知识库、后台任务）
@@ -43,7 +44,7 @@ pnpm package:zip        # Windows 绿色 ZIP
 pnpm verify             # 发布前全量检查
 ```
 
-便携版数据写在可执行文件旁的 `data/` 目录。升级时覆盖主程序、保留该目录即可。
+便携版数据写在可执行文件旁的 `data/` 目录。项目版本兼容和能力边界见 [项目版本兼容与功能能力](docs/project-compatibility-and-capabilities.md)。旧项目不会自动迁移，也没有升级入口；新能力只对新建的当前 schema 项目开放。
 
 ## 数据与隐私
 
@@ -62,7 +63,7 @@ pnpm verify             # 发布前全量检查
 - [0002 两阶段 LCS 差异](docs/adr/0002-two-tier-lcs-diff-optimization.md)
 - [0003 共享契约分包与门面](docs/adr/0003-shared-contract-modularization-facade.md)
 - [0004 前端重构架构与状态流解耦 (React 19 + Tailwind v4 + Zustand)](docs/adr/0004-frontend-refactor-stack-and-state-architecture.md)
-- [0005 渲染层组件体系与工作台交互分层 (shadcn + Drawer + Popover)](docs/adr/0005-renderer-component-and-workspace-interaction-hierarchy.md)
+- [0005 渲染层组件体系与工作台交互分层 (Appica UI + drawers)](docs/adr/0005-renderer-component-and-workspace-interaction-hierarchy.md)
 - [0006 视觉设计语言与领域切片重塑 (温润拿铁与故事节拍流)](docs/adr/0006-visual-direction-and-renderer-reconstruction.md)
 
 

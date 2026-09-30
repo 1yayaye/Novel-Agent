@@ -7,6 +7,7 @@ import initialSchema from './migrations/0001_initial_schema.sql?raw'
 import outlineSchema from './migrations/0002_outline_schema.sql?raw'
 import workflowSchema from './migrations/0003_chat_workflow_schema.sql?raw'
 import contextPackageSchema from './migrations/0004_context_package_snapshot.sql?raw'
+import analysisPipelinesSchema from './migrations/0005_analysis_pipelines.sql?raw'
 import { seedDefaultCreativePresets } from './default-presets'
 import { splitIntoChunks } from './chunker'
 import {
@@ -309,8 +310,15 @@ export class ProjectStore {
     let readOnlyReason: OpenProjectResult['readOnlyReason']
 
     try {
+      const probe = new Database(path, { readonly: true, fileMustExist: true })
+      const detectedSchemaVersion = Number(probe.pragma('user_version', { simple: true }))
+      probe.close()
+
       const writable = isWritable(path)
-      if (!writable) {
+      if (detectedSchemaVersion < CURRENT_SCHEMA_VERSION) {
+        readOnly = true
+        readOnlyReason = 'legacy_schema'
+      } else if (!writable) {
         readOnly = true
         readOnlyReason = 'not_writable'
       } else {
@@ -328,7 +336,6 @@ export class ProjectStore {
       } else {
         try {
           database = new Database(path, { fileMustExist: true })
-          this.configureWritable(database)
         } catch {
           if (lock) {
             lock.release()
@@ -364,13 +371,19 @@ export class ProjectStore {
         }
         database.pragma('query_only = ON')
       } else if (schemaVersion < CURRENT_SCHEMA_VERSION) {
-        if (!writable) throw new ProjectError('PROJECT_READ_ONLY', '旧版项目需要迁移，但项目不可写')
-        if (!lock) throw new ProjectError('PROJECT_LOCKED', '旧版项目需要迁移，但项目已被锁定')
-        await this.backupBeforeMigration(database, path, schemaVersion)
-        this.migrate(database, schemaVersion)
-        database.prepare('UPDATE project_meta SET last_backup_at = ?').run(Date.now())
-        readOnly = false
+        readOnly = true
+        readOnlyReason = 'legacy_schema'
+        if (lock) {
+          lock.release()
+          lock = undefined
+        }
+        try { database.close() } catch {}
+        database = new Database(path, { readonly: true, fileMustExist: true })
+        try { database.loadExtension(sqliteVec.getLoadablePath()) } catch {}
+        database.pragma('query_only = ON')
       }
+
+      if (!readOnly) this.configureWritable(database)
 
       const effectiveSchemaVersion = Number(database.pragma('user_version', { simple: true }))
       const metadata = effectiveSchemaVersion === CURRENT_SCHEMA_VERSION && integrity === 'ok'
@@ -399,7 +412,12 @@ export class ProjectStore {
         ...(readOnlyReason ? { readOnlyReason } : {}),
         integrity,
         metadata,
-        taskRoutes
+        taskRoutes,
+        capabilities: {
+          analysisPipelines: !readOnly && effectiveSchemaVersion === CURRENT_SCHEMA_VERSION && integrity === 'ok',
+          analysisExport: effectiveSchemaVersion === CURRENT_SCHEMA_VERSION && integrity === 'ok',
+          taskControls: !readOnly && effectiveSchemaVersion === CURRENT_SCHEMA_VERSION && integrity === 'ok'
+        }
       }
       this.sessions.set(sessionId, { database, path, readOnly, lock })
       database = undefined
@@ -698,7 +716,12 @@ export class ProjectStore {
         mode: 'read_write',
         integrity,
         metadata,
-        taskRoutes: this.readTaskRoutes(database)
+        taskRoutes: this.readTaskRoutes(database),
+        capabilities: {
+          analysisPipelines: true,
+          analysisExport: true,
+          taskControls: true
+        }
       }
       this.sessions.set(sessionId, { ...session, database, restoring: false })
       this.writeRecent(metadata)
@@ -718,8 +741,11 @@ export class ProjectStore {
     }
   }
 
-  exportProject(sessionId: string, format: ExportFormat, chapterIds?: string[], destination?: string): { savedPath: string } {
+  exportProject(sessionId: string, format: ExportFormat, chapterIds?: string[], destination?: string, includeAnalysis = false): { savedPath: string } {
     const session = this.session(sessionId)
+    if (includeAnalysis && !this.supportsAnalysisPipelines(sessionId)) {
+      throw new ProjectError('UNSUPPORTED_SCHEMA', '当前项目版本不支持导出分析结果')
+    }
     if (!destination) throw new ProjectError('VALIDATION_ERROR', '缺少导出目标路径')
     const target = resolve(destination)
     if (!existsSync(dirname(target)) || !isWritable(dirname(target))) {
@@ -740,6 +766,17 @@ export class ProjectStore {
       outputText = filtered.map((c) => `# ${c.title}\n\n${c.content}`).join('\n\n')
     }
 
+    if (includeAnalysis) {
+      const synopsis = session.database.prepare('SELECT summary FROM book_synopsis ORDER BY created_at DESC LIMIT 1').get() as { summary: string } | undefined
+      const samples = session.database.prepare('SELECT name, content FROM style_sample ORDER BY created_at ASC').all() as Array<{ name: string; content: string }>
+      const heading = format === 'md' ? '# ' : ''
+      const analysis = [
+        ...(synopsis ? [`${heading}全书总结\n\n${synopsis.summary}`] : []),
+        ...samples.map((sample) => `${heading}${sample.name}\n\n${sample.content}`)
+      ]
+      if (analysis.length > 0) outputText += `${format === 'md' ? '\n\n' : '\n\n\n'}${analysis.join(format === 'md' ? '\n\n' : '\n\n\n')}`
+    }
+
     const temp = `${target}.tmp-${randomUUID().slice(0, 8)}`
     try {
       writeFileSync(temp, Buffer.from(outputText, 'utf8'))
@@ -749,6 +786,17 @@ export class ProjectStore {
       try { if (existsSync(temp)) unlinkSync(temp) } catch {}
       if (error instanceof ProjectError) throw error
       throw new ProjectError('EXPORT_FAILED', '导出作品文件失败')
+    }
+  }
+
+  supportsAnalysisPipelines(sessionId: string): boolean {
+    const session = this.session(sessionId)
+    return Number(session.database.pragma('user_version', { simple: true })) === CURRENT_SCHEMA_VERSION
+  }
+
+  assertAnalysisPipelines(sessionId: string): void {
+    if (!this.supportsAnalysisPipelines(sessionId)) {
+      throw new ProjectError('UNSUPPORTED_SCHEMA', '当前项目版本不支持该分析功能')
     }
   }
 
@@ -777,10 +825,12 @@ export class ProjectStore {
       database.exec(outlineSchema)
       database.exec(workflowSchema)
       database.exec(contextPackageSchema)
+      database.exec(analysisPipelinesSchema)
       database.prepare('INSERT INTO schema_migrations(version, name, applied_at) VALUES (?, ?, ?)').run(1, '0001_initial_schema', now)
       database.prepare('INSERT INTO schema_migrations(version, name, applied_at) VALUES (?, ?, ?)').run(2, '0002_outline_schema', now)
       database.prepare('INSERT INTO schema_migrations(version, name, applied_at) VALUES (?, ?, ?)').run(3, '0003_chat_workflow_schema', now)
       database.prepare('INSERT INTO schema_migrations(version, name, applied_at) VALUES (?, ?, ?)').run(4, '0004_context_package_snapshot', now)
+      database.prepare('INSERT INTO schema_migrations(version, name, applied_at) VALUES (?, ?, ?)').run(5, '0005_analysis_pipelines', now)
       database.prepare('INSERT INTO project_meta(id,title,description,version,created_at,updated_at,schema_version,creative_rules,last_backup_at,search_revision,indexed_revision) VALUES (?,?,?,?,?,?,?,?,?,?,?)').run(randomUUID(), title.trim(), description, 1, now, now, CURRENT_SCHEMA_VERSION, '', null, chapters.length ? 1 : 0, 0)
       database.prepare("INSERT INTO vector_index_meta(id,state,updated_at) VALUES (1,'missing',?)").run(now)
       const insertChapter = database.prepare('INSERT INTO chapter(id,title,position,content,version,created_at,updated_at) VALUES (?,?,?,?,1,?,?)')
@@ -821,6 +871,10 @@ export class ProjectStore {
             database.exec(contextPackageSchema)
           }
           database.prepare('INSERT OR REPLACE INTO schema_migrations(version, name, applied_at) VALUES (?, ?, ?)').run(4, '0004_context_package_snapshot', now)
+        }
+        if (version < 5) {
+          database.exec(analysisPipelinesSchema)
+          database.prepare('INSERT OR REPLACE INTO schema_migrations(version, name, applied_at) VALUES (?, ?, ?)').run(5, '0005_analysis_pipelines', now)
         }
         const meta = database.prepare('SELECT id FROM project_meta LIMIT 1').get() as { id: string } | undefined
         if (!meta) throw new ProjectError('UNSUPPORTED_SCHEMA', '旧版数据库缺少项目元数据')
@@ -933,6 +987,9 @@ export class ProjectStore {
     connectionId: string | null,
     expectedVersion?: number
   ): TaskRouteSummary | null {
+    if (taskType === 'style_distill' || taskType === 'book_summary') {
+      this.assertAnalysisPipelines(sessionId)
+    }
     const now = Date.now()
     return this.transaction(sessionId, (db) => {
       const existing = db.prepare('SELECT id, task_type as taskType, connection_id as connectionId, version, updated_at as updatedAt FROM task_route WHERE task_type = ?').get(taskType) as {
@@ -1250,7 +1307,7 @@ export class ProjectStore {
       if (step.state !== 'failed') throw new ProjectError('INVALID_STATE_TRANSITION', '只有失败的步骤可以重试')
 
       const now = Date.now()
-      database.prepare("UPDATE task_step SET state = 'pending', updated_at = ? WHERE id = ?").run(now, stepId)
+      database.prepare("UPDATE task_step SET state = 'pending', checkpoint_json = NULL, result_state = NULL, updated_at = ? WHERE id = ?").run(now, stepId)
       database.prepare("UPDATE task SET state = 'queued', error_code = NULL, error_message = NULL, updated_at = ? WHERE id = ?").run(now, taskId)
 
       const row = database.prepare('SELECT id, type, scope_json, connection_id, state, cancel_requested, input_tokens, output_tokens, error_code, error_message, created_at, updated_at, started_at, completed_at FROM task WHERE id = ?').get(taskId) as any
@@ -1269,6 +1326,24 @@ export class ProjectStore {
         updatedAt: row.updated_at,
         startedAt: row.started_at,
         completedAt: row.completed_at
+      }
+    })
+  }
+
+  retryFailedTask(sessionId: string, taskId: string): TaskSummary {
+    return this.transaction(sessionId, (database) => {
+      const failed = database.prepare("SELECT id FROM task_step WHERE task_id = ? AND state = 'failed' ORDER BY position ASC").all(taskId) as Array<{ id: string }>
+      if (failed.length === 0) throw new ProjectError('INVALID_STATE_TRANSITION', '任务没有失败步骤')
+      const now = Date.now()
+      const reset = database.prepare("UPDATE task_step SET state = 'pending', checkpoint_json = NULL, result_state = NULL, updated_at = ? WHERE id = ?")
+      for (const step of failed) reset.run(now, step.id)
+      database.prepare("UPDATE task SET state = 'queued', error_code = NULL, error_message = NULL, completed_at = NULL, updated_at = ? WHERE id = ?").run(now, taskId)
+      const row = database.prepare('SELECT id, type, scope_json, connection_id, state, cancel_requested, input_tokens, output_tokens, error_code, error_message, created_at, updated_at, started_at, completed_at FROM task WHERE id = ?').get(taskId) as any
+      return {
+        id: row.id, type: row.type, scopeJson: row.scope_json, connectionId: row.connection_id, state: row.state,
+        cancelRequested: Boolean(row.cancel_requested), inputTokens: row.input_tokens, outputTokens: row.output_tokens,
+        errorCode: row.error_code, errorMessage: row.error_message, createdAt: row.created_at, updatedAt: row.updated_at,
+        startedAt: row.started_at, completedAt: row.completed_at
       }
     })
   }

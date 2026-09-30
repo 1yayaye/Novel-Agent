@@ -1,5 +1,4 @@
 import React, { useState, useEffect, useCallback } from 'react'
-import { motion, AnimatePresence } from 'motion/react'
 import {
   ArrowDown,
   ArrowRight,
@@ -453,11 +452,12 @@ export function OutlineEditorDialog({
     <>
       <Dialog open onOpenChange={(open) => { if (!open) onClose() }}>
         <DialogContent
-          className="synopsis-dialog flex flex-col p-6 max-w-[980px] h-[88vh]"
+          frame={false}
+          className="synopsis-dialog flex flex-col max-w-[980px] h-[88vh]"
           aria-label="小说项目大纲"
           closeButton={false}
         >
-        <header className="dialog-header">
+        <header className="dialog-header px-6 pt-5 pb-2">
           <div>
             <h2>项目大纲管理</h2>
             <p>维护全书、分卷与章节 Markdown 大纲，为创作阶段提供结构化依据与版本门禁</p>
@@ -542,7 +542,7 @@ export function OutlineEditorDialog({
         </header>
 
         {error && (
-          <div className="dialog-error" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+          <div className="dialog-error mx-6" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
             <p className="inline-error">{error}</p>
             <Button variant="ghost" className="text-button" onClick={() => setError('')} style={{ fontSize: 11 }}>清除</Button>
           </div>
@@ -1015,8 +1015,7 @@ export function OutlineEditorDialog({
         </DialogContent>
       </Dialog>
 
-      <AnimatePresence>
-        {confirmDeleteVolume && (
+      {confirmDeleteVolume && (
           <ConfirmActionDialog
             key="confirm-delete-volume"
             isOpen={confirmDeleteVolume}
@@ -1042,7 +1041,6 @@ export function OutlineEditorDialog({
             onCancel={() => setConfirmDeleteChapterOutline(false)}
           />
         )}
-      </AnimatePresence>
     </>
   )
 }

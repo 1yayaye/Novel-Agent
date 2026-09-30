@@ -9,6 +9,7 @@ import { taskTypeLabel } from '../../utils/constants'
 export function TaskCenterDrawer() {
   const { project } = useProjectStore()
   const { tasks, setTasks, updateTask, clearCompleted } = useTaskStore()
+  const canTaskControls = Boolean(project?.capabilities?.taskControls)
   const [isEmptyStateRevealed, setIsEmptyStateRevealed] = useState(false)
 
   useEffect(() => {
@@ -59,6 +60,30 @@ export function TaskCenterDrawer() {
     } catch {}
   }
 
+  const handlePauseTask = async (taskId: string) => {
+    if (!project) return
+    try {
+      await window.novelAgent.analysis.pause({ sessionId: project.sessionId, taskId })
+      updateTask(taskId, { status: 'interrupted', message: '' })
+    } catch {}
+  }
+
+  const handleResumeTask = async (taskId: string) => {
+    if (!project) return
+    try {
+      await window.novelAgent.analysis.resume({ sessionId: project.sessionId, taskId })
+      updateTask(taskId, { status: 'queued', message: '' })
+    } catch {}
+  }
+
+  const handleRetryTask = async (taskId: string) => {
+    if (!project) return
+    try {
+      await window.novelAgent.task.retry({ sessionId: project.sessionId, taskId })
+      updateTask(taskId, { status: 'queued', message: '' })
+    } catch {}
+  }
+
   return (
     <div className="flex flex-col h-full space-y-4">
       <div className="flex items-center justify-between">
@@ -97,7 +122,10 @@ export function TaskCenterDrawer() {
               progress: task.progress,
               stage: task.stage,
               message: task.message,
-              onCancel: () => void handleCancelTask(task.id)
+              onCancel: () => void handleCancelTask(task.id),
+              onPause: canTaskControls ? () => void handlePauseTask(task.id) : undefined,
+              onResume: canTaskControls ? () => void handleResumeTask(task.id) : undefined,
+              onRetry: canTaskControls ? () => void handleRetryTask(task.id) : undefined
             }))}
           />
         )}

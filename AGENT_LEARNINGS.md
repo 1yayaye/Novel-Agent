@@ -1,0 +1,22 @@
+## 历史会话经验
+
+- **写入成功却向用户报失败**：候选正文已提交后，返回对象与共享 schema 的字段不一致（例如误取 `createdAt`）会让 IPC 校验失败，界面误报写回失败。修改持久化流程时，核对数据库字段、返回 DTO、共享 schema 和调用端；用临时合成项目验证提交后的完整 IPC 契约，不要只检查数据库是否写入。
+- **恢复备份时源文件被轮换删除**：恢复操作与备份保留策略交错时，待恢复的旧备份可能在读取前被清理。恢复开始前保护所选源文件，完成临时副本/恢复流程后再轮换；用“备份数量达到保留上限并恢复最旧一份”的场景验证。
+- **流式请求提前结束或占用队列不释放**：只看到 HTTP 成功或收到 `[DONE]` 之前的部分输出，不能证明流正常完成；过早释放串行队列槽位还会让同一连接上的请求并发。严格校验 SSE 完成信号，并在完成、取消、超时和异常路径统一关闭 reader、释放队列槽位；测试缺少完成信号、部分输出及取消路径。
+- **超时与后台索引互相拖累**：只设总时限会漏掉无进展的长时间请求；同步等待向量索引也会拖慢独立的 FTS 搜索。为请求设截止时间和流式空闲超时，确保超时/取消清理资源；将 FTS 与向量同步解耦，并测试向量挂起时关键词搜索仍可返回。
+- **日志或生产加密静默降级**：记录供应商原始错误正文可能把提示词或响应写入日志；生产环境回退到弱/固定密钥会使凭据保护失效。默认日志只写稳定错误码等必要诊断信息，生产凭据解密失败应明确失败而非降级；检查日志路径并覆盖生产配置下的密钥缺失/错误场景。
+- **多章滚动分析断点重试状态污染**：在长文本逐章滚动分析（知识库/故事梗概）中，中间步骤失败时若残留脏 checkpoint，重试该步骤或恢复任务时直接读取自身 checkpoint 会污染后续整条分析链。重试步骤必须回溯读取前一个已完成（completed）步骤的 checkpoint 作为输入基础，严禁读取失败步骤自身的不完整检查点；只有在业务分析完成且提交成功时才推进写入新 checkpoint。
+- **NodeNext 模块相对路径导入缺少扩展名**：`tsconfig.json` 设置为 `NodeNext` 时，相对路径导入和动态 `import()` 必须携带 `.js` 后缀（即使磁盘为 `.ts`/`.tsx`）。漏写会导致 `TS2835` 编译报错。新增或重构模块时必须严格保留 `.js` 扩展名，Vite 会在运行时自动映射源文件，不得为了磁盘文件名一致而移除后缀。
+- **章节轻量头与正文实体混淆**：为避免大文本 IPC 传输卡顿，章节列表、排序、拆分、合并等高频接口均下沉为不含正文的轻量 `ChapterHeader`，仅单章详情接口返回完整 `Chapter`。组件与测试代码切勿直接从列表项中取 `content`，读取正文需调用 `ChapterRepository.get(sessionId, id)`；字数统计必须统一调用共享的 `text-counter`，严禁在各处直接通过 `content.length` 估算。
+- **组件库迁移遗漏弹窗注销机制**：将散装模态框迁移至统一组件库（如 `@appica/ui-react` / Base UI）时，若仅包裹基础对话框容器而未接通统一注销 Hook，会导致全局 Escape 键及蒙层（backdrop）点击失效，引发弹窗拦截测试失败。封装业务弹窗必须规范调用 `useDialogDismiss({ isOpen, onClose })` 并将 `dialogRef` 挂载至顶层容器。
+- **Tailwind v4 预检破坏内联图标排版与悬浮栏宽度**：Tailwind v4 默认预检将 `svg` 设为 `display: block`，按钮内同时存在图标与文字时若未声明 `inline-flex items-center`，图标会独占一行导致文字被迫折行；此外，横向绝对定位的工具栏（如 `ActionDock`）在 flex 容器中易按 `min-content` 收缩导致中文逐字垂直折行。图标按钮必须声明 `inline-flex items-center`，浮动栏必须指定 `w-max` 与 `whitespace-nowrap`。
+- **Windows 环境文件锁竞争与依赖安装中断**：Windows 平台下 `pnpm install` 触发 native 编译常因缺少完整 VC++ 工具链而中断，需使用 `pnpm install --ignore-scripts`；`pnpm typecheck` 与 `pnpm test` 禁止并行，避免争抢 Vite/Electron 缓存与临时文件句柄（报 `EPERM rename` 或 `EBUSY unlink`）；测试中创建的临时 `.novelproj` 句柄释放延迟属系统环境特征，应串行重试单测，避免误当成业务断言缺陷。
+- **长文本全量 DP diff 阻塞渲染主线程**：对几千字以上的正文直接在 Electron 主线程执行 $(M+1) \times (N+1)$ 的动态规划 LCS diff 会分配数百万矩阵单元，造成主线程冻结数秒。遵循 ADR 0002，diff 计算前必须先执行双指针公共前后缀修剪，将范围缩至实际变更字串；若剩余变更仍超 3,000 字符，必须下沉至后台 Worker 线程，杜绝主线程全量 DP 计算。
+- **提示词上下文槽位重排导致缓存穿透失效**：在上下文装配器（`context-assembler.ts`）中，若计算缓存指纹时对槽位列表进行了键值固化重排，会导致用户调整 slot 顺序的改动无法改变指纹，模型仍收到旧顺序上下文。计算提示词指纹时，必须将槽位的显式 order 顺序纳入指纹计算因子。
+- **导入外部小说源文件依赖未解耦**：若导入项目时直接引用外部绝对路径作为正文源，外部文件的移动、重命名或删除会导致项目数据读取失败。导入小说时主进程必须先将原文自动安全归档至本地数据存储目录（`copySourceToNovels`），项目元数据仅保存归档后的副本路径，彻底解耦对外部原始文件的依赖。
+- **@appica/ui-react 弹窗双层容器与 Windows 字体横切撕裂**：`@appica/ui-react` 的 `DialogContent` / `AlertDialogContent` 默认开启 `frame=true`，会在外层 `BaseDialog.Popup` 叠加半透明磨砂外框（`backdrop-blur-sm` 与 `p-1.5`），若在 `className` 传入 padding（如 `p-6`），会导致外层灰色框与内层白色卡片产生 24px 双层嵌套缝隙；同时 `backdrop-blur-sm` 配合 Chromium `transform-gpu` 在 Windows 非整数 DPI 下会破坏 DirectWrite ClearType 渲染，导致 CJK 笔画出现横向切割裂纹。所有业务弹窗必须显式指定 `frame={false}` 收敛为单层实体卡片，外层 `DialogContent` `className` 严禁包含外层 padding（内边距由各组件内部区域严格管理），并在 `index.css` 配置 `-webkit-font-smoothing: subpixel-antialiased` 保护 Windows 亚像素字体渲染。
+- **静态弹出层与按钮 3D GPU 复合层消除中文字体横切撕裂**：仅设置 `-webkit-font-smoothing: subpixel-antialiased` 无法完全消除 Windows 125%/150% DPI 缩放下的字体断裂。若组件库在弹窗和按钮常驻注入 `transform-gpu`（`translate3d`），Chromium 会强制将其作为 GPU 复合纹理光栅化并产生浮点瓦片切割。必须针对静态弹窗及静态按钮在 CSS 覆写 `transform: none; backdrop-filter: none;`（开闭动画及激活态除外），彻底消除多余硬件复合图层。
+- **扩展共享任务类型时漏更新次级入口**：新增任务联合类型即使能通过主流程和类型检查，指令预设筛选/编辑菜单等次级入口也可能仍不可选。扩展共享任务类型后，检索所有 `SelectItem`、路由设置、穷举 `switch` 和导出路径，并逐一核对是否应支持该类型。
+- **流式生成测试严禁使用硬编码 sleep 等待完成**：测试用例中若使用 `setTimeout(..., 300)` 等待流式输出及 diff 计算完成，在 Windows 运行 60+ 测试套件的高 CPU 调度负载下极易超时并误报 `expected 'streaming' to be 'ready'`。必须统一在回调中挂载 `donePromise`（`onDone: () => resolve()`），通过 `await donePromise` 实施确定性同步。
+- **弹窗路由 payload 必须匹配目标组件 props**：给 DialogHost 增加路由 payload 时先核对目标组件接口，避免把只属于分析弹窗的 `initialType` 误传给候选审阅等相邻弹窗；改动后用类型检查覆盖路由分支。
+- **旧 schema 判断必须早于可写配置**：桌面端若先以可写模式打开并配置 SQLite，再决定旧项目只读，可能在未迁移的情况下改动 WAL 或其他数据库元数据。打开流程应先用只读探针读取 `user_version`，旧版本直接走只读句柄；对应测试应断言版本、备份和库内容保持不变。

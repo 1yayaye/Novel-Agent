@@ -1,5 +1,5 @@
 import React from 'react'
-import { CheckCircle2, Loader2, StopCircle, XCircle } from 'lucide-react'
+import { CheckCircle2, Loader2, Pause, Play, RotateCw, StopCircle, XCircle } from 'lucide-react'
 import { Button } from '@appica/ui-react/button'
 
 export interface TaskItem {
@@ -10,6 +10,9 @@ export interface TaskItem {
   stage?: string
   message?: string
   onCancel?: () => void
+  onPause?: () => void
+  onResume?: () => void
+  onRetry?: () => void
 }
 
 export function TaskRows({ items }: { items: TaskItem[] }) {
@@ -30,12 +33,25 @@ export function TaskRows({ items }: { items: TaskItem[] }) {
             <span>执行中</span>
           </span>
         )
+      case 'queued':
+        return (
+          <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-medium bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-300">
+            排队中
+          </span>
+        )
       case 'failed':
       case 'cancelled':
         return (
           <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-medium bg-rose-50 text-rose-700 dark:bg-rose-950/50 dark:text-rose-300">
             <XCircle size={11} />
             <span>{state === 'cancelled' ? '已取消' : '失败'}</span>
+          </span>
+        )
+      case 'interrupted':
+        return (
+          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-medium bg-orange-50 text-orange-700 dark:bg-orange-950/50 dark:text-orange-300">
+            <XCircle size={11} />
+            <span>已中断</span>
           </span>
         )
       default:
@@ -70,6 +86,21 @@ export function TaskRows({ items }: { items: TaskItem[] }) {
                   aria-label="取消任务"
                 >
                   <StopCircle size={13} />
+                </Button>
+              )}
+              {(item.state === 'running' || item.state === 'queued') && item.onPause && (
+                <Button variant="ghost" size="icon-sm" onClick={item.onPause} className="p-1 text-[#7d6b59] hover:bg-[#f5efe6] rounded transition-colors h-6 w-6" title="暂停任务" aria-label="暂停任务">
+                  <Pause size={13} />
+                </Button>
+              )}
+              {item.state === 'interrupted' && item.onResume && (
+                <Button variant="ghost" size="icon-sm" onClick={item.onResume} className="p-1 text-[#2d6a4f] hover:bg-emerald-50 rounded transition-colors h-6 w-6" title="恢复任务" aria-label="恢复任务">
+                  <Play size={13} />
+                </Button>
+              )}
+              {item.state === 'failed' && item.onRetry && (
+                <Button variant="ghost" size="icon-sm" onClick={item.onRetry} className="p-1 text-[#b45309] hover:bg-orange-50 rounded transition-colors h-6 w-6" title="重试失败步骤" aria-label="重试失败步骤">
+                  <RotateCw size={13} />
                 </Button>
               )}
             </div>

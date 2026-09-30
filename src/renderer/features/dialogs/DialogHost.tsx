@@ -1,7 +1,6 @@
 import React from 'react'
 import { useWorkbenchStore } from '../../stores/useWorkbenchStore'
 import { useProjectStore } from '../../stores/useProjectStore'
-import { useEditorStore } from '../../stores/useEditorStore'
 import { ConnectionDialog } from '../../components/dialogs/ConnectionDialog'
 import { CreativeSettingsDialog } from '../../components/dialogs/CreativeSettingsDialog'
 import { BackupDialog } from '../../components/dialogs/BackupDialog'
@@ -19,6 +18,7 @@ import { SuggestionReviewDialog } from '../../components/dialogs/SuggestionRevie
 import { ContextPreviewDialog } from '../../components/dialogs/ContextPreviewDialog'
 import { StartAnalysisDialog } from '../../components/dialogs/StartAnalysisDialog'
 import { ConfirmActionDialog } from '../../components/dialogs/ConfirmActionDialog'
+import type { TaskType } from '../../../shared/contracts/ai'
 
 export interface DialogHostProps {
   onChapterCreated?: (chapter: any) => void
@@ -33,11 +33,15 @@ export function DialogHost({
 }: DialogHostProps) {
   const { activeDialog, closeDialog, dialogPayload, openDialog } = useWorkbenchStore()
   const { project, chapters, selectedChapterId, loadProject } = useProjectStore()
-  const { isReadOnly } = useEditorStore()
 
   if (!project) return null
 
   const sessionId = project.sessionId
+  const isReadOnly = project.mode === 'read_only'
+  const analysisInitialType =
+    typeof dialogPayload === 'object' && dialogPayload !== null && 'initialType' in dialogPayload
+      ? (dialogPayload as { initialType?: Extract<TaskType, 'knowledge' | 'report' | 'synopsis' | 'style_distill' | 'book_summary'> }).initialType
+      : undefined
 
   return (
     <>
@@ -46,6 +50,7 @@ export function DialogHost({
           sessionId={sessionId}
           initialRoutes={project.taskRoutes || []}
           isReadOnly={isReadOnly}
+           canUsePipelines={Boolean(project.capabilities?.analysisPipelines)}
           onClose={closeDialog}
           onRoutesChanged={() => {}}
         />
@@ -55,6 +60,7 @@ export function DialogHost({
         <CreativeSettingsDialog
           sessionId={sessionId}
           isReadOnly={isReadOnly}
+           canUsePipelines={Boolean(project.capabilities?.analysisPipelines)}
           onClose={closeDialog}
         />
       )}
@@ -62,6 +68,7 @@ export function DialogHost({
       {activeDialog === 'backup' && (
         <BackupDialog
           sessionId={sessionId}
+          isReadOnly={isReadOnly}
           onClose={closeDialog}
           onRestored={(opened) => {
             closeDialog()
@@ -74,6 +81,7 @@ export function DialogHost({
         <ExportDialog
           sessionId={sessionId}
           chapters={chapters}
+          canExportAnalysis={Boolean(project.capabilities?.analysisExport)}
           onClose={closeDialog}
         />
       )}
@@ -208,6 +216,8 @@ export function DialogHost({
         <StartAnalysisDialog
           sessionId={sessionId}
           chapters={chapters}
+          canUsePipelines={Boolean(project.capabilities?.analysisPipelines)}
+          initialType={analysisInitialType ?? 'knowledge'}
           isReadOnly={isReadOnly}
           onClose={closeDialog}
           onStarted={() => closeDialog()}

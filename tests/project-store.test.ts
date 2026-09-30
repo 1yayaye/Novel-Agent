@@ -39,7 +39,8 @@ describe('ProjectStore', () => {
         { version: 1, name: '0001_initial_schema' },
         { version: 2, name: '0002_outline_schema' },
         { version: 3, name: '0003_chat_workflow_schema' },
-        { version: 4, name: '0004_context_package_snapshot' }
+        { version: 4, name: '0004_context_package_snapshot' },
+        { version: 5, name: '0005_analysis_pipelines' }
       ])
       expect(database.pragma('journal_mode', { simple: true })).toBe('wal')
       expect(() => database.prepare("INSERT INTO task(id,type,scope_json,state,cancel_requested,created_at,updated_at) VALUES ('bad','analysis','{}','invalid',0,1,1)").run()).toThrow()
@@ -115,7 +116,69 @@ describe('ProjectStore', () => {
     store.close(opened.sessionId)
   })
 
-  it('backs up and transactionally migrates an unversioned project', async () => {
+  it('opens a legacy schema read-only without migrating or writing the database', async () => {
+    const { data, project } = fixture()
+    const store = new ProjectStore(data)
+    store.create({ destination: project, title: '旧项目', description: '' }, [{ title: '第一章', content: '正文' }])
+
+    const before = new Database(project)
+    const beforeUpdatedAt = (before.prepare('SELECT updated_at FROM project_meta').get() as { updated_at: number }).updated_at
+    before.prepare('UPDATE project_meta SET schema_version = ?').run(CURRENT_SCHEMA_VERSION - 1)
+    before.pragma(`user_version = ${CURRENT_SCHEMA_VERSION - 1}`)
+    before.close()
+
+    const opened = await store.open(project)
+    expect(opened).toMatchObject({
+      mode: 'read_only',
+      readOnlyReason: 'legacy_schema',
+      integrity: 'ok',
+      capabilities: { analysisPipelines: false, analysisExport: false, taskControls: false }
+    })
+    expect(opened.metadata.schemaVersion).toBe(CURRENT_SCHEMA_VERSION - 1)
+    expect(() => store.exportProject(opened.sessionId, 'txt', undefined, join(data, 'legacy.txt'), true)).toThrow(
+      expect.objectContaining({ code: 'UNSUPPORTED_SCHEMA' })
+    )
+    store.close(opened.sessionId)
+
+    const after = new Database(project, { readonly: true })
+    try {
+      expect(after.pragma('user_version', { simple: true })).toBe(CURRENT_SCHEMA_VERSION - 1)
+      expect((after.prepare('SELECT updated_at FROM project_meta').get() as { updated_at: number }).updated_at).toBe(beforeUpdatedAt)
+      expect(existsSync(join(data, 'backups')) ? readdirSync(join(data, 'backups'), { recursive: true }).filter((entry) => String(entry).endsWith('.novelproj')) : []).toHaveLength(0)
+    } finally {
+      after.close()
+    }
+  })
+
+  it('requeues every failed step and clears stale checkpoints for a task retry', async () => {
+    const { data, project } = fixture()
+    const store = new ProjectStore(data)
+    store.create({ destination: project, title: '重试项目', description: '' }, [
+      { title: '第一章', content: '一' },
+      { title: '第二章', content: '二' },
+      { title: '第三章', content: '三' }
+    ])
+    const opened = await store.open(project)
+    const chapterIds = store.read(opened.sessionId, (database) =>
+      (database.prepare('SELECT id FROM chapter ORDER BY position').all() as Array<{ id: string }>).map((row) => row.id)
+    )
+    const task = store.createTask(opened.sessionId, 'knowledge', '{}', null, chapterIds)
+    store.updateTaskStep(opened.sessionId, task.steps[0].id, { state: 'failed', checkpointJson: '{"stale":true}', resultState: 'current' })
+    store.updateTaskStep(opened.sessionId, task.steps[1].id, { state: 'failed', checkpointJson: '{"stale":true}', resultState: 'current' })
+    store.updateTask(opened.sessionId, task.id, { state: 'failed', errorCode: 'MODEL_OUTPUT_INVALID', errorMessage: '失败' })
+
+    const retried = store.retryFailedTask(opened.sessionId, task.id)
+    expect(retried.state).toBe('queued')
+    expect(store.getTask(opened.sessionId, task.id).steps.slice(0, 2)).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ state: 'pending', checkpointJson: null, resultState: null }),
+        expect.objectContaining({ state: 'pending', checkpointJson: null, resultState: null })
+      ])
+    )
+    store.close(opened.sessionId)
+  })
+
+  it('does not migrate an unversioned project when opened by the desktop store', async () => {
     const { data, project } = fixture()
     const store = new ProjectStore(data)
     store.create({ destination: project, title: '旧项目', description: '' })
@@ -126,13 +189,11 @@ describe('ProjectStore', () => {
     database.close()
 
     const opened = await store.open(project)
-    expect(opened).toMatchObject({ mode: 'read_write', metadata: { schemaVersion: CURRENT_SCHEMA_VERSION } })
+    expect(opened).toMatchObject({ mode: 'read_only', readOnlyReason: 'legacy_schema', metadata: { schemaVersion: 0 } })
     store.close(opened.sessionId)
-    const backups = readdirSync(join(data, 'backups'), { recursive: true }).filter((entry) => String(entry).endsWith('.novelproj'))
-    expect(backups).toHaveLength(1)
-    const backupPath = join(data, 'backups', String(backups[0]))
-    const backup = new Database(backupPath, { readonly: true })
-    try { expect(backup.pragma('user_version', { simple: true })).toBe(0) } finally { backup.close() }
+    expect(existsSync(join(data, 'backups'))).toBe(false)
+    const unchanged = new Database(project, { readonly: true })
+    try { expect(unchanged.pragma('user_version', { simple: true })).toBe(0) } finally { unchanged.close() }
   })
 
   it('maps malformed files and missing sessions to stable specification errors', async () => {

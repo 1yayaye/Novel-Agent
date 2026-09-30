@@ -42,7 +42,6 @@
     "electron-vite": "5.0.0",
     "jsdom": "^30.0.1",
     "lucide-react": "1.31.0",
-    "motion": "13.1.0",
     "react": "19.2.8",
     "react-dom": "19.2.8",
     "tailwindcss": "^4.3.3",

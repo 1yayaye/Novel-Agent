@@ -10,14 +10,17 @@ import { Checkbox } from '@appica/ui-react/checkbox'
 export function ExportDialog({
   sessionId,
   chapters,
+  canExportAnalysis,
   onClose
 }: {
   sessionId: string
   chapters: ChapterHeader[]
+  canExportAnalysis: boolean
   onClose: () => void
 }) {
   const [format, setFormat] = useState<ExportFormat>('txt')
   const [scope, setScope] = useState<'all' | 'custom'>('all')
+  const [includeAnalysis, setIncludeAnalysis] = useState(canExportAnalysis)
   const [selectedIds, setSelectedIds] = useState<string[]>(chapters.map((c) => c.id))
   const [error, setError] = useState('')
   const [exporting, setExporting] = useState(false)
@@ -39,7 +42,7 @@ export function ExportDialog({
         setExporting(false)
         return
       }
-      const result = await window.novelAgent.project.export({ sessionId, format, chapterIds })
+      const result = await window.novelAgent.project.export({ sessionId, format, chapterIds, includeAnalysis })
       if (result) {
         setSuccessPath(result.savedPath)
       }
@@ -52,15 +55,15 @@ export function ExportDialog({
 
   return (
     <Dialog open onOpenChange={(open) => { if (!open) onClose() }}>
-      <DialogContent className="max-w-xl" closeLabel="关闭">
+      <DialogContent frame={false} className="max-w-xl" closeLabel="关闭">
         <DialogHeader>
           <DialogTitle>导出小说作品</DialogTitle>
           <DialogDescription>
-            支持导出为纯文本 (.txt) 或标准 Markdown (.md) 格式，支持全书或自选指定章节。
+            导出纯文本或 Markdown，可选择章节范围并附加已生成的总结与文风样本。
           </DialogDescription>
         </DialogHeader>
 
-        {error && <p className="inline-error text-xs text-red-600">{error}</p>}
+        {error && <p className="inline-error text-xs text-red-600 px-6">{error}</p>}
 
         {successPath ? (
           <div className="flex flex-col items-center justify-center gap-3 py-6 text-center">
@@ -77,7 +80,7 @@ export function ExportDialog({
           </div>
         ) : (
           <>
-            <div className="flex flex-col gap-4 overflow-y-auto pr-1">
+            <div className="flex flex-col gap-4 overflow-y-auto pr-1 px-6">
               <div className="flex flex-col gap-3 rounded-xl border border-[#e5ddd3] bg-[#f5efe6] p-4 text-xs">
                 <label className="font-semibold text-[#2c2523]">导出格式</label>
                 <div className="flex gap-6">
@@ -114,6 +117,10 @@ export function ExportDialog({
                     <span>勾选指定章节 ({selectedIds.length} / {chapters.length})</span>
                   </label>
                 </div>
+                <label className={`flex items-center gap-2 pt-2 ${canExportAnalysis ? 'cursor-pointer' : 'cursor-not-allowed opacity-60'}`}>
+                  <Checkbox disabled={!canExportAnalysis} checked={includeAnalysis} onCheckedChange={(checked) => setIncludeAnalysis(checked === true)} />
+                  <span>附加已生成的全书总结与文风样本</span>
+                </label>
               </div>
 
               {scope === 'custom' && (

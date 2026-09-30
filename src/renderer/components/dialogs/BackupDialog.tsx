@@ -10,10 +10,12 @@ import { ScrollArea } from '@appica/ui-react/scroll-area'
 
 export function BackupDialog({
   sessionId,
+  isReadOnly,
   onClose,
   onRestored
 }: {
   sessionId: string
+  isReadOnly: boolean
   onClose: () => void
   onRestored: (opened: OpenProjectResult) => void
 }) {
@@ -73,7 +75,7 @@ export function BackupDialog({
 
   return (
     <Dialog open onOpenChange={(open) => { if (!open) onClose() }}>
-      <DialogContent className="flex flex-col max-h-[85vh] sm:max-w-2xl" closeLabel="关闭">
+      <DialogContent frame={false} className="flex flex-col max-h-[85vh] sm:max-w-2xl" closeLabel="关闭">
         <DialogHeader>
           <DialogTitle>项目备份管理</DialogTitle>
           <DialogDescription>
@@ -81,9 +83,9 @@ export function BackupDialog({
           </DialogDescription>
         </DialogHeader>
 
-        <div className="flex items-center justify-between border-b border-[#e5ddd3] pb-3 text-xs">
+        <div className="flex items-center justify-between border-b border-[#e5ddd3] pb-3 text-xs px-6">
           <div className="flex items-center gap-2">
-            <Button size="sm" disabled={creating} onClick={() => void createBackup()}>
+            <Button size="sm" disabled={isReadOnly || creating} onClick={() => void createBackup()}>
               <HardDrive size={14} />
               {creating ? '正在创建备份...' : '立即备份'}
             </Button>
@@ -97,10 +99,10 @@ export function BackupDialog({
           </span>
         </div>
 
-        {error && <p className="inline-error text-xs text-red-600">{error}</p>}
+        {error && <p className="inline-error text-xs text-red-600 px-6">{error}</p>}
 
         {restoringPath && (
-          <div className="flex items-center justify-between rounded-xl border border-amber-200 bg-amber-50 p-3 text-xs text-amber-800">
+          <div className="mx-6 flex items-center justify-between rounded-xl border border-amber-200 bg-amber-50 p-3 text-xs text-amber-800">
             <span>⚠️ 从该备份恢复将自动为当前状态创建「恢复前快照」并重载项目。确认恢复？</span>
             <div className="flex gap-2">
               <Button size="sm" variant="ghost" onClick={() => setRestoringPath(null)}>
@@ -113,7 +115,8 @@ export function BackupDialog({
           </div>
         )}
 
-        <ScrollArea className="h-64 rounded-xl border border-[#e5ddd3] bg-white p-2">
+        <div className="px-6">
+          <ScrollArea className="h-64 rounded-xl border border-[#e5ddd3] bg-white p-2">
           {loading ? (
             <p className="p-8 text-center text-xs text-[#7d6b59]">加载备份列表中...</p>
           ) : backups.length === 0 ? (
@@ -143,6 +146,7 @@ export function BackupDialog({
                   <Button
                     size="sm"
                     variant="ghost"
+                    disabled={isReadOnly}
                     className="text-[#2d6a4f] hover:text-[#24583e]"
                     onClick={() => setRestoringPath(b.path)}
                   >
@@ -154,6 +158,7 @@ export function BackupDialog({
             </div>
           )}
         </ScrollArea>
+        </div>
 
         <DialogFooter className="flex items-center justify-between border-t border-[#e5ddd3] pt-3 text-[11px] text-[#7d6b59]">
           <span>达到 5 份上限后，系统在生成新备份时将自动循环覆盖最早的历史副本</span>

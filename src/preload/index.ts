@@ -103,6 +103,7 @@ import {
   RestoreSnapshotInputSchema,
   ResumeTaskInputSchema,
   RetryStepInputSchema,
+  RetryTaskInputSchema,
   ReviewConsistencyIssueInputSchema,
   ReviewSuggestionInputSchema,
   SaveBookOutlineInputSchema,
@@ -299,12 +300,14 @@ const api: NovelAgentApi = {
   analysis: {
     start: (input) => invoke('analysis.start', input, StartAnalysisInputSchema, StartAnalysisResultSchema),
     cancel: (input) => invoke('analysis.cancel', input, CancelTaskInputSchema, SuccessResultSchema),
+    pause: (input) => invoke('analysis.pause', input, CancelTaskInputSchema, SuccessResultSchema),
     resume: (input) => invoke('analysis.resume', input, ResumeTaskInputSchema, StartAnalysisResultSchema),
     getProgress: (input) => invoke('analysis.getProgress', input, GetTaskProgressInputSchema, TaskProgressEventSchema)
   },
   task: {
     list: (input) => invoke('task.list', input, ListTasksInputSchema, z.array(TaskSummarySchema)),
     get: (input) => invoke('task.get', input, GetTaskInputSchema, TaskDetailSchema),
+    retry: (input) => invoke('task.retry', input, RetryTaskInputSchema, TaskSummarySchema),
     retryStep: (input) => invoke('task.retryStep', input, RetryStepInputSchema, TaskSummarySchema),
     skipStep: (input) => invoke('task.skipStep', input, SkipStepInputSchema, TaskSummarySchema),
     onProgress: (callback: (event: TaskProgressEvent) => void) => {
@@ -449,4 +452,3 @@ const api: NovelAgentApi = {
 }
 
 contextBridge.exposeInMainWorld('novelAgent', api)
-

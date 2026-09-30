@@ -21,7 +21,7 @@ type StyleSampleRow = {
 
 type InstructionPresetRow = {
   id: string
-  task_type: 'chat' | 'knowledge' | 'report' | 'continue' | 'rewrite' | 'polish'
+  task_type: 'chat' | 'knowledge' | 'report' | 'continue' | 'rewrite' | 'polish' | 'style_distill' | 'book_summary'
   name: string
   instruction: string
   version: number
@@ -217,7 +217,8 @@ export class CreativeRepository {
     return { success: true }
   }
 
-  listPresets(sessionId: string, taskType?: 'chat' | 'knowledge' | 'report' | 'continue' | 'rewrite' | 'polish'): InstructionPreset[] {
+  listPresets(sessionId: string, taskType?: 'chat' | 'knowledge' | 'report' | 'continue' | 'rewrite' | 'polish' | 'style_distill' | 'book_summary'): InstructionPreset[] {
+    if (taskType === 'style_distill' || taskType === 'book_summary') this.store.assertAnalysisPipelines(sessionId)
     return this.store.read(sessionId, (db) => {
       let rows: InstructionPresetRow[]
       if (taskType) {
@@ -239,10 +240,11 @@ export class CreativeRepository {
 
   createPreset(
     sessionId: string,
-    taskType: 'chat' | 'knowledge' | 'report' | 'continue' | 'rewrite' | 'polish',
+    taskType: 'chat' | 'knowledge' | 'report' | 'continue' | 'rewrite' | 'polish' | 'style_distill' | 'book_summary',
     name: string,
     instruction: string
   ): InstructionPreset {
+    if (taskType === 'style_distill' || taskType === 'book_summary') this.store.assertAnalysisPipelines(sessionId)
     const id = randomUUID()
     const now = Date.now()
 

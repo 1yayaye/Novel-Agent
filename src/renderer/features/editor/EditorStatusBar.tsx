@@ -26,7 +26,7 @@ export function EditorStatusBar({
       <div className="status-left">
         <span className="status-item word-count" title="本章字数">
           <FileText size={13} />
-          <strong className="number-pop-in">{totalWords.toLocaleString()}</strong> 字
+          <strong key={totalWords} className="number-pop-in">{totalWords.toLocaleString()}</strong> 字
         </span>
 
         {selectedWords > 0 && (

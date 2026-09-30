@@ -1,5 +1,4 @@
 import { useState, useEffect, useCallback } from 'react'
-import { AnimatePresence } from 'motion/react'
 import { ArrowDown, ArrowUp, Camera, Copy, Merge, Pencil, Split, Trash2 } from 'lucide-react'
 import type { Chapter, ChapterSnapshot, ChapterSnapshotDetail } from '../../../shared/project'
 import type { SaveState } from '../../types/editor'
@@ -149,8 +148,7 @@ export function Inspector({
         </div>
       </div>
 
-      <AnimatePresence>
-        {creatingSnapshot && (
+      {creatingSnapshot && (
           <CreateSnapshotDialog
             error={snapshotError}
             onCancel={() => { setCreatingSnapshot(false); setSnapshotError('') }}
@@ -164,7 +162,6 @@ export function Inspector({
             onRestore={() => void restoreSnapshot()}
           />
         )}
-      </AnimatePresence>
     </div>
   )
 }

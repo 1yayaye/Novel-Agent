@@ -31,7 +31,7 @@ export const DEFAULT_CREATIVE_RULES = `# 全书核心创作准则与行文规范
 `
 
 export type DefaultPresetDef = {
-  taskType: 'continue' | 'rewrite' | 'polish' | 'knowledge' | 'report' | 'chat'
+  taskType: 'continue' | 'rewrite' | 'polish' | 'knowledge' | 'report' | 'style_distill' | 'book_summary' | 'chat'
   name: string
   instruction: string
 }
@@ -108,6 +108,18 @@ export const DEFAULT_INSTRUCTION_PRESETS: DefaultPresetDef[] = [
 1. 削减冗长拖沓的静态环境说明，以突发的动作碰撞或危机事件切入。
 2. 提升动词密度，打碎长句结构，用短句链条强化压迫感与临场感。
 3. 强调每一次发力、阻力与伤害后果，避免悬浮虚招。`
+  },
+
+  // 5. 全书分析流水线
+  {
+    taskType: 'style_distill',
+    name: '文风蒸馏 · 可执行规则',
+    instruction: '提炼语言、句式、段落、叙事距离、对白、动作、节奏和禁用项，输出可直接用于续写的规则；只归纳规律，不复述剧情，不照抄原文。'
+  },
+  {
+    taskType: 'book_summary',
+    name: '全书总结 · 事实与伏笔',
+    instruction: '按原文顺序整理主线、角色变化、世界观、关系、时间线、伏笔和未解问题；区分已确认事实与推测，避免遗漏跨章节因果。'
   },
 
   // 4. 工作台对话 (chat)
@@ -242,6 +254,14 @@ export function seedDefaultCreativePresets(database: Database.Database, force = 
     )
     for (const p of DEFAULT_INSTRUCTION_PRESETS) {
       insertPreset.run(randomUUID(), p.taskType, p.name, p.instruction, now, now)
+    }
+  } else {
+    const insertPreset = database.prepare(
+      'INSERT INTO instruction_preset(id, task_type, name, instruction, version, created_at, updated_at) VALUES (?, ?, ?, ?, 1, ?, ?)'
+    )
+    for (const p of DEFAULT_INSTRUCTION_PRESETS.filter((item) => item.taskType === 'style_distill' || item.taskType === 'book_summary')) {
+      const exists = database.prepare('SELECT 1 FROM instruction_preset WHERE task_type = ? LIMIT 1').get(p.taskType)
+      if (!exists) insertPreset.run(randomUUID(), p.taskType, p.name, p.instruction, now, now)
     }
   }
 

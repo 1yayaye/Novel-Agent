@@ -141,7 +141,7 @@ export function LiteraryReportsDialog({
   return (
     <>
       <Dialog open onOpenChange={(open) => { if (!open) onClose() }}>
-      <DialogContent className="flex flex-col w-[90vw] max-w-[90vw] h-[90vh] p-6" closeLabel="关闭">
+      <DialogContent frame={false} className="flex flex-col w-[90vw] max-w-[90vw] h-[90vh]" closeLabel="关闭">
           <DialogHeader>
             <div className="flex items-center justify-between pr-8">
               <div>
@@ -157,9 +157,9 @@ export function LiteraryReportsDialog({
             </div>
           </DialogHeader>
 
-          {error && <p className="inline-error text-xs text-red-600">{error}</p>}
+          {error && <p className="inline-error text-xs text-red-600 px-6">{error}</p>}
 
-          <div className="flex flex-1 gap-4 overflow-hidden border-t border-[#e5ddd3] pt-3">
+          <div className="flex flex-1 gap-4 overflow-hidden border-t border-[#e5ddd3] pt-3 px-6">
             {/* Sidebar */}
             <aside className="flex w-64 flex-col gap-2 border-r border-[#e5ddd3] pr-3 shrink-0">
               <span className="text-xs font-semibold text-[#7d6b59]">

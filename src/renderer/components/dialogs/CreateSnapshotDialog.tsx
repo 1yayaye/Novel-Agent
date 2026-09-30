@@ -24,12 +24,12 @@ export function CreateSnapshotDialog({
 
   return (
     <Dialog open onOpenChange={(open) => { if (!open) onCancel() }}>
-      <DialogContent className="max-w-sm" closeLabel="关闭">
+      <DialogContent frame={false} className="max-w-sm" closeLabel="关闭">
         <form onSubmit={handleSubmit} className="flex flex-col gap-4">
-          <DialogHeader>
+          <DialogHeader className="pb-1">
             <DialogTitle>创建章节快照</DialogTitle>
           </DialogHeader>
-          <Field className="flex flex-col gap-1.5 text-xs text-[#7d6b59]">
+          <Field className="flex flex-col gap-1.5 text-xs text-[#7d6b59] px-6">
             <FieldLabel>快照名称</FieldLabel>
             <Input
               autoFocus
@@ -39,8 +39,8 @@ export function CreateSnapshotDialog({
               onChange={(event) => setName(event.target.value)}
             />
           </Field>
-          {error && <p className="inline-error text-xs text-red-600">{error}</p>}
-          <DialogFooter>
+          {error && <p className="inline-error text-xs text-red-600 px-6">{error}</p>}
+          <DialogFooter className="pt-2">
             <Button type="button" variant="ghost" onClick={onCancel}>
               取消
             </Button>

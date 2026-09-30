@@ -1,5 +1,4 @@
 import React, { useState, useRef } from 'react'
-import { motion } from 'motion/react'
 import { ArrowDown, ArrowUp, Merge, Split, X, AlertTriangle } from 'lucide-react'
 import type { ImportPreviewResult, OpenProjectResult } from '../../../shared/project'
 import { errorText } from '../../utils/formatters'
@@ -137,8 +136,9 @@ export function ImportPreviewModal({
   return (
     <Dialog open onOpenChange={(open) => { if (!open) onClose() }}>
       <DialogContent
+        frame={false}
         closeButton={false}
-        className="flex flex-col w-full max-w-5xl h-[88vh] bg-[#faf8f5] border border-[#e5ddd3] rounded-2xl shadow-2xl overflow-hidden p-0"
+        className="flex flex-col w-full max-w-5xl h-[88vh] overflow-hidden"
         aria-label="导入小说原文预览"
       >
         {/* Header */}

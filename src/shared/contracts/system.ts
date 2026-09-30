@@ -2,7 +2,7 @@ import { z } from 'zod'
 import { TaskRouteSummarySchema } from './ai'
 import { ChapterDraftSchema } from './chapter'
 
-export const CURRENT_SCHEMA_VERSION = 4
+export const CURRENT_SCHEMA_VERSION = 5
 
 export const ProjectErrorCodeSchema = z.enum([
   'VALIDATION_ERROR',
@@ -72,10 +72,15 @@ export type RecentProject = z.infer<typeof RecentProjectSchema>
 export const OpenProjectResultSchema = z.object({
   sessionId: z.string().uuid(),
   mode: z.enum(['read_write', 'read_only']),
-  readOnlyReason: z.enum(['locked', 'future_schema', 'not_writable', 'integrity_failed']).optional(),
+  readOnlyReason: z.enum(['locked', 'future_schema', 'legacy_schema', 'not_writable', 'integrity_failed']).optional(),
   integrity: z.enum(['ok', 'failed']),
   metadata: ProjectSummarySchema,
-  taskRoutes: z.array(TaskRouteSummarySchema)
+  taskRoutes: z.array(TaskRouteSummarySchema),
+  capabilities: z.object({
+    analysisPipelines: z.boolean(),
+    analysisExport: z.boolean(),
+    taskControls: z.boolean()
+  })
 })
 export type OpenProjectResult = z.infer<typeof OpenProjectResultSchema>
 
@@ -117,6 +122,7 @@ export const ExportProjectInputSchema = z.object({
   sessionId: z.string().uuid(),
   format: ExportFormatSchema,
   chapterIds: z.array(z.string().uuid()).optional(),
+  includeAnalysis: z.boolean().optional(),
   destination: z.string().optional()
 })
 export type ExportProjectInput = z.infer<typeof ExportProjectInputSchema>

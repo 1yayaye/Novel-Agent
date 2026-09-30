@@ -98,7 +98,7 @@ export function AcceptancePreviewDialog({
 
   return (
     <Dialog open onOpenChange={(open) => { if (!open) onClose() }}>
-      <DialogContent className="flex flex-col max-h-[85vh] sm:max-w-2xl" closeLabel="关闭">
+      <DialogContent frame={false} className="flex flex-col max-h-[85vh] sm:max-w-2xl" closeLabel="关闭">
         <DialogHeader>
           <DialogTitle>采纳 AI 事实建议</DialogTitle>
           <DialogDescription>
@@ -106,9 +106,9 @@ export function AcceptancePreviewDialog({
           </DialogDescription>
         </DialogHeader>
 
-        {error && <p className="inline-error text-xs text-red-600">{error}</p>}
+        {error && <p className="inline-error text-xs text-red-600 px-6">{error}</p>}
 
-        <div className="flex flex-col gap-4 overflow-y-auto pr-1">
+        <div className="flex flex-col gap-4 overflow-y-auto pr-1 px-6">
           <div className="flex gap-6 rounded-xl border border-[#e5ddd3] bg-[#f5efe6] p-3 text-xs">
             <label className="flex items-center gap-2 cursor-pointer">
               <Checkbox

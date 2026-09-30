@@ -1,5 +1,4 @@
 import React from 'react'
-import { motion } from 'motion/react'
 import { AlertCircle, BookOpen, ChevronRight, Clock, FolderInput, FolderOpen } from 'lucide-react'
 import type { RecentProject } from '../../../shared/project'
 import { Button } from '@appica/ui-react/button'
@@ -103,12 +102,9 @@ export function ProjectShelf({
       )}
 
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5 texts-reveal">
-        {displayProjects.map((item, index) => (
-          <motion.article
+        {displayProjects.map((item) => (
+          <article
             key={item.path}
-            initial={{ opacity: 0, y: 12 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: 0.2, delay: index * 0.04 }}
           >
             <Card
               onClick={() => {
@@ -153,7 +149,7 @@ export function ProjectShelf({
                 )}
               </div>
             </Card>
-          </motion.article>
+          </article>
         ))}
       </div>
     </main>

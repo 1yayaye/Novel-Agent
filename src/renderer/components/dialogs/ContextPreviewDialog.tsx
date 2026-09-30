@@ -153,7 +153,7 @@ export function ContextPreviewDialog({
 
   return (
     <Dialog open onOpenChange={(open) => { if (!open) onClose() }}>
-      <DialogContent className="flex flex-col w-[90vw] max-w-[90vw] h-[90vh] p-6" closeLabel="关闭">
+      <DialogContent frame={false} className="flex flex-col w-[90vw] max-w-[90vw] h-[90vh]" closeLabel="关闭">
         <DialogHeader>
           <DialogTitle>上下文装配预览与 Token 预算</DialogTitle>
           <DialogDescription>
@@ -161,9 +161,9 @@ export function ContextPreviewDialog({
           </DialogDescription>
         </DialogHeader>
 
-        {error && <p className="inline-error text-xs text-red-600">{error}</p>}
+        {error && <p className="inline-error text-xs text-red-600 px-6">{error}</p>}
 
-        <div className="flex flex-1 gap-5 overflow-hidden border-t border-[#e5ddd3] pt-3">
+        <div className="flex flex-1 gap-5 overflow-hidden border-t border-[#e5ddd3] pt-3 px-6">
           {/* Controls Left Column */}
           <div className="flex w-80 flex-col gap-3 border-r border-[#e5ddd3] pr-4 shrink-0">
             <ScrollArea className="flex-1 pr-2">

@@ -16,10 +16,12 @@ import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from '@
 export function CreativeSettingsDialog({
   sessionId,
   isReadOnly,
+  canUsePipelines,
   onClose
 }: {
   sessionId: string
   isReadOnly: boolean
+  canUsePipelines: boolean
   onClose: () => void
 }) {
   const [activeTab, setActiveTab] = useState<'rules' | 'samples' | 'presets'>('rules')
@@ -42,10 +44,10 @@ export function CreativeSettingsDialog({
   const [savingSample, setSavingSample] = useState(false)
 
   // Presets state
-  const [taskFilter, setTaskFilter] = useState<'all' | 'continue' | 'rewrite' | 'polish' | 'knowledge' | 'report' | 'chat'>('all')
+  const [taskFilter, setTaskFilter] = useState<'all' | 'continue' | 'rewrite' | 'polish' | 'knowledge' | 'report' | 'chat' | 'style_distill' | 'book_summary'>('all')
   const [presets, setPresets] = useState<InstructionPreset[]>([])
   const [selectedPresetId, setSelectedPresetId] = useState<string | null>(null)
-  const [presetType, setPresetType] = useState<'continue' | 'rewrite' | 'polish' | 'knowledge' | 'report' | 'chat'>('continue')
+  const [presetType, setPresetType] = useState<'continue' | 'rewrite' | 'polish' | 'knowledge' | 'report' | 'chat' | 'style_distill' | 'book_summary'>('continue')
   const [presetName, setPresetName] = useState('')
   const [presetInstruction, setPresetInstruction] = useState('')
   const [presetVersion, setPresetVersion] = useState(1)
@@ -257,7 +259,7 @@ export function CreativeSettingsDialog({
 
   return (
     <Dialog open onOpenChange={(open) => { if (!open) onClose() }}>
-      <DialogContent className="flex flex-col w-[90vw] max-w-[90vw] h-[90vh] p-6" closeLabel="关闭">
+      <DialogContent frame={false} className="flex flex-col w-[90vw] max-w-[90vw] h-[90vh]" closeLabel="关闭">
         <DialogHeader>
           <DialogTitle>创作配置管理</DialogTitle>
           <DialogDescription>
@@ -268,7 +270,7 @@ export function CreativeSettingsDialog({
         <Tabs
           value={activeTab}
           onValueChange={(val) => setActiveTab(val as any)}
-          className="flex flex-1 flex-col overflow-hidden"
+          className="flex flex-1 flex-col overflow-hidden px-6"
         >
           <TabsList className="self-start">
             <TabsTrigger value="rules" className="gap-1.5">
@@ -453,6 +455,8 @@ export function CreativeSettingsDialog({
                   <SelectItem value="polish">润色 (polish)</SelectItem>
                   <SelectItem value="knowledge">知识分析 (knowledge)</SelectItem>
                   <SelectItem value="report">文学报告 (report)</SelectItem>
+                  {canUsePipelines && <SelectItem value="style_distill">文风蒸馏 (style_distill)</SelectItem>}
+                  {canUsePipelines && <SelectItem value="book_summary">全书总结 (book_summary)</SelectItem>}
                   <SelectItem value="chat">项目问答 (chat)</SelectItem>
                 </SelectContent>
               </Select>
@@ -509,6 +513,8 @@ export function CreativeSettingsDialog({
                           <SelectItem value="polish">润色 (polish)</SelectItem>
                           <SelectItem value="knowledge">知识分析 (knowledge)</SelectItem>
                           <SelectItem value="report">文学报告 (report)</SelectItem>
+                          {canUsePipelines && <SelectItem value="style_distill">文风蒸馏 (style_distill)</SelectItem>}
+                          {canUsePipelines && <SelectItem value="book_summary">全书总结 (book_summary)</SelectItem>}
                           <SelectItem value="chat">项目问答 (chat)</SelectItem>
                         </SelectContent>
                       </Select>

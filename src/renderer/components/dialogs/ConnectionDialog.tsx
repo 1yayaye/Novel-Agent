@@ -36,12 +36,14 @@ export function ConnectionDialog({
   sessionId,
   initialRoutes = [],
   isReadOnly,
+  canUsePipelines,
   onClose,
   onRoutesChanged
 }: {
   sessionId: string
   initialRoutes: TaskRouteSummary[]
   isReadOnly: boolean
+  canUsePipelines: boolean
   onClose: () => void
   onRoutesChanged: (routes: TaskRouteSummary[]) => void
 }) {
@@ -174,7 +176,7 @@ export function ConnectionDialog({
   return (
     <>
       <Dialog open onOpenChange={(open) => { if (!open) onClose() }}>
-        <DialogContent className="flex flex-col w-[90vw] max-w-[90vw] h-[90vh] p-6" closeLabel="关闭">
+        <DialogContent frame={false} className="flex flex-col w-[90vw] max-w-[90vw] h-[90vh]" closeLabel="关闭">
           <DialogHeader>
             <DialogTitle>模型连接、任务路由与隐私</DialogTitle>
             <DialogDescription>
@@ -185,7 +187,7 @@ export function ConnectionDialog({
           <Tabs
             value={tab}
             onValueChange={(val) => setTab(val as any)}
-            className="flex flex-1 flex-col overflow-hidden"
+            className="flex flex-1 flex-col overflow-hidden px-6"
           >
             <TabsList className="self-start">
               <TabsTrigger value="connections" className="gap-1.5">
@@ -194,7 +196,7 @@ export function ConnectionDialog({
               </TabsTrigger>
               <TabsTrigger value="taskRoutes" className="gap-1.5">
                 <Server size={14} />
-                任务路由 (6类)
+                任务路由 ({canUsePipelines ? 8 : 6}类)
               </TabsTrigger>
               <TabsTrigger value="privacy" className="gap-1.5">
                 <ShieldCheck size={14} />
@@ -399,7 +401,7 @@ export function ConnectionDialog({
 
               <ScrollArea className="flex-1 pr-3">
                 <div className="flex flex-col gap-2.5 p-1">
-                  {(['continue', 'rewrite', 'polish', 'knowledge', 'report', 'chat'] as TaskType[]).map(
+                  {(['continue', 'rewrite', 'polish', 'knowledge', 'report', ...(canUsePipelines ? ['style_distill', 'book_summary'] : []), 'chat'] as TaskType[]).map(
                     (taskType) => {
                       const info = taskTypeLabels[taskType]
                       const route = routes.find((r) => r.taskType === taskType)

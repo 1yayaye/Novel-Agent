@@ -5,7 +5,7 @@ export interface TaskItem {
   type: string
   title: string
   progress: number
-  status: 'running' | 'completed' | 'failed' | 'cancelled'
+  status: 'queued' | 'running' | 'completed' | 'failed' | 'interrupted' | 'cancelled'
   stage?: string
   message?: string
   createdAt: number
@@ -88,7 +88,7 @@ export const useTaskStore = create<TaskState>((set) => ({
 
   clearCompleted: () => {
     set((state) => ({
-      tasks: state.tasks.filter((t) => t.status === 'running')
+      tasks: state.tasks.filter((t) => t.status === 'running' || t.status === 'queued')
     }))
   }
 }))
