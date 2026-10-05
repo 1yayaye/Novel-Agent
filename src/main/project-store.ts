@@ -743,7 +743,7 @@ export class ProjectStore {
 
   exportProject(sessionId: string, format: ExportFormat, chapterIds?: string[], destination?: string, includeAnalysis = false): { savedPath: string } {
     const session = this.session(sessionId)
-    if (includeAnalysis && !this.supportsAnalysisPipelines(sessionId)) {
+    if (includeAnalysis && !this.supportsAnalysisExport(sessionId)) {
       throw new ProjectError('UNSUPPORTED_SCHEMA', '当前项目版本不支持导出分析结果')
     }
     if (!destination) throw new ProjectError('VALIDATION_ERROR', '缺少导出目标路径')
@@ -791,13 +791,37 @@ export class ProjectStore {
 
   supportsAnalysisPipelines(sessionId: string): boolean {
     const session = this.session(sessionId)
-    return Number(session.database.pragma('user_version', { simple: true })) === CURRENT_SCHEMA_VERSION
+    return !session.readOnly && this.hasCurrentSchema(session.database)
+  }
+
+  supportsAnalysisExport(sessionId: string): boolean {
+    return this.hasCurrentSchema(this.session(sessionId).database)
+  }
+
+  supportsTaskControls(sessionId: string): boolean {
+    return this.supportsAnalysisPipelines(sessionId)
   }
 
   assertAnalysisPipelines(sessionId: string): void {
     if (!this.supportsAnalysisPipelines(sessionId)) {
       throw new ProjectError('UNSUPPORTED_SCHEMA', '当前项目版本不支持该分析功能')
     }
+  }
+
+  assertAnalysisExport(sessionId: string): void {
+    if (!this.supportsAnalysisExport(sessionId)) {
+      throw new ProjectError('UNSUPPORTED_SCHEMA', '当前项目版本不支持导出分析结果')
+    }
+  }
+
+  assertTaskControls(sessionId: string): void {
+    if (!this.supportsTaskControls(sessionId)) {
+      throw new ProjectError('UNSUPPORTED_SCHEMA', '当前项目版本不支持任务控制')
+    }
+  }
+
+  private hasCurrentSchema(database: DatabaseHandle): boolean {
+    return Number(database.pragma('user_version', { simple: true })) === CURRENT_SCHEMA_VERSION
   }
 
   private pruneBackups(folder: string, maxCount = 5, protectedPaths = new Set<string>()): void {
@@ -987,9 +1011,7 @@ export class ProjectStore {
     connectionId: string | null,
     expectedVersion?: number
   ): TaskRouteSummary | null {
-    if (taskType === 'style_distill' || taskType === 'book_summary') {
-      this.assertAnalysisPipelines(sessionId)
-    }
+    this.assertTaskControls(sessionId)
     const now = Date.now()
     return this.transaction(sessionId, (db) => {
       const existing = db.prepare('SELECT id, task_type as taskType, connection_id as connectionId, version, updated_at as updatedAt FROM task_route WHERE task_type = ?').get(taskType) as {

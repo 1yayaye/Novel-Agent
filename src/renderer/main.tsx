@@ -3,6 +3,9 @@ import { createRoot } from 'react-dom/client'
 import { ThemeProvider } from '@appica/ui-react/providers/theme-provider'
 import App from './App'
 import './styles/index.css'
+import { ensurePlatformBridge } from '../shared/platform-bridge'
+
+ensurePlatformBridge()
 
 createRoot(document.getElementById('root')!).render(
   <StrictMode>

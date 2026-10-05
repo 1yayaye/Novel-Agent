@@ -218,7 +218,7 @@ export class CreativeRepository {
   }
 
   listPresets(sessionId: string, taskType?: 'chat' | 'knowledge' | 'report' | 'continue' | 'rewrite' | 'polish' | 'style_distill' | 'book_summary'): InstructionPreset[] {
-    if (taskType === 'style_distill' || taskType === 'book_summary') this.store.assertAnalysisPipelines(sessionId)
+    this.store.assertAnalysisPipelines(sessionId)
     return this.store.read(sessionId, (db) => {
       let rows: InstructionPresetRow[]
       if (taskType) {
@@ -231,6 +231,7 @@ export class CreativeRepository {
   }
 
   getPreset(sessionId: string, presetId: string): InstructionPreset {
+    this.store.assertAnalysisPipelines(sessionId)
     return this.store.read(sessionId, (db) => {
       const row = db.prepare('SELECT id, task_type, name, instruction, version, created_at, updated_at FROM instruction_preset WHERE id = ?').get(presetId) as InstructionPresetRow | undefined
       if (!row) throw new ProjectError('VALIDATION_ERROR', '指令预设不存在')
@@ -244,7 +245,7 @@ export class CreativeRepository {
     name: string,
     instruction: string
   ): InstructionPreset {
-    if (taskType === 'style_distill' || taskType === 'book_summary') this.store.assertAnalysisPipelines(sessionId)
+    this.store.assertAnalysisPipelines(sessionId)
     const id = randomUUID()
     const now = Date.now()
 
@@ -273,6 +274,7 @@ export class CreativeRepository {
     instruction: string,
     expectedVersion: number
   ): InstructionPreset {
+    this.store.assertAnalysisPipelines(sessionId)
     const now = Date.now()
     let updatedPreset: InstructionPreset | undefined
 
@@ -305,6 +307,7 @@ export class CreativeRepository {
   }
 
   deletePreset(sessionId: string, presetId: string, expectedVersion: number): SuccessResult {
+    this.store.assertAnalysisPipelines(sessionId)
     this.store.transaction(sessionId, (db) => {
       const row = db.prepare('SELECT id, version FROM instruction_preset WHERE id = ?').get(presetId) as {
         id: string

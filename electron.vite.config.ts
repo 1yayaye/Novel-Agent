@@ -11,7 +11,13 @@ export default defineConfig({
         exclude: ['zod']
       },
       rollupOptions: {
-        input: resolve(__dirname, 'src/main/index.ts')
+        input: {
+          index: resolve(__dirname, 'src/main/index.ts'),
+          sidecar: resolve(__dirname, 'src/main/sidecar-entry.ts')
+        },
+        output: {
+          entryFileNames: (chunk) => chunk.name === 'sidecar' ? 'sidecar.cjs' : 'index.js'
+        }
       }
     }
   },

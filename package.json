@@ -17,7 +17,12 @@
     "package:portable": "pnpm build && electron-builder --win portable --x64",
     "package": "pnpm build && electron-builder --win portable --x64",
     "verify:release": "pnpm package:zip && node scripts/verify-release.mjs",
-    "verify": "pnpm typecheck && pnpm test && pnpm probe:native && pnpm test:e2e && pnpm verify:release"
+    "verify": "pnpm typecheck && pnpm test && pnpm probe:native && pnpm test:e2e && pnpm verify:release",
+    "winui:build": "dotnet build src-winui/NovelAgent.WinUI.csproj -p:Platform=x64 -c Debug",
+    "winui:build:release": "dotnet build src-winui/NovelAgent.WinUI.csproj -p:Platform=x64 -c Release",
+    "winui:run": "dotnet run --project src-winui/NovelAgent.WinUI.csproj -p:Platform=x64",
+    "winui:dev": "node scripts/run-winui-dev.mjs",
+    "winui:package": "node scripts/package-winui.mjs"
   },
   "dependencies": {
     "better-sqlite3": "13.0.3",

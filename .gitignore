@@ -4,6 +4,7 @@ node_modules/
 # Build & packager output
 out/
 dist/
+dist-winui/
 release/
 *.exe
 *.zip
@@ -31,6 +32,9 @@ skills-lock.json
 
 # Generated architecture diagrams (local only)
 diagrams/
+scratch/
+src-winui/bin/
+src-winui/obj/
 
 # Logs & env
 *.log

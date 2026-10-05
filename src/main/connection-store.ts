@@ -1,7 +1,7 @@
 import { createCipheriv, createDecipheriv, createHash, randomBytes, randomUUID } from 'node:crypto'
 import { existsSync, mkdirSync, readFileSync, rmSync, unlinkSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
-import { safeStorage } from 'electron'
+import { createRequire } from 'node:module'
 import {
   type ConfirmContentTargetResult,
   type CreateModelConnectionInput,
@@ -12,6 +12,21 @@ import {
   type UpdateModelConnectionInput
 } from '../shared/project'
 import { ProjectError } from './project-store'
+
+type SafeStorage = {
+  isEncryptionAvailable(): boolean
+  encryptString(value: string): Buffer
+  decryptString(value: Buffer): string
+}
+
+const safeStorage: SafeStorage | undefined = (() => {
+  if (!process.versions.electron) return undefined
+  try {
+    return createRequire(import.meta.url)('electron').safeStorage as SafeStorage
+  } catch {
+    return undefined
+  }
+})()
 
 interface StoredSecret {
   apiKey?: string
@@ -450,6 +465,7 @@ export class ConnectionStore {
     const prefix = buffer.subarray(0, 5).toString('utf8')
     if (prefix === 'SAFE:') {
       const payload = buffer.subarray(5)
+      if (!safeStorage) throw new ProjectError('CONNECTION_FAILED', '系统加密存储不可用，无法读取连接凭据')
       return safeStorage.decryptString(payload)
     }
 

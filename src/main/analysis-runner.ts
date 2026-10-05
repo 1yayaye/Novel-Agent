@@ -1,6 +1,5 @@
 import { createHash, randomUUID } from 'node:crypto'
 import { z } from 'zod'
-import type { BrowserWindow } from 'electron'
 import {
   type BookOutline,
   type CancelTaskInput,
@@ -187,10 +186,14 @@ function formatRollingState(state: RollingAnalysisState): string {
   ].join('\n')
 }
 
+export interface AnalysisCallbacks {
+  onProgress?: (event: TaskProgressEvent) => void
+}
+
 export class AnalysisRunner {
   private activeTasks = new Map<string, AbortController>()
   private lastProgressEmit = new Map<string, number>()
-  private window?: BrowserWindow
+  private callbacks: AnalysisCallbacks = {}
 
   constructor(
     private readonly store: ProjectStore,
@@ -199,14 +202,12 @@ export class AnalysisRunner {
     private readonly searchIndex?: SearchIndex
   ) {}
 
-  setWindow(window: BrowserWindow): void {
-    this.window = window
+  setCallbacks(callbacks: AnalysisCallbacks): void {
+    this.callbacks = callbacks
   }
 
   async startAnalysis(input: StartAnalysisInput): Promise<StartAnalysisResult> {
-    if (input.type === 'style_distill' || input.type === 'book_summary') {
-      this.store.assertAnalysisPipelines(input.sessionId)
-    }
+    this.store.assertAnalysisPipelines(input.sessionId)
     const chapters = this.store.read(input.sessionId, (database) => {
       return database.prepare('SELECT id, title, version, position, content FROM chapter WHERE deleted_at IS NULL ORDER BY position ASC').all() as Array<{
         id: string
@@ -289,6 +290,7 @@ export class AnalysisRunner {
   }
 
   async cancelTask(input: CancelTaskInput): Promise<SuccessResult> {
+    this.store.assertTaskControls(input.sessionId)
     const controller = this.activeTasks.get(input.taskId)
     if (controller) {
       controller.abort()
@@ -298,7 +300,7 @@ export class AnalysisRunner {
   }
 
   async pauseTask(input: CancelTaskInput): Promise<SuccessResult> {
-    this.store.assertAnalysisPipelines(input.sessionId)
+    this.store.assertTaskControls(input.sessionId)
     const task = this.store.getTask(input.sessionId, input.taskId)
     if (task.state !== 'running' && task.state !== 'queued') {
       throw new ProjectError('INVALID_STATE_TRANSITION', '只有排队中或执行中的任务可以暂停')
@@ -312,7 +314,7 @@ export class AnalysisRunner {
   }
 
   async resumeTask(input: ResumeTaskInput): Promise<StartAnalysisResult> {
-    this.store.assertAnalysisPipelines(input.sessionId)
+    this.store.assertTaskControls(input.sessionId)
     const task = this.store.getTask(input.sessionId, input.taskId)
     if (task.state !== 'interrupted' && task.state !== 'failed') {
       throw new ProjectError('INVALID_STATE_TRANSITION', '只有中断或失败的任务可以恢复')
@@ -329,21 +331,21 @@ export class AnalysisRunner {
   }
 
   async retryStep(input: RetryStepInput): Promise<TaskSummary> {
-    this.store.assertAnalysisPipelines(input.sessionId)
+    this.store.assertTaskControls(input.sessionId)
     const summary = this.store.retryTaskStep(input.sessionId, input.taskId, input.stepId)
     void this.runTask(input.sessionId, input.taskId)
     return summary
   }
 
   async retryTask(input: GetTaskInput): Promise<TaskSummary> {
-    this.store.assertAnalysisPipelines(input.sessionId)
+    this.store.assertTaskControls(input.sessionId)
     const summary = this.store.retryFailedTask(input.sessionId, input.taskId)
     void this.runTask(input.sessionId, input.taskId)
     return summary
   }
 
   async skipStep(input: SkipStepInput): Promise<TaskSummary> {
-    this.store.assertAnalysisPipelines(input.sessionId)
+    this.store.assertTaskControls(input.sessionId)
     const summary = this.store.skipTaskStep(input.sessionId, input.taskId, input.stepId)
     void this.runTask(input.sessionId, input.taskId)
     return summary
@@ -378,7 +380,6 @@ export class AnalysisRunner {
   }
 
   private emitProgress(task: TaskDetail, force = false): void {
-    if (!this.window || this.window.isDestroyed()) return
     const now = Date.now()
     const last = this.lastProgressEmit.get(task.id) ?? 0
     if (!force && now - last < 200) return
@@ -386,7 +387,7 @@ export class AnalysisRunner {
     this.lastProgressEmit.set(task.id, now)
     const event = this.calculateProgress(task)
     try {
-      this.window.webContents.send('task:progress', event)
+      this.callbacks.onProgress?.(event)
     } catch {}
   }
 
