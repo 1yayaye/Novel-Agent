@@ -9,6 +9,7 @@ import {
   type ChatWorkflowStage,
   type ChatWorkflowType,
   type ContextPackage,
+  type PromptSnapshot,
   type CreateChatSessionInput,
   type DeleteChatSessionInput,
   type GetChatSessionInput,
@@ -23,6 +24,9 @@ import { ProjectError, type ProjectStore } from './project-store'
 import type { ModelGateway } from './model-gateway'
 import type { ConnectionStore } from './connection-store'
 import type { ContextAssembler } from './context-assembler'
+import { compilePromptMessages } from './prompt-runtime.js'
+import type { PromptSettingsStore } from './prompt-store.js'
+import { parseChapterOutlineOutput, parseCreationOutput, parseDirectionOutput } from './output-parser.js'
 import type { SearchIndex } from './search-index'
 import { createStreamThrottler } from './stream-throttle'
 
@@ -44,6 +48,7 @@ export class ChatService {
 
   constructor(
     private readonly store: ProjectStore,
+    private readonly promptStore: PromptSettingsStore,
     private readonly modelGateway: ModelGateway,
     private readonly connectionStore: ConnectionStore,
     private readonly contextAssembler: ContextAssembler,
@@ -405,7 +410,7 @@ export class ChatService {
     })
   }
 
-  async compactSession(sessionId: string, chatSessionId: string, connectionId?: string): Promise<ChatSummary> {
+  async compactSession(sessionId: string, chatSessionId: string, connectionId?: string, frozenSnapshot?: PromptSnapshot): Promise<ChatSummary> {
     const messages = this.listMessages({ sessionId, chatSessionId })
     if (messages.length <= 12) {
       const existing = this.getSummary({ sessionId, chatSessionId })
@@ -437,11 +442,14 @@ export class ChatService {
     const existingSummary = this.getSummary({ sessionId, chatSessionId })
 
     const connId = connectionId || this.resolveConnectionId(sessionId, chatSessionId)
+    const snapshot = frozenSnapshot ?? this.promptStore.snapshot(this.connectionStore.get(connId))
     const formattedTranscript = messagesToSummarize
       .map((m) => `${m.role === 'user' ? '作者' : '助手'}: ${m.content}`)
       .join('\n\n')
 
     const prompt = `请为以下小说创作会话的前期对话提取精炼的核心事实与上下文摘要。重点保留讨论过的剧情事实、设定改动、人物关系和待办事宜：\n\n${formattedTranscript}`
+    if (!snapshot.budget) throw new ProjectError('STALE_CONTEXT_PACKAGE', '会话摘要缺少请求预算，请重新发起任务')
+    const summaryMessages = compilePromptMessages('chat_summary', { instruction: prompt }, snapshot)
 
     let newSummaryContent = ''
     try {
@@ -449,11 +457,9 @@ export class ChatService {
         connectionId: connId,
         taskType: 'chat',
         priority: 'low',
-        messages: [
-          { role: 'system', content: '你是一位小说创作助手的会话摘要整理专家。请用简明精炼的中文分条列出会话讨论的核心要点。' },
-          { role: 'user', content: prompt }
-        ],
-        temperature: 0.3,
+        messages: summaryMessages,
+        maxTokens: snapshot.budget.maxOutputTokens,
+        requestBudget: snapshot.budget,
         isContentRequest: true
       })
 
@@ -464,6 +470,7 @@ export class ChatService {
       }
       newSummaryContent = newSummaryContent.trim()
     } catch (error) {
+      if (error instanceof ProjectError) throw error
       throw new ProjectError('CONNECTION_FAILED', `生成会话滚动摘要失败: ${error instanceof Error ? error.message : String(error)}`)
     }
 
@@ -550,6 +557,7 @@ export class ChatService {
 
     // 1. Resolve model connection
     const connId = input.connectionId || this.resolveConnectionId(sessionId, chatSessionId)
+    const snapshot = this.promptStore.snapshot(this.connectionStore.get(connId))
 
     // 2. Insert User Message
     this.store.transaction(sessionId, (db) => {
@@ -565,7 +573,7 @@ export class ChatService {
     const existingMessages = this.listMessages({ sessionId, chatSessionId })
     if (existingMessages.length > 16) {
       try {
-        await this.compactSession(sessionId, chatSessionId, connId)
+        await this.compactSession(sessionId, chatSessionId, connId, snapshot)
       } catch {
         // Fallback (SPEC 6.8): summary failure trims older messages without blocking current question
       }
@@ -587,7 +595,7 @@ export class ChatService {
         chapterId: currentSession.targetChapterId || undefined
       },
       includeCreativeRules: true
-    })
+    }, snapshot, userMessageId)
 
     // 5. Insert Assistant Message in streaming state
     this.store.transaction(sessionId, (db) => {
@@ -630,6 +638,7 @@ export class ChatService {
     contextPackage: ContextPackage,
     controller: AbortController
   ): Promise<void> {
+    if (!contextPackage.promptSnapshot.budget) throw new ProjectError('STALE_CONTEXT_PACKAGE', '会话上下文缺少请求预算，请重新发起任务')
     let fullText = ''
     let totalTokens = 0
     let checkpointedText = ''
@@ -654,20 +663,16 @@ export class ChatService {
     }
 
     try {
-      const messages =
-        contextPackage.messages && contextPackage.messages.length > 0
-          ? contextPackage.messages
-          : [
-              { role: 'system' as const, content: contextPackage.systemMessage },
-              { role: 'user' as const, content: contextPackage.userMessage }
-            ]
+      if (!contextPackage.messages?.length) throw new ProjectError('STALE_CONTEXT_PACKAGE', '会话上下文缺少实际消息，请重新发起任务')
+      const messages = contextPackage.messages
 
       const stream = this.modelGateway.chatCompletionStream({
         connectionId,
         taskType: 'chat',
         priority: 'high',
         messages,
-        temperature: contextPackage.creativity?.temperature ?? 0.7,
+        maxTokens: contextPackage.promptSnapshot.budget?.maxOutputTokens,
+        requestBudget: contextPackage.promptSnapshot.budget,
         signal: controller.signal,
         isContentRequest: true
       })
@@ -728,6 +733,29 @@ export class ChatService {
     contextPackage: ContextPackage
   ): void {
     const now = Date.now()
+    if (state === 'completed' && contextPackage.stage === 'direction') {
+      const parsed = parseDirectionOutput(fullText)
+      fullText = [parsed.direction, parsed.questions.length
+        ? `【待确认问题】\n${parsed.questions.map((question, index) => `${index + 1}. ${question}`).join('\n')}`
+        : ''].filter(Boolean).join('\n\n')
+      if (!parsed.direction) state = 'failed'
+    } else if (state === 'completed' && contextPackage.stage === 'chapter_outline') {
+      const parsed = parseChapterOutlineOutput(fullText)
+      const sections = [
+        ['本章目标', parsed.modules.goal], ['场景节拍', parsed.modules.sceneBeats],
+        ['人物与动机', parsed.modules.characters], ['冲突与信息增量', parsed.modules.conflicts],
+        ['连续性风险', parsed.modules.continuityRisk], ['结尾钩子', parsed.modules.endingHook]
+      ]
+      if (sections.every(([, content]) => content?.trim())) {
+        fullText = sections.map(([title, content]) => `【${title}】\n${content}`).join('\n\n')
+      } else {
+        fullText = parsed.outline
+        state = 'failed'
+      }
+    } else if (state === 'completed' && contextPackage.stage === 'content') {
+      fullText = parseCreationOutput(fullText).content
+      if (!fullText.trim()) state = 'failed'
+    }
 
     try {
       this.store.transaction(sessionId, (db) => {

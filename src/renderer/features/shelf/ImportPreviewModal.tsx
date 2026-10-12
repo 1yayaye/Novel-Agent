@@ -144,7 +144,7 @@ export function ImportPreviewModal({
         {/* Header */}
         <div className="flex items-center justify-between px-6 py-4 border-b border-[#e5ddd3] bg-[#faf8f5]">
           <div>
-            <h2 className="text-lg font-bold text-[#2c2523] font-serif">导入小说原文预览</h2>
+            <h2 className="text-lg font-bold text-[#2c2523] font-serif">导入预览</h2>
             <p className="text-xs text-[#7d6b59]">确认章节划分与正文排版无误后创建本地工程。</p>
           </div>
           <div className="flex items-center gap-3">
@@ -202,6 +202,7 @@ export function ImportPreviewModal({
             <Input
               value={title}
               onChange={(e) => setTitle(e.target.value)}
+              aria-label="作品名称"
               placeholder="请输入小说作品名称"
               className="flex-1 bg-[#faf8f5] border border-[#dacdbe] rounded-lg px-3 py-1.5 text-xs text-[#2c2523] focus:outline-none focus:ring-2 focus:ring-[#2d6a4f]/30"
             />
@@ -346,7 +347,7 @@ export function ImportPreviewModal({
             <Button variant="secondary" onClick={onClose}>
               取消
             </Button>
-            <Button onClick={() => void finish()}>
+            <Button onClick={() => void finish()} aria-label="确认导入">
               确认导入并开始写作
             </Button>
           </div>

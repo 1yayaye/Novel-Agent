@@ -13,6 +13,7 @@ import type { CreationRunner } from './creation-runner.js'
 import type { CandidateService } from './candidate-service.js'
 import type { ChatService } from './chat-service.js'
 import type { SearchIndex } from './search-index.js'
+import type { PromptSettingsStore } from './prompt-store.js'
 
 export {
   copySourceToNovels,
@@ -29,6 +30,7 @@ function isTrustedSender(event: IpcMainInvokeEvent, window: BrowserWindow): bool
 export function registerProjectIpc(
   window: BrowserWindow,
   store: ProjectStore,
+  promptStore: PromptSettingsStore,
   connectionStore?: ConnectionStore,
   modelGateway?: ModelGateway,
   diagnostics?: DiagnosticsService,
@@ -40,6 +42,7 @@ export function registerProjectIpc(
 ): ServiceRouter {
   const serviceRouter = createServiceRouter({
     store,
+    promptStore,
     connectionStore,
     modelGateway,
     diagnostics,

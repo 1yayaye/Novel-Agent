@@ -1,3 +1,4 @@
+import { PromptSettingsStore } from '../src/main/prompt-store'
 import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -13,6 +14,7 @@ import { KnowledgeRepository } from '../src/main/knowledge-repository'
 describe('ContextAssembler (SPEC 7.2, 7.3, 7.4)', () => {
   let tempDir: string
   let store: ProjectStore
+  let promptStore: PromptSettingsStore
   let connStore: ConnectionStore
   let searchIndex: SearchIndex
   let chapterRepo: ChapterRepository
@@ -27,12 +29,13 @@ describe('ContextAssembler (SPEC 7.2, 7.3, 7.4)', () => {
   beforeEach(async () => {
     tempDir = mkdtempSync(join(tmpdir(), 'novel-context-test-'))
     store = new ProjectStore(tempDir)
+    promptStore = new PromptSettingsStore(store.dataDirectory)
     connStore = new ConnectionStore(tempDir)
     searchIndex = new SearchIndex(store)
     chapterRepo = new ChapterRepository(store, searchIndex)
     creativeRepo = new CreativeRepository(store, searchIndex)
     knowledgeRepo = new KnowledgeRepository(store, searchIndex)
-    assembler = new ContextAssembler(store, searchIndex, connStore)
+    assembler = new ContextAssembler(store, promptStore, searchIndex, connStore)
 
     const conn = connStore.create({
       name: 'Test LLM',
@@ -104,8 +107,8 @@ describe('ContextAssembler (SPEC 7.2, 7.3, 7.4)', () => {
 
     expect(pkg.id).toBeTruthy()
     expect(pkg.taskType).toBe('continue')
-    expect(pkg.systemMessage).toContain('你是一位专业的小说创作助手')
-    expect(pkg.systemMessage).toContain('主角行事必须谨慎低调')
+    expect(pkg.messages.some((message) => message.role === 'system' && message.content.includes('任务范围'))).toBe(true)
+    expect(pkg.userMessage).toContain('主角行事必须谨慎低调')
     expect(pkg.userMessage).toContain('韩立在神手谷后山采药')
     expect(pkg.userMessage).toContain('描写韩立在月下尝试给药草滴入绿液的过程')
     expect(pkg.configurationFingerprint).toBeTruthy()
@@ -151,7 +154,7 @@ describe('ContextAssembler (SPEC 7.2, 7.3, 7.4)', () => {
       isLocalService: true,
       baseUrl: 'http://127.0.0.1:8080/v1',
       model: 'tiny-model',
-      contextWindow: 600, // Small window
+      contextWindow: 2300, // Fits mandatory rules while trimming optional modules
       maxOutputTokens: 200,
       safetyMarginRatio: 0.1,
       tokenEstimationRatio: 1.3
@@ -218,6 +221,6 @@ describe('ContextAssembler (SPEC 7.2, 7.3, 7.4)', () => {
     // Verification should now fail with STALE_CONTEXT_PACKAGE
     expect(() => {
       assembler.verifyContextPackage(sessionId, pkg.id, input)
-    }).toThrow('目标章节正文已发生更新')
+    }).toThrow(expect.objectContaining({ code: 'STALE_CONTEXT_PACKAGE' }))
   })
 })

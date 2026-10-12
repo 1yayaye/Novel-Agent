@@ -25,7 +25,9 @@ export function EditorFloatingMenu({
   }
 
   // Calculate coordinates anchored to cursor selection
-  const top = Math.max(10, selection.rect.top - 46)
+  const top = selection.rect.top < 56
+    ? Math.min(window.innerHeight - 50, selection.rect.bottom + 8)
+    : Math.max(10, selection.rect.top - 46)
   const left = Math.max(10, Math.min(window.innerWidth - 320, selection.rect.left))
 
   return (

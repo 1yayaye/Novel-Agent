@@ -22,13 +22,15 @@ export interface WorkbenchLayoutProps {
   initialChapters: ChapterHeader[]
   onProjectReloaded?: (reloaded: OpenProjectResult) => void
   onCloseProject?: () => void
+  onEditorHandleChange?: (handle: EditorHandle | null) => void
 }
 
 export function WorkbenchLayout({
   project,
   initialChapters,
   onProjectReloaded,
-  onCloseProject
+  onCloseProject,
+  onEditorHandleChange
 }: WorkbenchLayoutProps) {
   const {
     chapters,
@@ -341,6 +343,7 @@ export function WorkbenchLayout({
               onPreferencesChange={setPreferences}
               setHandle={(h) => {
                 editorRef.current = h
+                onEditorHandleChange?.(h)
               }}
               onUpdateChapterTitle={(title) => {
                 if (activeChapter) {

@@ -1,3 +1,4 @@
+import { PromptSettingsStore } from '../src/main/prompt-store'
 import { createServer, type IncomingMessage, type ServerResponse } from 'node:http'
 import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
@@ -20,6 +21,7 @@ describe('T07: Same-Session Direction Confirmation & Chapter Outline Generation'
   let requestHandler: (req: IncomingMessage, res: ServerResponse) => void
   let tempDir: string
   let store: ProjectStore
+  let promptStore: PromptSettingsStore
   let connStore: ConnectionStore
   let diagnostics: DiagnosticsService
   let gateway: ModelGateway
@@ -55,13 +57,14 @@ describe('T07: Same-Session Direction Confirmation & Chapter Outline Generation'
   beforeEach(async () => {
     tempDir = mkdtempSync(join(tmpdir(), 'novel-workflow-stage-chat-test-'))
     store = new ProjectStore(tempDir)
+    promptStore = new PromptSettingsStore(store.dataDirectory)
     connStore = new ConnectionStore(tempDir)
     diagnostics = new DiagnosticsService(tempDir)
     gateway = new ModelGateway(connStore, diagnostics)
     searchIndex = new SearchIndex(store)
     chapterRepo = new ChapterRepository(store, searchIndex)
-    contextAssembler = new ContextAssembler(store, searchIndex, connStore)
-    chatService = new ChatService(store, gateway, connStore, contextAssembler, searchIndex)
+    contextAssembler = new ContextAssembler(store, promptStore, searchIndex, connStore)
+    chatService = new ChatService(store, promptStore, gateway, connStore, contextAssembler, searchIndex)
 
     const conn = connStore.create({
       name: 'Test LLM',
@@ -124,14 +127,16 @@ describe('T07: Same-Session Direction Confirmation & Chapter Outline Generation'
     requestHandler = (_req, res) => {
       res.writeHead(200, { 'Content-Type': 'text/event-stream' })
       const text = `
+<thinking>REASONING_MUST_NOT_DISPLAY</thinking>
 <direction>
-【本章核心方向】
+【核心事件与定位】
 聚焦韩立在七玄门的考核初选与立足过程，突出资源匮乏下的谨慎心性。
 </direction>
 <questions>
 1. 试炼过程中是否揭示铜瓶能够催熟草药的异象？
 2. 考核长老对韩立的态度是冷漠还是暗中留意？
 3. 是否在同门中引入竞争对手？
+4. FOURTH_QUESTION_MUST_BE_OMITTED
 </questions>
 `
       res.write(`data: {"choices":[{"delta":{"content":${JSON.stringify(text)}}}]}\n\n`)
@@ -163,8 +168,9 @@ describe('T07: Same-Session Direction Confirmation & Chapter Outline Generation'
     expect(messages.length).toBe(2)
     const assistantDirMsg = messages[1]
     expect(assistantDirMsg.role).toBe('assistant')
-    expect(assistantDirMsg.content).toContain('【本章核心方向】')
-    expect(assistantDirMsg.content).toContain('【本章核心方向】')
+    expect(assistantDirMsg.content).toContain('【核心事件与定位】')
+    expect(assistantDirMsg.content).not.toContain('REASONING_MUST_NOT_DISPLAY')
+    expect(assistantDirMsg.content).not.toContain('FOURTH_QUESTION_MUST_BE_OMITTED')
 
     // Parse direction output
     const parsedDir = parseStageOutput('direction', assistantDirMsg.content) as any
@@ -184,6 +190,7 @@ describe('T07: Same-Session Direction Confirmation & Chapter Outline Generation'
     requestHandler = (_req, res) => {
       res.writeHead(200, { 'Content-Type': 'text/event-stream' })
       const outlineText = `
+<analysis>OUTLINE_REASONING_MUST_NOT_DISPLAY</analysis>
 <chapter_outline>
 【本章目标】
 通过七玄门初选考核，确立药园杂役身份，获得安稳修炼环境。
@@ -230,6 +237,8 @@ describe('T07: Same-Session Direction Confirmation & Chapter Outline Generation'
     const parsedOutline = parseStageOutput('chapter_outline', assistantOutlineMsg.content) as any
     expect(parsedOutline.modules.goal).toContain('通过七玄门初选考核')
     expect(parsedOutline.modules.endingHook).toContain('面色阴沉的墨大夫')
+    expect(Object.values(parsedOutline.modules).filter((value) => typeof value === 'string' && value.trim())).toHaveLength(6)
+    expect(assistantOutlineMsg.content).not.toContain('OUTLINE_REASONING_MUST_NOT_DISPLAY')
 
     // 4. Save chapter outline to database, edit it, and confirm it
     const savedOutline = store.saveChapterOutline(sessionId, {
@@ -264,7 +273,7 @@ describe('T07: Same-Session Direction Confirmation & Chapter Outline Generation'
     const reloadedMessages = chatService.listMessages({ sessionId, chatSessionId: workflowSession.id })
     expect(reloadedMessages.length).toBe(4)
     expect(reloadedMessages[0].content).toContain('请帮我梳理第一章的续写方向')
-    expect(reloadedMessages[1].content).toContain('【本章核心方向】')
+    expect(reloadedMessages[1].content).toContain('【核心事件与定位】')
     expect(reloadedMessages[2].content).toContain('确认方向')
     expect(reloadedMessages[3].content).toContain('【本章目标】')
   })

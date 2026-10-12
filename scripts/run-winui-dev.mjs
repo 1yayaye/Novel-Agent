@@ -1,9 +1,11 @@
 import { spawn, spawnSync } from 'node:child_process'
+import { existsSync } from 'node:fs'
 import { resolve } from 'node:path'
 
 const DEV_SERVER_URL = process.env.NOVEL_AGENT_DEV_URL || 'http://localhost:5173'
 const PROJECT_ROOT = resolve(import.meta.dirname, '..')
 const WINUI_PROJECT = resolve(PROJECT_ROOT, 'src-winui/NovelAgent.WinUI.csproj')
+const isWin = process.platform === 'win32'
 
 async function isDevServerActive(url = DEV_SERVER_URL) {
   try {
@@ -61,13 +63,22 @@ process.on('exit', () => {
   cleanup()
 })
 
+const sidecarPath = resolve(PROJECT_ROOT, 'out/main/sidecar.cjs')
+if (!existsSync(sidecarPath)) {
+  console.log('[winui:dev] Pre-building backend sidecar (pnpm build)...')
+  spawnSync(isWin ? 'pnpm.cmd' : 'pnpm', ['build'], {
+    cwd: PROJECT_ROOT,
+    stdio: 'inherit',
+    shell: isWin
+  })
+}
+
 console.log(`[winui:dev] Checking Vite dev server at ${DEV_SERVER_URL}...`)
 let alreadyRunning = await isDevServerActive(DEV_SERVER_URL)
 
 if (!alreadyRunning) {
-  console.log('[winui:dev] Starting Vite dev server in background (rendererOnly)...')
-  const npxCmd = process.platform === 'win32' ? 'npx.cmd' : 'npx'
-  viteChild = spawn(npxCmd, ['electron-vite', 'dev', '--rendererOnly'], {
+  console.log('[winui:dev] Starting Vite renderer dev server in background...')
+  viteChild = spawn(process.execPath, [resolve(PROJECT_ROOT, 'scripts/run-winui-renderer-dev.mjs')], {
     cwd: PROJECT_ROOT,
     stdio: 'inherit',
     env: { ...process.env }
@@ -89,13 +100,14 @@ if (!alreadyRunning) {
 }
 
 console.log('[winui:dev] Launching WinUI 3 host application...')
-const dotnetCmd = process.platform === 'win32' ? 'dotnet.exe' : 'dotnet'
+const dotnetCmd = isWin ? 'dotnet.exe' : 'dotnet'
 winuiChild = spawn(
   dotnetCmd,
   ['run', '--project', WINUI_PROJECT, '-p:Platform=x64'],
   {
     cwd: PROJECT_ROOT,
     stdio: 'inherit',
+    shell: isWin,
     env: {
       ...process.env,
       NOVEL_AGENT_DEV_URL: DEV_SERVER_URL

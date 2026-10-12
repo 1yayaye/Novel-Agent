@@ -1,3 +1,4 @@
+import { PromptSettingsStore } from '../../../src/main/prompt-store'
 import { createServer, type IncomingMessage, type ServerResponse, type Server } from 'node:http'
 import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
@@ -149,15 +150,16 @@ export async function createDualTrackTestEnv(): Promise<DualTrackTestEnv> {
   const diagnostics = new DiagnosticsService(dataDir)
   const gateway = new ModelGateway(connectionStore, diagnostics)
   const store = new ProjectStore(dataDir, connectionStore)
+  const promptStore = new PromptSettingsStore(store.dataDirectory)
   const searchIndex = new SearchIndex(store, gateway, connectionStore)
   const chapters = new ChapterRepository(store, searchIndex)
   const knowledge = new KnowledgeRepository(store, searchIndex)
   const creative = new CreativeRepository(store, searchIndex)
-  const contextAssembler = new ContextAssembler(store, searchIndex, connectionStore, gateway)
+  const contextAssembler = new ContextAssembler(store, promptStore, searchIndex, connectionStore, gateway)
   const candidateService = new CandidateService(store, searchIndex)
   const creationRunner = new CreationRunner(store, gateway, connectionStore, contextAssembler, candidateService)
-  const chatService = new ChatService(store, gateway, connectionStore, contextAssembler, searchIndex)
-  const analysisRunner = new AnalysisRunner(store, gateway, connectionStore, searchIndex)
+  const chatService = new ChatService(store, promptStore, gateway, connectionStore, contextAssembler, searchIndex)
+  const analysisRunner = new AnalysisRunner(store, promptStore, gateway, connectionStore, searchIndex)
 
   // Configure connection store to point to mock LLM server
   connectionStore.create({

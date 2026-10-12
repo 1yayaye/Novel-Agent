@@ -7,6 +7,10 @@
 
 import { z } from 'zod'
 import {
+  PresetConversionInputSchema, PresetConversionTaskInputSchema, PresetConversionInspectionSchema,
+  StartPresetConversionResultSchema, PresetConversionStatusSchema, PresetConversionResultSchema
+} from '../preset-conversion'
+import {
   AcceptSuggestionInputSchema,
   AddReportAnnotationInputSchema,
   ArchiveKnowledgeEntryInputSchema,
@@ -54,6 +58,11 @@ import {
   GetChapterSummaryInputSchema,
   GetCharacterRelationshipInputSchema,
   GetCreativeRuleInputSchema,
+  GetPromptBundleInputSchema,
+  PromptBundleSchema,
+  PresetStoreDataSchema,
+  NovelPromptPresetSchema,
+  PromptSettingsStateSchema,
   GetIndexStatusInputSchema,
   GetInstructionPresetInputSchema,
   GetKnowledgeEntryInputSchema,
@@ -82,6 +91,7 @@ import {
   ListCharacterRelationshipsInputSchema,
   ListConsistencyIssuesInputSchema,
   ListInstructionPresetsInputSchema,
+  ResetInstructionPresetsInputSchema,
   ListKnowledgeEntriesInputSchema,
   ListRecentProjectsResultSchema,
   ListReportsInputSchema,
@@ -311,7 +321,9 @@ export function createNovelAgentApi(transport: IpcTransport): NovelAgentApi {
       chooseAndOpen: () => invokeApi(transport, 'project.chooseAndOpen', undefined, z.undefined(), OpenProjectResultSchema.nullable()),
       previewImport: (input = {}) => invokeApi(transport, 'project.previewImport', input, ImportPreviewInputSchema, ImportPreviewResultSchema),
       import: (input) => invokeApi(transport, 'project.import', input, ImportProjectInputSchema, ImportProjectResultSchema),
-      export: (input) => invokeApi(transport, 'project.export', input, ExportProjectInputSchema, ExportProjectResultSchema.nullable())
+      export: (input) => invokeApi(transport, 'project.export', input, ExportProjectInputSchema, ExportProjectResultSchema.nullable()),
+      onOpenProjectRequested: (callback: (path: string) => void) =>
+        subscribeEvent(transport, 'project:open-path', callback, z.string())
     },
     chapter: {
       list: (input) => invokeApi(transport, 'chapter.list', input, ListChaptersInputSchema, z.array(ChapterHeaderSchema)),
@@ -359,7 +371,20 @@ export function createNovelAgentApi(transport: IpcTransport): NovelAgentApi {
       get: (input) => invokeApi(transport, 'preset.get', input, GetInstructionPresetInputSchema, InstructionPresetSchema),
       create: (input) => invokeApi(transport, 'preset.create', input, CreateInstructionPresetInputSchema, InstructionPresetSchema),
       update: (input) => invokeApi(transport, 'preset.update', input, UpdateInstructionPresetInputSchema, InstructionPresetSchema),
-      delete: (input) => invokeApi(transport, 'preset.delete', input, DeleteInstructionPresetInputSchema, SuccessResultSchema)
+      delete: (input) => invokeApi(transport, 'preset.delete', input, DeleteInstructionPresetInputSchema, SuccessResultSchema),
+      resetDefaults: (input) => invokeApi(transport, 'preset.resetDefaults', input, ResetInstructionPresetsInputSchema, z.array(InstructionPresetSchema))
+    },
+    prompt: {
+      getBundle: (input) => invokeApi(transport, 'prompt.getBundle', input, GetPromptBundleInputSchema, PromptBundleSchema),
+      getPresetStore: () => invokeApi(transport, 'prompt.getPresetStore', undefined, z.undefined(), PromptSettingsStateSchema),
+      savePresetStore: (input) => invokeApi(transport, 'prompt.savePresetStore', input, PresetStoreDataSchema, PromptSettingsStateSchema),
+      parseTavernFile: (jsonContent) => invokeApi(transport, 'prompt.parseTavernFile', jsonContent, z.string(), NovelPromptPresetSchema),
+      inspectPresetConversion: (input) => invokeApi(transport, 'prompt.inspectPresetConversion', input, PresetConversionInputSchema, PresetConversionInspectionSchema),
+      startPresetConversion: (input) => invokeApi(transport, 'prompt.startPresetConversion', input, PresetConversionInputSchema, StartPresetConversionResultSchema),
+      getPresetConversionStatus: (input) => invokeApi(transport, 'prompt.getPresetConversionStatus', input, PresetConversionTaskInputSchema, PresetConversionStatusSchema),
+      getPresetConversionResult: (input) => invokeApi(transport, 'prompt.getPresetConversionResult', input, PresetConversionTaskInputSchema, PresetConversionResultSchema),
+      cancelPresetConversion: (input) => invokeApi(transport, 'prompt.cancelPresetConversion', input, PresetConversionTaskInputSchema, SuccessResultSchema),
+      onPresetConversionProgress: (callback) => subscribeEvent(transport, 'preset-conversion:progress', callback, PresetConversionStatusSchema)
     },
     knowledge: {
       list: (input) => invokeApi(transport, 'knowledge.list', input, ListKnowledgeEntriesInputSchema, z.array(KnowledgeEntrySchema)),

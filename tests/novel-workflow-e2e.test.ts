@@ -1,3 +1,4 @@
+import { PromptSettingsStore } from '../src/main/prompt-store'
 import { createServer, type IncomingMessage, type ServerResponse } from 'node:http'
 import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
@@ -56,15 +57,16 @@ describe('T11: End-to-End Novel Workflow Integration Test (15-Step Full Loop)', 
     const diagnostics = new DiagnosticsService(dataDir)
     const gateway = new ModelGateway(connectionStore, diagnostics)
     const store = new ProjectStore(dataDir, connectionStore)
+    const promptStore = new PromptSettingsStore(store.dataDirectory)
     const searchIndex = new SearchIndex(store, gateway, connectionStore)
     const chapterRepo = new ChapterRepository(store, searchIndex)
     const knowledgeRepo = new KnowledgeRepository(store, searchIndex)
     const creativeRepo = new CreativeRepository(store, searchIndex)
-    const contextAssembler = new ContextAssembler(store, searchIndex, connectionStore, gateway)
+    const contextAssembler = new ContextAssembler(store, promptStore, searchIndex, connectionStore, gateway)
     const candidateService = new CandidateService(store, searchIndex)
     const creationRunner = new CreationRunner(store, gateway, connectionStore, contextAssembler, candidateService)
-    const chatService = new ChatService(store, gateway, connectionStore, contextAssembler, searchIndex)
-    const analysisRunner = new AnalysisRunner(store, gateway, connectionStore, searchIndex)
+    const chatService = new ChatService(store, promptStore, gateway, connectionStore, contextAssembler, searchIndex)
+    const analysisRunner = new AnalysisRunner(store, promptStore, gateway, connectionStore, searchIndex)
 
     try {
       // 0. Set up model connection and confirmed content target
@@ -394,7 +396,7 @@ describe('T11: End-to-End Novel Workflow Integration Test (15-Step Full Loop)', 
       expect(confirmedPkg.workflowType).toBe('creation_workflow')
       expect(confirmedPkg.items.some((i) => i.sourceType === 'chapter_outline')).toBe(true)
       expect(confirmedPkg.items.some((i) => i.sourceType === 'book_outline')).toBe(true)
-      expect(confirmedPkg.userMessage).toContain('【项目大纲规划】')
+      expect(confirmedPkg.userMessage).toContain('【全书大纲】')
       expect(confirmedPkg.userMessage).toContain('章大纲（第二章 药园异变）')
       expect(confirmedPkg.userMessage).toContain('证实小瓶绿液能百倍加速灵药生长')
 

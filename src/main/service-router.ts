@@ -49,6 +49,11 @@ import {
   GetChapterSummaryInputSchema,
   GetCharacterRelationshipInputSchema,
   GetCreativeRuleInputSchema,
+  GetPromptBundleInputSchema,
+  PromptBundleSchema,
+  PresetStoreDataSchema,
+  NovelPromptPresetSchema,
+  PromptSettingsStateSchema,
   GetIndexStatusInputSchema,
   GetInstructionPresetInputSchema,
   GetKnowledgeEntryInputSchema,
@@ -77,6 +82,7 @@ import {
   ListCharacterRelationshipsInputSchema,
   ListConsistencyIssuesInputSchema,
   ListInstructionPresetsInputSchema,
+  ResetInstructionPresetsInputSchema,
   ListKnowledgeEntriesInputSchema,
   ListRecentProjectsResultSchema,
   ListReportsInputSchema,
@@ -181,6 +187,8 @@ import {
   UpdateChatSummaryInputSchema
 } from '../shared/project.js'
 import { ProjectError, ProjectStore } from './project-store.js'
+import type { PromptSettingsStore } from './prompt-store.js'
+import { parseTavernPreset } from './tavern-importer.js'
 import { ChapterRepository } from './chapter-repository.js'
 import { CreativeRepository } from './creative-repository.js'
 import { KnowledgeRepository } from './knowledge-repository.js'
@@ -196,6 +204,15 @@ import type { ConnectionStore } from './connection-store.js'
 import type { ModelGateway } from './model-gateway.js'
 import type { DiagnosticsService } from './diagnostics.js'
 import type { AnalysisRunner } from './analysis-runner.js'
+import { PresetConversionService } from './preset-conversion.js'
+import {
+  PresetConversionInputSchema,
+  PresetConversionTaskInputSchema,
+  PresetConversionInspectionSchema,
+  StartPresetConversionResultSchema,
+  PresetConversionStatusSchema,
+  PresetConversionResultSchema
+} from '../shared/preset-conversion.js'
 
 export interface WindowDelegate {
   minimize?: () => boolean | void
@@ -216,6 +233,7 @@ export interface WindowDelegate {
 
 export interface ServiceRouterDependencies {
   store: ProjectStore
+  promptStore: PromptSettingsStore
   connectionStore?: ConnectionStore
   modelGateway?: ModelGateway
   diagnostics?: DiagnosticsService
@@ -293,15 +311,16 @@ function sanitizeFileName(name: string): string {
 }
 
 export function createServiceRouter(deps: ServiceRouterDependencies): ServiceRouter {
-  const { store, connectionStore, modelGateway, diagnostics, analysisRunner, windowDelegate } = deps
+  const { store, promptStore, connectionStore, modelGateway, diagnostics, analysisRunner, windowDelegate } = deps
   const searchIndex = deps.searchIndexInstance || new SearchIndex(store, modelGateway, connectionStore)
   const chapters = new ChapterRepository(store, searchIndex)
   const creatives = new CreativeRepository(store, searchIndex)
   const knowledges = new KnowledgeRepository(store, searchIndex)
-  const contextAssembler = connectionStore ? new ContextAssembler(store, searchIndex, connectionStore, modelGateway) : undefined
+  const contextAssembler = connectionStore ? new ContextAssembler(store, promptStore, searchIndex, connectionStore, modelGateway) : undefined
   const candidateSvc = deps.candidateService || new CandidateService(store, searchIndex)
   const creationRun = deps.creationRunner || (connectionStore && modelGateway && contextAssembler ? new CreationRunner(store, modelGateway, connectionStore, contextAssembler, candidateSvc) : undefined)
-  const chatSvc = deps.chatService || (connectionStore && modelGateway && contextAssembler ? new ChatService(store, modelGateway, connectionStore, contextAssembler, searchIndex) : undefined)
+  const chatSvc = deps.chatService || (connectionStore && modelGateway && contextAssembler ? new ChatService(store, promptStore, modelGateway, connectionStore, contextAssembler, searchIndex) : undefined)
+  const presetConversion = new PresetConversionService(store, connectionStore, modelGateway, (status) => emit('preset-conversion:progress', status))
 
   const eventListeners = new Set<(event: { channel: string; payload: unknown }) => void>()
   const emit = (channel: string, payload: unknown) => {
@@ -495,6 +514,33 @@ export function createServiceRouter(deps: ServiceRouterDependencies): ServiceRou
   register('preset.delete', DeleteInstructionPresetInputSchema, SuccessResultSchema, (input) => {
     store.assertAnalysisPipelines(input.sessionId)
     return creatives.deletePreset(input.sessionId, input.presetId, input.expectedVersion)
+  })
+  register('preset.resetDefaults', ResetInstructionPresetsInputSchema, z.array(InstructionPresetSchema), (input) => {
+    store.assertAnalysisPipelines(input.sessionId)
+    return creatives.resetDefaultPresets(input.sessionId)
+  })
+
+  // Prompt namespace：项目级创作资料
+  register('prompt.getBundle', GetPromptBundleInputSchema, PromptBundleSchema, (input) => creatives.getPromptBundle(input.sessionId))
+
+  // Prompt namespace：应用级预设库管理与酒馆预设导入
+  register('prompt.getPresetStore', z.undefined(), PromptSettingsStateSchema, () => promptStore.get())
+  register('prompt.savePresetStore', PresetStoreDataSchema, PromptSettingsStateSchema, (input) => promptStore.save(input))
+  register('prompt.parseTavernFile', z.string(), NovelPromptPresetSchema, (input) => Promise.resolve(parseTavernPreset(input)))
+  register('prompt.inspectPresetConversion', PresetConversionInputSchema, PresetConversionInspectionSchema, (input) => {
+    return presetConversion.inspect(input)
+  })
+  register('prompt.startPresetConversion', PresetConversionInputSchema, StartPresetConversionResultSchema, (input) => {
+    return presetConversion.start(input)
+  })
+  register('prompt.getPresetConversionStatus', PresetConversionTaskInputSchema, PresetConversionStatusSchema, (input) => {
+    return presetConversion.getStatus(input.taskId)
+  })
+  register('prompt.getPresetConversionResult', PresetConversionTaskInputSchema, PresetConversionResultSchema, (input) => {
+    return presetConversion.getResult(input.taskId)
+  })
+  register('prompt.cancelPresetConversion', PresetConversionTaskInputSchema, SuccessResultSchema, (input) => {
+    return presetConversion.cancel(input.taskId)
   })
 
   // Knowledge namespace
@@ -850,6 +896,7 @@ export function createServiceRouter(deps: ServiceRouterDependencies): ServiceRou
     },
     async dispose() {
       eventListeners.clear()
+      await presetConversion.dispose()
       await store.closeAll()
     },
     has(channel: string) {

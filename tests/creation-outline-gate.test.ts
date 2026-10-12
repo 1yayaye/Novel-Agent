@@ -1,3 +1,4 @@
+import { PromptSettingsStore } from '../src/main/prompt-store'
 import { createServer, type IncomingMessage, type ServerResponse } from 'node:http'
 import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
@@ -20,6 +21,7 @@ describe('T08: Outline Confirmation Gate & Creation Candidate Generation', () =>
   let requestHandler: (req: IncomingMessage, res: ServerResponse) => void
   let tempDir: string
   let store: ProjectStore
+  let promptStore: PromptSettingsStore
   let connStore: ConnectionStore
   let diagnostics: DiagnosticsService
   let gateway: ModelGateway
@@ -55,12 +57,13 @@ describe('T08: Outline Confirmation Gate & Creation Candidate Generation', () =>
   beforeEach(async () => {
     tempDir = mkdtempSync(join(tmpdir(), 'novel-creation-gate-test-'))
     store = new ProjectStore(tempDir)
+    promptStore = new PromptSettingsStore(store.dataDirectory)
     connStore = new ConnectionStore(tempDir)
     diagnostics = new DiagnosticsService(tempDir)
     gateway = new ModelGateway(connStore, diagnostics)
     searchIndex = new SearchIndex(store)
     chapterRepo = new ChapterRepository(store, searchIndex)
-    contextAssembler = new ContextAssembler(store, searchIndex, connStore)
+    contextAssembler = new ContextAssembler(store, promptStore, searchIndex, connStore)
     candidateService = new CandidateService(store, searchIndex)
     runner = new CreationRunner(store, gateway, connStore, contextAssembler, candidateService)
 
@@ -158,7 +161,6 @@ describe('T08: Outline Confirmation Gate & Creation Candidate Generation', () =>
     })
 
     // Context package contains outline in Tier 9
-    expect(pkg.userMessage).toContain('【项目大纲规划】')
     expect(pkg.userMessage).toContain('章大纲（第一章 宗门大选）')
     expect(pkg.userMessage).toContain('已锁定大纲')
 

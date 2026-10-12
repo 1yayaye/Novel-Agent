@@ -71,7 +71,10 @@ describe('review fixes', () => {
       configurable: true,
       value: {
         chapter: { list },
-        project: { listRecent: vi.fn().mockResolvedValue([]) }
+        project: {
+          listRecent: vi.fn().mockResolvedValue([]),
+          close: vi.fn().mockResolvedValue(undefined)
+        }
       }
     })
 
@@ -132,9 +135,8 @@ describe('review fixes', () => {
     expect(read('src/renderer/features/editor/EditorStatusBar.tsx')).toContain('key={totalWords}')
     expect(read('src/renderer/components/dialogs/SpotlightTour.tsx')).not.toContain('motion/react')
     expect(read('src/renderer/components/dialogs/StartAnalysisDialog.tsx')).toContain('canUsePipelines')
-    expect(existsSync(resolve(root, 'docs/project-compatibility-and-capabilities.md'))).toBe(true)
+    expect(existsSync(resolve(root, 'docs/preset-conversion-api.md'))).toBe(true)
     expect(read('.gitignore')).not.toMatch(/^docs\/$/m)
-    expect(existsSync(resolve(root, 'docs/frontend-architecture.md'))).toBe(true)
-    expect(existsSync(resolve(root, 'docs/adr/0005-renderer-component-and-workspace-interaction-hierarchy.md'))).toBe(true)
+    expect(existsSync(resolve(root, 'docs/gemini-review.md'))).toBe(true)
   })
 })

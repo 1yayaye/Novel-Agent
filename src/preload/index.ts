@@ -1,6 +1,10 @@
 import { contextBridge, ipcRenderer } from 'electron'
 import { z } from 'zod'
 import {
+  PresetConversionInputSchema, PresetConversionTaskInputSchema, PresetConversionInspectionSchema,
+  StartPresetConversionResultSchema, PresetConversionStatusSchema, PresetConversionResultSchema
+} from '../shared/preset-conversion'
+import {
   AcceptSuggestionInputSchema,
   AddReportAnnotationInputSchema,
   ArchiveKnowledgeEntryInputSchema,
@@ -35,6 +39,7 @@ import {
   DeleteChapterOutlineInputSchema,
   DeleteCharacterRelationshipInputSchema,
   DeleteInstructionPresetInputSchema,
+  ResetInstructionPresetsInputSchema,
   DeleteKnowledgeEntryInputSchema,
   DeleteReportAnnotationInputSchema,
   DeleteStyleSampleInputSchema,
@@ -48,6 +53,11 @@ import {
   GetChapterSummaryInputSchema,
   GetCharacterRelationshipInputSchema,
   GetCreativeRuleInputSchema,
+  GetPromptBundleInputSchema,
+  PromptBundleSchema,
+  PresetStoreDataSchema,
+  NovelPromptPresetSchema,
+  PromptSettingsStateSchema,
   GetIndexStatusInputSchema,
   GetInstructionPresetInputSchema,
   GetKnowledgeEntryInputSchema,
@@ -210,7 +220,14 @@ const api: NovelAgentApi = {
     chooseAndOpen: () => invoke('project.chooseAndOpen', undefined, z.undefined(), OpenProjectResultSchema.nullable()),
     previewImport: (input = {}) => invoke('project.previewImport', input, ImportPreviewInputSchema, ImportPreviewResultSchema),
     import: (input) => invoke('project.import', input, ImportProjectInputSchema, ImportProjectResultSchema),
-    export: (input) => invoke('project.export', input, ExportProjectInputSchema, ExportProjectResultSchema.nullable())
+    export: (input) => invoke('project.export', input, ExportProjectInputSchema, ExportProjectResultSchema.nullable()),
+    onOpenProjectRequested: (callback: (path: string) => void) => {
+      const listener = (_event: Electron.IpcRendererEvent, path: unknown) => {
+        if (typeof path === 'string' && path) callback(path)
+      }
+      ipcRenderer.on('project:open-path', listener)
+      return () => ipcRenderer.removeListener('project:open-path', listener)
+    }
   },
   chapter: {
     list: (input) => invoke('chapter.list', input, ListChaptersInputSchema, z.array(ChapterHeaderSchema)),
@@ -258,7 +275,27 @@ const api: NovelAgentApi = {
     get: (input) => invoke('preset.get', input, GetInstructionPresetInputSchema, InstructionPresetSchema),
     create: (input) => invoke('preset.create', input, CreateInstructionPresetInputSchema, InstructionPresetSchema),
     update: (input) => invoke('preset.update', input, UpdateInstructionPresetInputSchema, InstructionPresetSchema),
-    delete: (input) => invoke('preset.delete', input, DeleteInstructionPresetInputSchema, SuccessResultSchema)
+    delete: (input) => invoke('preset.delete', input, DeleteInstructionPresetInputSchema, SuccessResultSchema),
+    resetDefaults: (input) => invoke('preset.resetDefaults', input, ResetInstructionPresetsInputSchema, z.array(InstructionPresetSchema))
+  },
+  prompt: {
+    getBundle: (input) => invoke('prompt.getBundle', input, GetPromptBundleInputSchema, PromptBundleSchema),
+    getPresetStore: () => invoke('prompt.getPresetStore', undefined, z.undefined(), PromptSettingsStateSchema),
+    savePresetStore: (input) => invoke('prompt.savePresetStore', input, PresetStoreDataSchema, PromptSettingsStateSchema),
+    parseTavernFile: (jsonContent) => invoke('prompt.parseTavernFile', jsonContent, z.string(), NovelPromptPresetSchema),
+    inspectPresetConversion: (input) => invoke('prompt.inspectPresetConversion', input, PresetConversionInputSchema, PresetConversionInspectionSchema),
+    startPresetConversion: (input) => invoke('prompt.startPresetConversion', input, PresetConversionInputSchema, StartPresetConversionResultSchema),
+    getPresetConversionStatus: (input) => invoke('prompt.getPresetConversionStatus', input, PresetConversionTaskInputSchema, PresetConversionStatusSchema),
+    getPresetConversionResult: (input) => invoke('prompt.getPresetConversionResult', input, PresetConversionTaskInputSchema, PresetConversionResultSchema),
+    cancelPresetConversion: (input) => invoke('prompt.cancelPresetConversion', input, PresetConversionTaskInputSchema, SuccessResultSchema),
+    onPresetConversionProgress: (callback) => {
+      const listener = (_event: Electron.IpcRendererEvent, data: unknown) => {
+        const result = PresetConversionStatusSchema.safeParse(data)
+        if (result.success) callback(result.data)
+      }
+      ipcRenderer.on('preset-conversion:progress', listener)
+      return () => ipcRenderer.removeListener('preset-conversion:progress', listener)
+    }
   },
   knowledge: {
     list: (input) => invoke('knowledge.list', input, ListKnowledgeEntriesInputSchema, z.array(KnowledgeEntrySchema)),

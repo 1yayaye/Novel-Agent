@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react'
 import { Activity, Check, RefreshCw } from 'lucide-react'
-import { ModelConnectionKind, ModelConnectionSummary, RemoteModelSummary } from '../../../shared/project'
+import { ModelConnectionKind, ModelConnectionSummary, ReasoningEffort, RemoteModelSummary } from '../../../shared/project'
 import { errorText } from '../../utils/formatters'
 import { getEndpointHost, computeSha256Fingerprint } from '../../utils/crypto'
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from '@appica/ui-react/dialog'
@@ -38,6 +38,7 @@ export function ConnectionEditDialog({
   const [jsonSchema, setJsonSchema] = useState(connection?.capabilities?.jsonSchema ?? true)
   const [temperature, setTemperature] = useState(connection?.capabilities?.temperature ?? true)
   const [usage, setUsage] = useState(connection?.capabilities?.usage ?? true)
+  const [reasoningEffort, setReasoningEffort] = useState<string>(connection?.reasoningEffort || 'none_selected')
 
   const [testing, setTesting] = useState(false)
   const [testResult, setTestResult] = useState<{ success: boolean; latencyMs?: number; message?: string } | null>(null)
@@ -132,7 +133,8 @@ export function ConnectionEditDialog({
           safetyMarginRatio,
           tokenEstimationRatio,
           batchSize,
-          capabilities: { streaming, jsonSchema, temperature, usage }
+          capabilities: { streaming, jsonSchema, temperature, usage },
+          reasoningEffort: reasoningEffort === 'none_selected' ? null : (reasoningEffort as ReasoningEffort)
         })
       } else {
         await window.novelAgent.connection.create({
@@ -147,7 +149,8 @@ export function ConnectionEditDialog({
           safetyMarginRatio,
           tokenEstimationRatio,
           batchSize,
-          capabilities: { streaming, jsonSchema, temperature, usage }
+          capabilities: { streaming, jsonSchema, temperature, usage },
+          reasoningEffort: reasoningEffort === 'none_selected' ? undefined : (reasoningEffort as ReasoningEffort)
         })
       }
       onSaved()
@@ -339,6 +342,28 @@ export function ConnectionEditDialog({
                       onChange={(e) => setSafetyMarginRatio(Number(e.target.value) || 0.1)}
                     />
                   </div>
+                </div>
+
+                <div className="flex flex-col gap-1 text-xs">
+                  <div className="flex items-center justify-between">
+                    <label className="font-semibold text-[#7d6b59]">推理深度 (Reasoning Effort)</label>
+                    <span className="text-[11px] text-[#7d6b59]">用于 o1、o3-mini 等推理模型控制思考算力开销，留空由服务商决定</span>
+                  </div>
+                  <Select
+                    value={reasoningEffort}
+                    onValueChange={(val) => setReasoningEffort(val as string)}
+                  >
+                    <SelectTrigger className="rounded-lg border border-[#dacdbe] bg-white px-3 py-2 text-sm text-[#2c2523]">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="none_selected">-- 未指定 (不发送 reasoning_effort) --</SelectItem>
+                      <SelectItem value="low">low (低思考预算 / 响应更快速)</SelectItem>
+                      <SelectItem value="medium">medium (中思考预算 / 平衡)</SelectItem>
+                      <SelectItem value="high">high (高思考预算 / 深度推理)</SelectItem>
+                      <SelectItem value="none">none (关闭推理 / 仅在模型支持时)</SelectItem>
+                    </SelectContent>
+                  </Select>
                 </div>
 
                 <div className="flex flex-col gap-2 text-xs">

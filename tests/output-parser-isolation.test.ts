@@ -31,7 +31,7 @@ describe('T09: Output Parser & Derived Information Isolation', () => {
       const parsed = parseCreationOutput(rawText)
 
       expect(parsed.rawOutput).toBe(rawText)
-      expect(parsed.thinking).toContain('主角目前处于劣势')
+      expect(parsed).not.toHaveProperty('thinking')
       expect(parsed.summary).toContain('韩立借地形摆脱追兵')
       expect(parsed.plotOptions).toEqual([
         '潜入药园寻找墨大夫',
@@ -51,7 +51,7 @@ describe('T09: Output Parser & Derived Information Isolation', () => {
 
       expect(parsed.rawOutput).toBe(rawText)
       expect(parsed.content).toBe(rawText)
-      expect(parsed.thinking).toBeUndefined()
+      expect(parsed).not.toHaveProperty('thinking')
       expect(parsed.summary).toBeUndefined()
       expect(parsed.plotOptions).toBeUndefined()
       expect(parsed.warnings.length).toBe(0)
@@ -66,7 +66,7 @@ describe('T09: Output Parser & Derived Information Isolation', () => {
       const parsed = parseCreationOutput(rawText)
 
       expect(parsed.rawOutput).toBe(rawText)
-      expect(parsed.thinking).toContain('需要描写身体受力与泥泞环境。')
+      expect(parsed).not.toHaveProperty('thinking')
       expect(parsed.content).toBe('靴底深陷泥潭，拔出时发出沉闷的黏滞声。韩立压低身形，反手扣住剑柄。')
       expect(parsed.content).not.toContain('<thinking>')
       expect(parsed.warnings.length).toBeGreaterThan(0)
@@ -98,7 +98,7 @@ describe('T09: Output Parser & Derived Information Isolation', () => {
       const parsed = parseCreationOutput(rawText)
 
       expect(parsed.rawOutput).toBe(rawText)
-      expect(parsed.thinking).toContain('本段聚焦潜入过程中的声响控制。')
+      expect(parsed).not.toHaveProperty('thinking')
       expect(parsed.content).toBe('铁锁在掌心浸得冰凉。\n\n韩立用细铁丝探入锁孔，指尖微颤，随着极轻的一声“咔哒”，锁舌应声弹开。')
       expect(parsed.plotOptions).toEqual([
         '立即推门而入',
@@ -106,6 +106,120 @@ describe('T09: Output Parser & Derived Information Isolation', () => {
       ])
       expect(parsed.content).not.toContain('【构思推演】')
       expect(parsed.content).not.toContain('【剧情选项】')
+    })
+
+    it('handles Category 5: Interleaved thinking and content with <Interleaving> wrapper', () => {
+      const rawText = `<Interleaving>
+<thinking>
+第一段思考：确定环境与氛围，雨夜，古寺。
+</thinking>
+破庙外的暴雨丝毫没有停歇的意思，雨水顺着漏风的屋檐哗啦啦地砸落。韩立收拢衣袍，蹲在佛像背后。
+
+<thinking>
+第二段思考：推进动作，墨大夫递出汤药，试探心理。
+</thinking>
+墨大夫从暗影中转出身来，苍白枯槁的手指端着一碗散发着古怪腥甜味的黑褐色汤药，眼皮微抬，望了过来。
+</Interleaving>`
+
+      const parsed = parseCreationOutput(rawText)
+
+      expect(parsed.rawOutput).toBe(rawText)
+      expect(parsed).not.toHaveProperty('thinking')
+      expect(parsed.content).not.toContain('<Interleaving>')
+      expect(parsed.content).not.toContain('</Interleaving>')
+      expect(parsed.content).not.toContain('<thinking>')
+      expect(parsed.content).not.toContain('</thinking>')
+      expect(parsed.content).not.toContain('第一段思考')
+      expect(parsed.content).not.toContain('第二段思考')
+      expect(parsed.content).toContain('破庙外的暴雨丝毫没有停歇的意思')
+      expect(parsed.content).toContain('墨大夫从暗影中转出身来')
+    })
+
+    it('handles Category 6: Multi-model CoT with thinking_left/right/director and choice tags (智脑-Z style)', () => {
+      const rawText = `<thinking_left>
+确认上一轮时空：神手谷药园，黄昏。墨大夫在场，检验韩立长春功修炼进度。
+</thinking_left>
+<thinking_right>
+墨大夫的心理动机：迫切需要夺舍宿主，表面上慈眉善目关怀备至，眼底却暗藏审视。
+韩立的应对策略：保持藏拙，故意将进度说得极其缓慢。
+</thinking_right>
+<thinking_director>
+场景节奏：先静后动，通过药炉沸腾的咕嘟声烘托压抑氛围。
+</thinking_director>
+<content>
+药炉里沸腾的汤药咕嘟作响，升腾起苦涩呛人的白汽。
+
+墨大夫枯瘦的手指搭在韩立脉门上，指尖冰冷得像一条冬眠的毒蛇。韩立垂着眼帘，连呼吸都刻意放慢了半分。
+</content>
+<choice>
+1. 坦白长春功已产生微弱气感
+2. 谎称功法滞涩毫无进展
+3. 转移话题询问草药辨识
+</choice>`
+
+      const parsed = parseCreationOutput(rawText)
+
+      expect(parsed.rawOutput).toBe(rawText)
+      expect(parsed).not.toHaveProperty('thinking')
+      expect(parsed.content).toBe('药炉里沸腾的汤药咕嘟作响，升腾起苦涩呛人的白汽。\n\n墨大夫枯瘦的手指搭在韩立脉门上，指尖冰冷得像一条冬眠的毒蛇。韩立垂着眼帘，连呼吸都刻意放慢了半分。')
+      expect(parsed.content).not.toContain('<thinking_left>')
+      expect(parsed.content).not.toContain('神手谷药园')
+      expect(parsed.content).not.toContain('<choice>')
+      expect(parsed.plotOptions).toEqual([
+        '坦白长春功已产生微弱气感',
+        '谎称功法滞涩毫无进展',
+        '转移话题询问草药辨识'
+      ])
+    })
+
+    it('handles Category 7: Custom thinking tags and fox_hugou outline and fox_selc options (狐神抚 style)', () => {
+      const rawText = `<think_fox~>
+狐裁思考：需要强化门规森严与少年求生欲的对冲。
+</think_fox~>
+<fox_hugou>
+#主线进度 拜师第三日
+#当前阶段 摸索灵根潜质
+#下一阶段 夜探灵药园
+</fox_hugou>
+<content>
+窗外竹影摇曳，夜风穿过窗棂吹得油灯忽明忽暗。韩立盘膝坐于木榻之上，掌心握着那一枚冰凉的铜绿小瓶。
+</content>
+<fox_selc>
+1. 将小瓶藏入鞋底夹层
+2. 趁夜将小瓶浸入后山溪水
+</fox_selc>`
+
+      const parsed = parseCreationOutput(rawText)
+
+      expect(parsed.rawOutput).toBe(rawText)
+      expect(parsed).not.toHaveProperty('thinking')
+      expect(parsed.content).toBe('窗外竹影摇曳，夜风穿过窗棂吹得油灯忽明忽暗。韩立盘膝坐于木榻之上，掌心握着那一枚冰凉的铜绿小瓶。')
+      expect(parsed.content).not.toContain('<think_fox~>')
+      expect(parsed.content).not.toContain('<fox_hugou>')
+      expect(parsed.content).not.toContain('<fox_selc>')
+      expect(parsed.outline).toContain('#主线进度 拜师第三日')
+      expect(parsed.plotOptions).toEqual([
+        '将小瓶藏入鞋底夹层',
+        '趁夜将小瓶浸入后山溪水'
+      ])
+    })
+
+    it('handles Category 8: Custom planning tags without explicit content wrapper (Izumi style)', () => {
+      const rawText = `<konatan_planning~>
+- 回顾当前情况：雨夜古庙
+- 确定正文字数与节奏：推进两人对峙
+</konatan_planning~>
+寒雨连江，夜色如铁。
+
+破庙内的残烛摇曳不定，将两人的影子拉得极长。`
+
+      const parsed = parseCreationOutput(rawText)
+
+      expect(parsed.rawOutput).toBe(rawText)
+      expect(parsed).not.toHaveProperty('thinking')
+      expect(parsed.content).toBe('寒雨连江，夜色如铁。\n\n破庙内的残烛摇曳不定，将两人的影子拉得极长。')
+      expect(parsed.content).not.toContain('konatan_planning')
+      expect(parsed.content).not.toContain('回顾当前情况')
     })
 
     it('handles malformed / empty input gracefully without throwing', () => {

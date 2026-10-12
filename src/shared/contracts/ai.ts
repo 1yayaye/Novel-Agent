@@ -1,5 +1,8 @@
 import { z } from 'zod'
 import { ChapterSchema, ChapterSnapshotSchema } from './chapter'
+import { PromptSnapshotSchema } from '../prompt-settings'
+
+export * from '../prompt-settings'
 
 export const TaskTypeSchema = z.enum(['chat', 'knowledge', 'report', 'continue', 'rewrite', 'polish', 'style_distill', 'book_summary'])
 export type TaskType = z.infer<typeof TaskTypeSchema>
@@ -16,6 +19,9 @@ export type TaskRouteSummary = z.infer<typeof TaskRouteSummarySchema>
 
 export const ModelConnectionKindSchema = z.enum(['generation', 'embedding'])
 export type ModelConnectionKind = z.infer<typeof ModelConnectionKindSchema>
+
+export const ReasoningEffortSchema = z.enum(['low', 'medium', 'high', 'none'])
+export type ReasoningEffort = z.infer<typeof ReasoningEffortSchema>
 
 export const ModelCapabilitiesSchema = z.object({
   streaming: z.boolean().default(true),
@@ -40,6 +46,7 @@ export const ModelConnectionSummarySchema = z.object({
   recentDimensions: z.number().int().positive().nullable().optional(),
   connectionFingerprint: z.string().nullable().optional(),
   capabilities: ModelCapabilitiesSchema.default({ streaming: true, jsonSchema: true, temperature: true, usage: true }),
+  reasoningEffort: ReasoningEffortSchema.nullable().optional(),
   hasSecret: z.boolean(),
   version: z.number().int().min(1),
   confirmedContentTargetFingerprint: z.string().nullable(),
@@ -72,7 +79,8 @@ export const CreateModelConnectionInputSchema = z.object({
   safetyMarginRatio: z.number().min(0).max(0.5).optional(),
   tokenEstimationRatio: z.number().positive().optional(),
   batchSize: z.number().int().positive().optional(),
-  capabilities: ModelCapabilitiesSchema.optional()
+  capabilities: ModelCapabilitiesSchema.optional(),
+  reasoningEffort: ReasoningEffortSchema.nullable().optional()
 })
 export type CreateModelConnectionInput = z.infer<typeof CreateModelConnectionInputSchema>
 
@@ -90,6 +98,7 @@ export const UpdateModelConnectionInputSchema = z.object({
   tokenEstimationRatio: z.number().positive().optional(),
   batchSize: z.number().int().positive().optional(),
   capabilities: ModelCapabilitiesSchema.optional(),
+  reasoningEffort: ReasoningEffortSchema.nullable().optional(),
   expectedVersion: z.number().int().min(1)
 })
 export type UpdateModelConnectionInput = z.infer<typeof UpdateModelConnectionInputSchema>
@@ -237,6 +246,11 @@ export const ListInstructionPresetsInputSchema = z.object({
   taskType: TaskTypeSchema.optional()
 })
 export type ListInstructionPresetsInput = z.infer<typeof ListInstructionPresetsInputSchema>
+
+export const ResetInstructionPresetsInputSchema = z.object({
+  sessionId: z.string().uuid()
+})
+export type ResetInstructionPresetsInput = z.infer<typeof ResetInstructionPresetsInputSchema>
 
 export const GetInstructionPresetInputSchema = z.object({
   sessionId: z.string().uuid(),
@@ -402,40 +416,18 @@ export const SkipStepInputSchema = z.object({
 })
 export type SkipStepInput = z.infer<typeof SkipStepInputSchema>
 
-export const PromptSlotRoleSchema = z.enum(['system', 'user', 'assistant'])
-export type PromptSlotRole = z.infer<typeof PromptSlotRoleSchema>
-
-export const PromptSlotPositionSchema = z.enum(['before_context', 'after_context', 'absolute_depth'])
-export type PromptSlotPosition = z.infer<typeof PromptSlotPositionSchema>
-
-export const PromptSlotTriggerSchema = z.enum([
-  'always',
-  'creation',
-  'continue',
-  'rewrite',
-  'polish',
-  'chat',
-  'knowledge',
-  'report',
-  'direction',
-  'chapter_outline',
-  'content',
-  'reviewed'
-])
-export type PromptSlotTrigger = z.infer<typeof PromptSlotTriggerSchema>
-
-export const PromptSlotSchema = z.object({
-  id: z.string(),
-  name: z.string(),
-  enabled: z.boolean(),
-  role: PromptSlotRoleSchema,
-  content: z.string(),
-  position: PromptSlotPositionSchema,
-  depth: z.number().int().nonnegative().optional(),
-  order: z.number().int().default(0),
-  trigger: PromptSlotTriggerSchema.optional()
+/** 小说项目级创作资料：创作准则、指令预设与文风样本。 */
+export const GetPromptBundleInputSchema = z.object({
+  sessionId: z.string().uuid()
 })
-export type PromptSlot = z.infer<typeof PromptSlotSchema>
+export type GetPromptBundleInput = z.infer<typeof GetPromptBundleInputSchema>
+
+export const PromptBundleSchema = z.object({
+  rules: CreativeRuleSchema,
+  presets: z.array(InstructionPresetSchema),
+  styleSamples: z.array(StyleSampleSchema)
+})
+export type PromptBundle = z.infer<typeof PromptBundleSchema>
 
 export const ContextItemSourceTypeSchema = z.enum([
   'system_template',
@@ -454,7 +446,7 @@ export const ContextItemSourceTypeSchema = z.enum([
   'retrieved_chunk',
   'ai_suggestion',
   'chat_history',
-  'prompt_slot'
+  'prompt_module'
 ])
 export type ContextItemSourceType = z.infer<typeof ContextItemSourceTypeSchema>
 
@@ -470,9 +462,9 @@ export const ContextItemSchema = z.object({
   position: z.number().int().nonnegative(),
   title: z.string().optional(),
   content: z.string().optional(),
-  slotId: z.string().optional(),
-  role: PromptSlotRoleSchema.optional(),
-  positionType: PromptSlotPositionSchema.optional(),
+  moduleId: z.string().optional(),
+  role: z.enum(['system', 'user', 'assistant']).optional(),
+  positionType: z.enum(['relative', 'in_chat']).optional(),
   depth: z.number().int().nonnegative().optional(),
   slotOrder: z.number().int().optional(),
   activationKey: z.string().optional()
@@ -488,7 +480,7 @@ export const ExcludedContextItemSchema = z.object({
   title: z.string().optional(),
   reason: ExcludedContextItemReasonSchema,
   estimatedTokens: z.number().int().nonnegative(),
-  slotId: z.string().optional()
+  moduleId: z.string().optional()
 })
 export type ExcludedContextItem = z.infer<typeof ExcludedContextItemSchema>
 
@@ -524,10 +516,10 @@ export const ContextPackageSchema = z.object({
   targetVersion: z.number().int().min(1).nullable().optional(),
   targetLength: z.number().int().positive().nullable().optional(),
   creativity: z.object({
-    level: CreativityLevelSchema,
-    temperature: z.number().optional()
+    level: CreativityLevelSchema
   }).nullable().optional(),
   configurationFingerprint: z.string(),
+  promptSnapshot: PromptSnapshotSchema,
   messages: z.array(AssembledMessageSchema).default([]),
   systemMessage: z.string(),
   userMessage: z.string(),
@@ -548,33 +540,6 @@ export const ContextPreviewTargetSchema = z.object({
 }).optional()
 export type ContextPreviewTarget = z.infer<typeof ContextPreviewTargetSchema>
 
-export const DirectorPovSchema = z.enum(['limited_3p', 'omniscient_3p', 'first_person'])
-export type DirectorPov = z.infer<typeof DirectorPovSchema>
-
-export const DirectorSensorySchema = z.enum(['strict', 'relaxed'])
-export type DirectorSensory = z.infer<typeof DirectorSensorySchema>
-
-export const DirectorPacingSchema = z.enum(['slow', 'normal', 'fast'])
-export type DirectorPacing = z.infer<typeof DirectorPacingSchema>
-
-export const DirectorInitiativeSchema = z.enum(['follow_input', 'may_extend'])
-export type DirectorInitiative = z.infer<typeof DirectorInitiativeSchema>
-
-export const DirectorOutputFormatSchema = z.enum(['plain', 'content_tagged'])
-export type DirectorOutputFormat = z.infer<typeof DirectorOutputFormatSchema>
-
-export const DirectorControlsSchema = z.object({
-  pov: DirectorPovSchema.optional(),
-  sensory: DirectorSensorySchema.optional(),
-  pacing: DirectorPacingSchema.optional(),
-  initiative: DirectorInitiativeSchema.optional(),
-  styleSampleId: z.string().uuid().optional(),
-  outputFormat: DirectorOutputFormatSchema.optional(),
-  banWords: z.array(z.string()).optional(),
-  enableCoT: z.boolean().optional()
-})
-export type DirectorControls = z.infer<typeof DirectorControlsSchema>
-
 export const ContextPreviewInputSchema = z.object({
   sessionId: z.string().uuid(),
   taskType: TaskTypeSchema,
@@ -588,8 +553,6 @@ export const ContextPreviewInputSchema = z.object({
   presetId: z.string().uuid().optional(),
   styleSampleIds: z.array(z.string().uuid()).optional(),
   pinnedSourceIds: z.array(z.string()).optional(),
-  slots: z.array(PromptSlotSchema).optional(),
-  directorControls: DirectorControlsSchema.optional(),
   scanDepth: z.number().int().positive().optional(),
   connectionId: z.string().uuid(),
   includeCreativeRules: z.boolean().default(true).optional(),
@@ -676,7 +639,6 @@ export type CandidateApplyResult = z.infer<typeof CandidateApplyResultSchema>
 
 export const ParsedCreationOutputSchema = z.object({
   content: z.string(),
-  thinking: z.string().optional(),
   summary: z.string().optional(),
   plotOptions: z.array(z.string()).optional(),
   outline: z.string().optional(),
@@ -689,7 +651,6 @@ export type ParsedCreationOutput = z.infer<typeof ParsedCreationOutputSchema>
 export const ParsedDirectionOutputSchema = z.object({
   direction: z.string(),
   questions: z.array(z.string()).default([]),
-  thinking: z.string().optional(),
   warnings: z.array(z.string()).default([]),
   rawOutput: z.string()
 })
@@ -708,7 +669,6 @@ export type ParsedChapterOutlineModules = z.infer<typeof ParsedChapterOutlineMod
 export const ParsedChapterOutlineOutputSchema = z.object({
   outline: z.string(),
   modules: ParsedChapterOutlineModulesSchema,
-  thinking: z.string().optional(),
   warnings: z.array(z.string()).default([]),
   rawOutput: z.string()
 })

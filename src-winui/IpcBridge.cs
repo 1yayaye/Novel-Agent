@@ -133,9 +133,11 @@ public sealed class IpcBridge
                 return;
             }
 
-            // Native dialogs & project.chooseAndOpen
+            // Native dialogs & project file operations
             if (channel.StartsWith("dialog.", StringComparison.OrdinalIgnoreCase) ||
-                channel.Equals("project.chooseAndOpen", StringComparison.OrdinalIgnoreCase))
+                channel.Equals("project.chooseAndOpen", StringComparison.OrdinalIgnoreCase) ||
+                channel.Equals("project.previewImport", StringComparison.OrdinalIgnoreCase) ||
+                channel.Equals("project.export", StringComparison.OrdinalIgnoreCase))
             {
                 await HandleDialogChannelAsync(id, channel, payload);
                 return;
@@ -322,6 +324,94 @@ public sealed class IpcBridge
 
                 SendRpcSuccessResponse(id, new JsonObject { ["canceled"] = false, ["path"] = file.Path });
             }
+            else if (channel.Equals("project.previewImport", StringComparison.OrdinalIgnoreCase))
+            {
+                string? existingSource = payload?["source"]?.ToString();
+                if (string.IsNullOrEmpty(existingSource))
+                {
+                    var filePicker = new FileOpenPicker();
+                    WinRT.Interop.InitializeWithWindow.Initialize(filePicker, _hwnd);
+                    filePicker.SuggestedStartLocation = PickerLocationId.DocumentsLibrary;
+                    filePicker.FileTypeFilter.Add(".txt");
+                    filePicker.FileTypeFilter.Add(".md");
+                    filePicker.FileTypeFilter.Add(".markdown");
+
+                    StorageFile? file = await filePicker.PickSingleFileAsync();
+                    if (file == null)
+                    {
+                        // User canceled: return null
+                        SendRpcSuccessResponse(id, null);
+                        return;
+                    }
+                    existingSource = file.Path;
+                }
+
+                if (_sidecar.IsRunning)
+                {
+                    var forwardedPayload = payload is JsonObject obj ? (JsonObject)obj.DeepClone() : new JsonObject();
+                    forwardedPayload["source"] = existingSource;
+
+                    var rpcReq = new JsonObject
+                    {
+                        ["jsonrpc"] = "2.0",
+                        ["id"] = id,
+                        ["method"] = "project.previewImport",
+                        ["params"] = forwardedPayload
+                    };
+                    await _sidecar.SendMessageAsync(rpcReq.ToJsonString());
+                }
+                else
+                {
+                    SendRpcErrorResponse(id, "SIDECAR_NOT_RUNNING", "Sidecar is not running.");
+                }
+            }
+            else if (channel.Equals("project.export", StringComparison.OrdinalIgnoreCase))
+            {
+                string? existingDest = payload?["destination"]?.ToString();
+                if (string.IsNullOrEmpty(existingDest))
+                {
+                    var savePicker = new FileSavePicker();
+                    WinRT.Interop.InitializeWithWindow.Initialize(savePicker, _hwnd);
+                    savePicker.SuggestedStartLocation = PickerLocationId.DocumentsLibrary;
+                    string format = payload?["format"]?.ToString()?.ToLowerInvariant() ?? "txt";
+                    if (format == "txt")
+                    {
+                        savePicker.FileTypeChoices.Add("文本文档 (*.txt)", new List<string> { ".txt" });
+                    }
+                    else
+                    {
+                        savePicker.FileTypeChoices.Add("Markdown 文档 (*.md)", new List<string> { ".md" });
+                    }
+
+                    StorageFile? file = await savePicker.PickSaveFileAsync();
+                    if (file == null)
+                    {
+                        // User canceled: return null
+                        SendRpcSuccessResponse(id, null);
+                        return;
+                    }
+                    existingDest = file.Path;
+                }
+
+                if (_sidecar.IsRunning)
+                {
+                    var forwardedPayload = payload is JsonObject obj ? (JsonObject)obj.DeepClone() : new JsonObject();
+                    forwardedPayload["destination"] = existingDest;
+
+                    var rpcReq = new JsonObject
+                    {
+                        ["jsonrpc"] = "2.0",
+                        ["id"] = id,
+                        ["method"] = "project.export",
+                        ["params"] = forwardedPayload
+                    };
+                    await _sidecar.SendMessageAsync(rpcReq.ToJsonString());
+                }
+                else
+                {
+                    SendRpcErrorResponse(id, "SIDECAR_NOT_RUNNING", "Sidecar is not running.");
+                }
+            }
             else
             {
                 // Fallback: forward to Sidecar
@@ -349,6 +439,11 @@ public sealed class IpcBridge
         {
             SendRpcErrorResponse(id, "DIALOG_ERROR", ex.Message);
         }
+    }
+
+    public void NotifyExternalProjectOpen(string projectPath)
+    {
+        PostPushEvent("project:open-path", JsonValue.Create(projectPath));
     }
 
     private void PostPushEvent(string channel, JsonNode? payload)

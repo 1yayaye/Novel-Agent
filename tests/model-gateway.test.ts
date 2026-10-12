@@ -641,4 +641,248 @@ describe('ModelGateway with mock HTTP/SSE server', () => {
       }
     })).rejects.toThrowError(/认证失败/)
   })
+  it.each([
+    ['stream', undefined], ['stream', 731], ['json', undefined], ['json', 731]
+  ] as const)('sends explicit max_tokens and provider temperature defaults for %s with limit %s', async (kind, maxTokens) => {
+    const conn = store.create({ name: 'Compatible Gemini', kind: 'generation', baseUrl: serverUrl, model: 'gemini-compatible', maxOutputTokens: 2400, isLocalService: true })
+    store.confirmContentTarget(conn.id, calculateContentTargetFingerprint(conn.baseUrl, conn.model))
+    const payloads: Record<string, any>[] = []
+    requestHandler = (req, res) => {
+      let body = ''
+      req.on('data', (chunk) => { body += chunk })
+      req.on('end', () => {
+        payloads.push(JSON.parse(body))
+        if (kind === 'stream') {
+          res.writeHead(200, { 'Content-Type': 'text/event-stream' })
+          res.end('data: {"choices":[{"delta":{"content":"正文"}}]}\n\ndata: [DONE]\n\n')
+        } else {
+          res.writeHead(200, { 'Content-Type': 'application/json' })
+          res.end(JSON.stringify({ choices: [{ message: { content: '{"ok":true}' } }] }))
+        }
+      })
+    }
+    const messages = [{ role: 'user' as const, content: '小说任务' }]
+    if (kind === 'stream') {
+      for await (const _chunk of gateway.chatCompletionStream({ connectionId: conn.id, messages, maxTokens })) { /* consume */ }
+    } else {
+      const schema = z.object({ ok: z.boolean() })
+      await gateway.generateStructuredJson({ connectionId: conn.id, messages, maxTokens, jsonSchema: z.toJSONSchema(schema), zodSchema: schema })
+    }
+    expect(payloads).toHaveLength(1)
+    expect(payloads[0].max_tokens).toBe(maxTokens ?? 2400)
+    expect(payloads[0]).not.toHaveProperty('temperature')
+    expect(payloads[0]).not.toHaveProperty('thinking_config')
+    expect(payloads[0]).not.toHaveProperty('reasoning_effort')
+  })
+
+  it('provides the actual schema in the first fallback request when JSON-schema capability is disabled', async () => {
+    const conn = store.create({ name: 'Fallback Gemini', kind: 'generation', baseUrl: serverUrl, model: 'gemini-compatible', isLocalService: true, capabilities: { streaming: true, jsonSchema: false, temperature: true, usage: true } })
+    store.confirmContentTarget(conn.id, calculateContentTargetFingerprint(conn.baseUrl, conn.model))
+    const schema = z.object({ summary: z.string(), state: z.object({ mainline: z.string(), unresolved: z.string() }) })
+    const payloads: Record<string, any>[] = []
+    requestHandler = (req, res) => {
+      let body = ''
+      req.on('data', (chunk) => { body += chunk })
+      req.on('end', () => {
+        payloads.push(JSON.parse(body))
+        res.writeHead(200, { 'Content-Type': 'application/json' })
+        res.end(JSON.stringify({ choices: [{ message: { content: '{"summary":"无新增","state":{"mainline":"原主线","unresolved":"旧疑点"}}' } }] }))
+      })
+    }
+    const result = await gateway.generateStructuredJson({ connectionId: conn.id, messages: [{ role: 'user', content: '维持原状态' }], maxTokens: 500, jsonSchema: z.toJSONSchema(schema), zodSchema: schema })
+    expect(result.data.state.unresolved).toBe('旧疑点')
+    expect(payloads).toHaveLength(1)
+    expect(payloads[0]).not.toHaveProperty('response_format')
+    const instruction = payloads[0].messages.at(-1)
+    expect(instruction.role).toBe('system')
+    expect(JSON.parse(instruction.content.slice(instruction.content.indexOf('\n') + 1))).toEqual(z.toJSONSchema(schema))
+    expect(payloads[0].max_tokens).toBe(500)
+    expect(payloads[0]).not.toHaveProperty('temperature')
+  })
+
+  it.each([true, false])('rejects an oversized actual schema before HTTP with JSON schema capability %s', async (jsonSchema) => {
+    const conn = store.create({ name: 'Budget Gemini', kind: 'generation', baseUrl: serverUrl, model: 'gemini-compatible', isLocalService: true, capabilities: { streaming: true, jsonSchema, temperature: true, usage: true } })
+    store.confirmContentTarget(conn.id, calculateContentTargetFingerprint(conn.baseUrl, conn.model))
+    const schema = z.object({ ok: z.boolean().describe('字段描述'.repeat(500)) })
+    let calls = 0
+    requestHandler = (_req, res) => { calls++; res.end() }
+    const requestBudget = { connectionId: conn.id, connectionVersion: store.get(conn.id).version, contextWindow: 1000, maxOutputTokens: 100, safetyMarginRatio: 0.1, tokenEstimationRatio: 1 }
+    await expect(gateway.generateStructuredJson({ connectionId: conn.id, messages: [{ role: 'user', content: '短输入' }], maxTokens: 100, requestBudget, jsonSchema: z.toJSONSchema(schema), zodSchema: schema })).rejects.toMatchObject({ code: 'MODEL_CONTEXT_EXCEEDED' })
+    expect(calls).toBe(0)
+  })
+
+  it('applies the same frozen budget to the repair request including the invalid response', async () => {
+    const conn = store.create({ name: 'Repair Budget Gemini', kind: 'generation', baseUrl: serverUrl, model: 'gemini-compatible', isLocalService: true })
+    store.confirmContentTarget(conn.id, calculateContentTargetFingerprint(conn.baseUrl, conn.model))
+    const schema = z.object({ ok: z.boolean() })
+    let calls = 0
+    requestHandler = (_req, res) => {
+      calls++
+      res.writeHead(200, { 'Content-Type': 'application/json' })
+      res.end(JSON.stringify({ choices: [{ message: { content: '无效响应'.repeat(400) } }] }))
+    }
+    const requestBudget = { connectionId: conn.id, connectionVersion: store.get(conn.id).version, contextWindow: 1000, maxOutputTokens: 100, safetyMarginRatio: 0.1, tokenEstimationRatio: 1 }
+    await expect(gateway.generateStructuredJson({ connectionId: conn.id, messages: [{ role: 'user', content: '短输入' }], maxTokens: 100, requestBudget, jsonSchema: z.toJSONSchema(schema), zodSchema: schema })).rejects.toMatchObject({ code: 'MODEL_CONTEXT_EXCEEDED' })
+    expect(calls).toBe(1)
+  })
+
+  describe('reasoningEffort control', () => {
+    it('includes reasoning_effort in non-streaming payload when configured on connection', async () => {
+      const conn = store.create({
+        name: 'Reasoning Model',
+        kind: 'generation',
+        baseUrl: serverUrl,
+        model: 'o3-mini',
+        isLocalService: true,
+        reasoningEffort: 'medium'
+      })
+      store.confirmContentTarget(conn.id, calculateContentTargetFingerprint(conn.baseUrl, conn.model))
+
+      let capturedPayload: Record<string, unknown> | null = null
+      requestHandler = (req, res) => {
+        let body = ''
+        req.on('data', (chunk) => { body += chunk })
+        req.on('end', () => {
+          capturedPayload = JSON.parse(body)
+          res.writeHead(200, { 'Content-Type': 'application/json' })
+          res.end(JSON.stringify({
+            choices: [{ message: { content: '{"ok": true}' } }]
+          }))
+        })
+      }
+
+      const schema = z.object({ ok: z.boolean() })
+      await gateway.generateStructuredJson({
+        connectionId: conn.id,
+        messages: [{ role: 'user', content: 'Hello' }],
+        jsonSchema: z.toJSONSchema(schema),
+        zodSchema: schema
+      })
+
+      expect(capturedPayload).not.toBeNull()
+      expect((capturedPayload as Record<string, unknown> | null)?.reasoning_effort).toBe('medium')
+    })
+
+    it('includes reasoning_effort in streaming payload when configured on connection', async () => {
+      const conn = store.create({
+        name: 'Streaming Reasoning Model',
+        kind: 'generation',
+        baseUrl: serverUrl,
+        model: 'o1',
+        isLocalService: true,
+        reasoningEffort: 'high'
+      })
+      store.confirmContentTarget(conn.id, calculateContentTargetFingerprint(conn.baseUrl, conn.model))
+
+      let capturedPayload: Record<string, unknown> | null = null
+      requestHandler = (req, res) => {
+        let body = ''
+        req.on('data', (chunk) => { body += chunk })
+        req.on('end', () => {
+          capturedPayload = JSON.parse(body)
+          res.writeHead(200, {
+            'Content-Type': 'text/event-stream',
+            'Cache-Control': 'no-cache',
+            Connection: 'keep-alive'
+          })
+          res.write('data: {"choices":[{"delta":{"content":"Hi"}}]}\n\n')
+          res.write('data: [DONE]\n\n')
+          res.end()
+        })
+      }
+
+      const stream = gateway.chatCompletionStream({
+        connectionId: conn.id,
+        messages: [{ role: 'user', content: 'Hello stream' }]
+      })
+
+      let text = ''
+      for await (const chunk of stream) {
+        text += chunk.text
+      }
+
+      expect(text).toBe('Hi')
+      expect(capturedPayload).not.toBeNull()
+      expect((capturedPayload as Record<string, unknown> | null)?.reasoning_effort).toBe('high')
+    })
+
+    it('allows request options to override connection reasoningEffort', async () => {
+      const conn = store.create({
+        name: 'Override Reasoning Model',
+        kind: 'generation',
+        baseUrl: serverUrl,
+        model: 'o3-mini',
+        isLocalService: true,
+        reasoningEffort: 'high'
+      })
+      store.confirmContentTarget(conn.id, calculateContentTargetFingerprint(conn.baseUrl, conn.model))
+
+      let capturedPayload: Record<string, unknown> | null = null
+      requestHandler = (req, res) => {
+        let body = ''
+        req.on('data', (chunk) => { body += chunk })
+        req.on('end', () => {
+          capturedPayload = JSON.parse(body)
+          res.writeHead(200, {
+            'Content-Type': 'text/event-stream',
+            'Cache-Control': 'no-cache',
+            Connection: 'keep-alive'
+          })
+          res.write('data: {"choices":[{"delta":{"content":"Overridden"}}]}\n\n')
+          res.write('data: [DONE]\n\n')
+          res.end()
+        })
+      }
+
+      const stream = gateway.chatCompletionStream({
+        connectionId: conn.id,
+        messages: [{ role: 'user', content: 'Hello' }],
+        reasoningEffort: 'low'
+      })
+
+      for await (const _ of stream) {}
+
+      expect(capturedPayload).not.toBeNull()
+      expect((capturedPayload as Record<string, unknown> | null)?.reasoning_effort).toBe('low')
+    })
+
+    it('omits reasoning_effort when not specified on connection or options', async () => {
+      const conn = store.create({
+        name: 'Standard Model',
+        kind: 'generation',
+        baseUrl: serverUrl,
+        model: 'gpt-4o',
+        isLocalService: true
+      })
+      store.confirmContentTarget(conn.id, calculateContentTargetFingerprint(conn.baseUrl, conn.model))
+
+      let capturedPayload: Record<string, unknown> | null = null
+      requestHandler = (req, res) => {
+        let body = ''
+        req.on('data', (chunk) => { body += chunk })
+        req.on('end', () => {
+          capturedPayload = JSON.parse(body)
+          res.writeHead(200, {
+            'Content-Type': 'text/event-stream',
+            'Cache-Control': 'no-cache',
+            Connection: 'keep-alive'
+          })
+          res.write('data: {"choices":[{"delta":{"content":"Normal"}}]}\n\n')
+          res.write('data: [DONE]\n\n')
+          res.end()
+        })
+      }
+
+      const stream = gateway.chatCompletionStream({
+        connectionId: conn.id,
+        messages: [{ role: 'user', content: 'Hello standard' }]
+      })
+
+      for await (const _ of stream) {}
+
+      expect(capturedPayload).not.toBeNull()
+      expect(capturedPayload).not.toHaveProperty('reasoning_effort')
+    })
+  })
+
 })

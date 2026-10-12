@@ -1,3 +1,4 @@
+import { PromptSettingsStore } from '../src/main/prompt-store.js'
 import { existsSync, mkdirSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -19,7 +20,7 @@ describe('ServiceRouter & Sidecar Implementation', () => {
     mkdirSync(join(tempDir, 'projects'), { recursive: true })
     mkdirSync(join(tempDir, 'novels'), { recursive: true })
     store = new ProjectStore(tempDir)
-    deps = { store }
+    deps = { store, promptStore: new PromptSettingsStore(tempDir) }
   })
 
   afterEach(async () => {

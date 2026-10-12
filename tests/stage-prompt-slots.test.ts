@@ -1,143 +1,189 @@
-import { mkdtempSync, rmSync } from 'node:fs'
-import { tmpdir } from 'node:os'
-import { join } from 'node:path'
-import { afterEach, beforeEach, describe, expect, it } from 'vitest'
-import { ProjectStore } from '../src/main/project-store'
-import { ConnectionStore, calculateContentTargetFingerprint } from '../src/main/connection-store'
-import { SearchIndex } from '../src/main/search-index'
-import { ChapterRepository } from '../src/main/chapter-repository'
-import { ContextAssembler } from '../src/main/context-assembler'
-import { DEFAULT_STAGE_PROMPT_SLOTS, getDefaultStagePromptSlots } from '../src/main/default-presets'
+import { describe, expect, it } from 'vitest'
+import {
+  PromptTaskSchema,
+  type AssembledMessage,
+  type PromptTask,
+  type NovelPromptPreset,
+  DEFAULT_PRESET_STORE
+} from '../src/shared/project'
+import {
+  ANALYSIS_PROTOCOLS,
+  FALLBACK_CREATION_PROTOCOLS,
+  PROMPT_MARKERS
+} from '../src/main/prompt-preset'
+import {
+  compilePromptMessages,
+  promptTask,
+  ANALYSIS_TASKS
+} from '../src/main/prompt-runtime'
+import { PromptSettingsStore } from '../src/main/prompt-store'
 
-describe('T05: Stage Prompt Slots & Built-in Presets', () => {
-  let tempDir: string
-  let store: ProjectStore
-  let connStore: ConnectionStore
-  let searchIndex: SearchIndex
-  let chapterRepo: ChapterRepository
-  let contextAssembler: ContextAssembler
-  let sessionId: string
-  let connId: string
-  let chapterId: string
+function snapshotWithPreset(preset?: NovelPromptPreset) {
+  const store = new PromptSettingsStore()
+  if (preset) {
+    store.save({ activePresetId: preset.id, presets: [preset] })
+  } else {
+    store.save(DEFAULT_PRESET_STORE)
+  }
+  return store.snapshot()
+}
 
-  beforeEach(async () => {
-    tempDir = mkdtempSync(join(tmpdir(), 'novel-stage-slots-test-'))
-    store = new ProjectStore(tempDir)
-    connStore = new ConnectionStore(tempDir)
-    searchIndex = new SearchIndex(store)
-    chapterRepo = new ChapterRepository(store, searchIndex)
-    contextAssembler = new ContextAssembler(store, searchIndex, connStore)
+describe('酒馆预设与任务插槽编译入口', () => {
+  it('所有后台分析类任务严格使用内置协议，不受预设影响', () => {
+    const customPreset: NovelPromptPreset = {
+      id: 'custom-preset',
+      name: '自定义创作预设',
+      blocks: [
+        { id: 'b1', name: '覆盖系统提示', role: 'system', content: '酒馆提示词不应污染分析任务', enabled: true, position: 'relative', depth: 0, order: 0 }
+      ],
+      createdAt: 1,
+      updatedAt: 1
+    }
+    const snap = snapshotWithPreset(customPreset)
 
-    const conn = connStore.create({
-      name: 'Test LLM',
-      kind: 'generation',
-      isLocalService: true,
-      baseUrl: 'http://127.0.0.1:8080/v1',
-      model: 'gpt-4o',
-      contextWindow: 16000,
-      maxOutputTokens: 2000
-    })
-    connId = conn.id
-    connStore.confirmContentTarget(connId, calculateContentTargetFingerprint(conn.baseUrl, conn.model))
+    for (const task of ANALYSIS_TASKS) {
+      const messages = compilePromptMessages(task, { instruction: '请分析本章' }, snap)
+      const contents = messages.map((m) => m.content)
+      // 必须包含内置结构化分析协议
+      expect(contents.some((c) => c.includes(ANALYSIS_PROTOCOLS[task]))).toBe(true)
+      // 绝不包含创作预设的正文
+      expect(contents.some((c) => c.includes('酒馆提示词不应污染分析任务'))).toBe(false)
+    }
+  })
 
-    const projectPath = join(tempDir, 'test-stage-slots.novelproj')
-    store.create({ destination: projectPath, title: '测试作品', description: '测试' }, [
-      {
-        title: '第一章 序幕',
-        content: '黑夜降临在寂静的城池之上。'
+  it('未配置预设或全部关闭时，创作类任务安全回退到内置极简创作协议', () => {
+    const snap = snapshotWithPreset(undefined)
+    const creationTasks: PromptTask[] = ['continue', 'rewrite', 'polish', 'chat', 'direction', 'chapter_outline', 'content']
+
+    for (const task of creationTasks) {
+      const messages = compilePromptMessages(task, { instruction: '作者指令' }, snap)
+      const contents = messages.map((m) => m.content)
+      expect(contents.some((c) => c.includes(FALLBACK_CREATION_PROTOCOLS[task]))).toBe(true)
+      expect(contents.at(-1)).toContain('作者指令')
+    }
+  })
+
+  it('配置活跃预设时，创作类任务由预设 Block 接管，支持启停控制', () => {
+    const preset: NovelPromptPreset = {
+      id: 'preset-active',
+      name: '活跃预设',
+      blocks: [
+        { id: 'b1', name: '系统引导', role: 'system', content: '【系统引导正文】', enabled: true, position: 'relative', depth: 0, order: 1 },
+        { id: 'b2', name: '禁用模块', role: 'system', content: '【已禁用的模块】', enabled: false, position: 'relative', depth: 0, order: 2 },
+        { id: 'b3', name: '历史插槽', role: 'user', content: '', enabled: true, position: 'relative', depth: 0, order: 3, marker: 'marker.history' },
+        { id: 'b4', name: '任务插槽', role: 'user', content: '', enabled: true, position: 'relative', depth: 0, order: 4, marker: 'marker.task' }
+      ],
+      createdAt: 1,
+      updatedAt: 1
+    }
+    const snap = snapshotWithPreset(preset)
+    const messages = compilePromptMessages('continue', { instruction: '正文续写指令' }, snap)
+    const contents = messages.map((m) => m.content)
+
+    expect(contents).toContain('【系统引导正文】')
+    expect(contents).not.toContain('【已禁用的模块】')
+    expect(contents.at(-1)).toContain('正文续写指令')
+  })
+
+  it('资料插槽保持 role 和独立消息，显式排序并在历史与任务前注入', () => {
+    const materials = Object.fromEntries(
+      PROMPT_MARKERS.filter((m) => m !== 'task' && m !== 'history').map((marker) => [
+        marker,
+        [{ role: 'user', content: `材料:${marker}` }]
+      ])
+    )
+    materials.history = [
+      { role: 'user', content: '历史:user' },
+      { role: 'assistant', content: '历史:assistant' }
+    ]
+
+    const preset: NovelPromptPreset = {
+      id: 'preset-materials',
+      name: '材料测试预设',
+      blocks: [
+        { id: 'b0', name: '顶层设定', role: 'system', content: '系统顶层说明', enabled: true, position: 'relative', depth: 0, order: 0 },
+        { id: 'b-hist', name: '历史插槽', role: 'user', content: '', enabled: true, position: 'relative', depth: 0, order: 10, marker: 'marker.history' },
+        { id: 'b-task', name: '任务插槽', role: 'user', content: '', enabled: true, position: 'relative', depth: 0, order: 20, marker: 'marker.task' }
+      ],
+      createdAt: 1,
+      updatedAt: 1
+    }
+
+    const messages = compilePromptMessages('continue', {
+      instruction: '最终作者指令',
+      materials: materials as Parameters<typeof compilePromptMessages>[1]['materials']
+    }, snapshotWithPreset(preset))
+
+    const contents = messages.map((m) => m.content)
+
+    // 所有材料应该在历史和任务之前
+    const historyIndex = contents.indexOf('历史:user')
+    expect(historyIndex).toBeGreaterThan(0)
+    for (const marker of PROMPT_MARKERS) {
+      if (marker !== 'history' && marker !== 'task') {
+        const matIndex = contents.indexOf(`材料:${marker}`)
+        expect(matIndex).toBeGreaterThan(0)
+        expect(matIndex).toBeLessThan(historyIndex)
       }
-    ])
-    const session = await store.open(projectPath)
-    sessionId = session.sessionId
-    const chaps = chapterRepo.list(sessionId)
-    chapterId = chaps[0].id
+    }
+
+    // 历史角色保持
+    expect(messages.find((m) => m.content === '历史:assistant')?.role).toBe('assistant')
+    // 最终作者指令在最后
+    expect(contents.at(-1)).toContain('最终作者指令')
   })
 
-  afterEach(() => {
-    try {
-      rmSync(tempDir, { recursive: true, force: true })
-    } catch {}
+  it.each([0, 1, 20])('in_chat depth=%s 从历史尾部定位，超深度夹到开头', (depth) => {
+    const preset: NovelPromptPreset = {
+      id: 'preset-inchat',
+      name: 'In-chat预设',
+      blocks: [
+        { id: 'b-chat', name: '会话中提示', role: 'system', content: `深度提示:${depth}`, enabled: true, position: 'in_chat', depth, order: 1 },
+        { id: 'b-hist', name: '历史插槽', role: 'user', content: '', enabled: true, position: 'relative', depth: 0, order: 2, marker: 'marker.history' },
+        { id: 'b-task', name: '任务插槽', role: 'user', content: '', enabled: true, position: 'relative', depth: 0, order: 3, marker: 'marker.task' }
+      ],
+      createdAt: 1,
+      updatedAt: 1
+    }
+    const history: AssembledMessage[] = [
+      { role: 'user', content: '历史一' },
+      { role: 'assistant', content: '历史二' }
+    ]
+    const contents = compilePromptMessages('continue', {
+      instruction: '作者',
+      materials: { history }
+    }, snapshotWithPreset(preset)).map((m) => m.content)
+
+    const injectIndex = contents.indexOf(`深度提示:${depth}`)
+    if (depth === 0) expect(injectIndex).toBe(contents.indexOf('历史二') + 1)
+    if (depth === 1) expect(injectIndex).toBe(contents.indexOf('历史一') + 1)
+    if (depth === 20) expect(injectIndex).toBe(contents.indexOf('历史一') - 1)
   })
 
-  it('has built-in DEFAULT_STAGE_PROMPT_SLOTS and helper filters by stage correctly', () => {
-    expect(DEFAULT_STAGE_PROMPT_SLOTS.length).toBeGreaterThanOrEqual(6)
-
-    const directionSlots = getDefaultStagePromptSlots('direction')
-    expect(directionSlots.some((s) => s.id === 'slot-stage-direction')).toBe(true)
-    expect(directionSlots.some((s) => s.id === 'slot-stage-chapter-outline')).toBe(false)
-    expect(directionSlots.some((s) => s.id === 'slot-stage-content')).toBe(false)
-
-    const outlineSlots = getDefaultStagePromptSlots('chapter_outline')
-    expect(outlineSlots.some((s) => s.id === 'slot-stage-chapter-outline')).toBe(true)
-    expect(outlineSlots.some((s) => s.id === 'slot-stage-direction')).toBe(false)
-
-    const contentSlots = getDefaultStagePromptSlots('content')
-    expect(contentSlots.some((s) => s.id === 'slot-stage-content')).toBe(true)
-    expect(contentSlots.some((s) => s.id === 'slot-limited-pov')).toBe(true)
+  it('没有历史仍注入 depth 0，且同位置按 order 升序排列', () => {
+    const preset: NovelPromptPreset = {
+      id: 'preset-orders',
+      name: '多Block排序预设',
+      blocks: [
+        { id: 'b1', name: '后置块', role: 'system', content: '定位后', enabled: true, position: 'in_chat', depth: 0, order: 5 },
+        { id: 'b2', name: '前置块', role: 'system', content: '定位前', enabled: true, position: 'in_chat', depth: 0, order: -1 },
+        { id: 'b3', name: '中置块', role: 'system', content: '定位中', enabled: true, position: 'in_chat', depth: 0, order: 2 },
+        { id: 'b-hist', name: '历史插槽', role: 'user', content: '', enabled: true, position: 'relative', depth: 0, order: 10, marker: 'marker.history' },
+        { id: 'b-task', name: '任务插槽', role: 'user', content: '', enabled: true, position: 'relative', depth: 0, order: 20, marker: 'marker.task' }
+      ],
+      createdAt: 1,
+      updatedAt: 1
+    }
+    const contents = compilePromptMessages('continue', { instruction: '作者' }, snapshotWithPreset(preset)).map((m) => m.content)
+    const taskIndex = contents.findIndex((c) => c.includes('【本次作者任务】'))
+    expect(contents.slice(taskIndex - 3, taskIndex)).toEqual(['定位前', '定位中', '定位后'])
   })
 
-  it('assembles context honoring stage trigger slots in chat task', async () => {
-    // 1. direction stage
-    const pkgDirection = await contextAssembler.assembleContext({
-      sessionId,
-      connectionId: connId,
-      taskType: 'chat',
-      stage: 'direction',
-      instruction: '请梳理本章方向',
-      target: { chapterId }
-    })
-
-    const dirUserMsg = pkgDirection.userMessage
-    expect(dirUserMsg).toContain('【阶段任务：方向确认】')
-    expect(dirUserMsg).toContain('阶段输出协议：方向确认')
-    expect(dirUserMsg).not.toContain('阶段输出协议：章大纲规划')
-    expect(dirUserMsg).not.toContain('阶段输出协议：正文候选')
-
-    // 2. chapter_outline stage
-    const pkgOutline = await contextAssembler.assembleContext({
-      sessionId,
-      connectionId: connId,
-      taskType: 'chat',
-      stage: 'chapter_outline',
-      instruction: '请规划章大纲',
-      target: { chapterId }
-    })
-    expect(pkgOutline.userMessage).toContain('【阶段任务：章大纲规划】')
-    expect(pkgOutline.userMessage).toContain('阶段输出协议：章大纲规划')
-    expect(pkgOutline.userMessage).not.toContain('阶段输出协议：方向确认')
-
-    // 3. content stage
-    const pkgContent = await contextAssembler.assembleContext({
-      sessionId,
-      connectionId: connId,
-      taskType: 'chat',
-      stage: 'content',
-      instruction: '请生成正文',
-      target: { chapterId }
-    })
-    expect(pkgContent.userMessage).toContain('【阶段任务：正文生成】')
-    expect(pkgContent.userMessage).toContain('阶段输出协议：正文生成')
-  })
-
-  it('produces different configuration fingerprints across different stages', async () => {
-    const pkg1 = await contextAssembler.assembleContext({
-      sessionId,
-      connectionId: connId,
-      taskType: 'chat',
-      stage: 'direction',
-      instruction: '规划',
-      target: { chapterId }
-    })
-
-    const pkg2 = await contextAssembler.assembleContext({
-      sessionId,
-      connectionId: connId,
-      taskType: 'chat',
-      stage: 'chapter_outline',
-      instruction: '规划',
-      target: { chapterId }
-    })
-
-    expect(pkg1.configurationFingerprint).not.toBe(pkg2.configurationFingerprint)
+  it('聊天阶段映射保留 direction/outline/content，reviewed 回普通 chat', () => {
+    expect(promptTask('chat', 'direction')).toBe('direction')
+    expect(promptTask('chat', 'chapter_outline')).toBe('chapter_outline')
+    expect(promptTask('chat', 'content')).toBe('content')
+    expect(promptTask('chat', 'reviewed')).toBe('chat')
+    expect(promptTask('polish', 'content')).toBe('polish')
   })
 })

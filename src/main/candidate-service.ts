@@ -2,6 +2,7 @@ import { createHash, randomUUID } from 'node:crypto'
 import { existsSync } from 'node:fs'
 import { join, resolve } from 'node:path'
 import { Worker, MessageChannel, receiveMessageOnPort, type MessagePort } from 'node:worker_threads'
+import { parseCreationOutput } from './output-parser'
 import type Database from 'better-sqlite3'
 import {
   type ApplyCandidateInput,
@@ -517,7 +518,7 @@ export class CandidateService {
 
       const rows = db.prepare(query).all(...params) as Array<CandidateRow & { raw_output: string; edited_content: string | null }>
       return rows.map((r) => {
-        const text = r.edited_content !== null ? r.edited_content : r.raw_output
+        const text = r.edited_content !== null ? r.edited_content : parseCreationOutput(r.raw_output).content
         return {
           id: r.id,
           taskId: r.task_id,
@@ -611,7 +612,10 @@ export class CandidateService {
       }
 
       if (targetState === 'ready') {
-        const text = candidate.edited_content !== null ? candidate.edited_content : candidate.raw_output
+        const text = candidate.edited_content !== null ? candidate.edited_content : parseCreationOutput(candidate.raw_output).content
+        if (candidate.edited_content === null && !text.trim()) {
+          throw new ProjectError('MODEL_OUTPUT_INVALID', '已取消的输出没有可供保留的小说正文')
+        }
         const hunks = computeDiffHunks(candidate.original_content, text)
         db.prepare('DELETE FROM candidate_hunk WHERE candidate_id = ?').run(candidateId)
         const insertHunk = db.prepare(`

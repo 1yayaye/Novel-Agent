@@ -1,3 +1,4 @@
+import { PromptSettingsStore } from '../src/main/prompt-store'
 import { createServer, type IncomingMessage, type ServerResponse } from 'node:http'
 import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
@@ -56,15 +57,16 @@ describe('17-Step Full MVP Acceptance Workflow (SPECS Section 16.4)', () => {
     const diagnostics = new DiagnosticsService(dataDir)
     const gateway = new ModelGateway(connectionStore, diagnostics)
     const store = new ProjectStore(dataDir, connectionStore)
+    const promptStore = new PromptSettingsStore(store.dataDirectory)
     const searchIndex = new SearchIndex(store, gateway, connectionStore)
     const chapters = new ChapterRepository(store, searchIndex)
     const knowledge = new KnowledgeRepository(store, searchIndex)
     const creative = new CreativeRepository(store, searchIndex)
-    const contextAssembler = new ContextAssembler(store, searchIndex, connectionStore, gateway)
+    const contextAssembler = new ContextAssembler(store, promptStore, searchIndex, connectionStore, gateway)
     const candidateService = new CandidateService(store, searchIndex)
     const creationRunner = new CreationRunner(store, gateway, connectionStore, contextAssembler, candidateService)
-    const chatService = new ChatService(store, gateway, connectionStore, contextAssembler, searchIndex)
-    const analysisRunner = new AnalysisRunner(store, gateway, connectionStore, searchIndex)
+    const chatService = new ChatService(store, promptStore, gateway, connectionStore, contextAssembler, searchIndex)
+    const analysisRunner = new AnalysisRunner(store, promptStore, gateway, connectionStore, searchIndex)
 
     try {
       // =========================================================================
@@ -179,12 +181,14 @@ describe('17-Step Full MVP Acceptance Workflow (SPECS Section 16.4)', () => {
         req.on('data', (c) => { body += c })
         req.on('end', () => {
           let resp: any
-          if (body.includes('全书故事梗概') || body.includes('滚动故事梗概')) {
-            resp = { synopsis: '全书总览：韩立进入七玄门神手谷，拜墨大夫为师。' }
+          const schemaProperties = JSON.parse(body).response_format?.json_schema?.schema?.properties ?? {}
+          const sourceContent = chapters.get(sessionId, chapterList[0].id).content
+          if (schemaProperties.synopsis) {
+            resp = { mainline: '韩立拜师求长生', synopsis: '全书总览：韩立进入七玄门神手谷，拜墨大夫为师。' }
           } else {
             resp = {
               semanticChunks: [
-                { startOffset: 0, endOffset: 20, content: '初入七玄门' }
+                { startOffset: 0, endOffset: sourceContent.length, content: sourceContent }
               ],
               summary: '韩立初入七玄门神手谷。',
               suggestions: [
@@ -195,7 +199,7 @@ describe('17-Step Full MVP Acceptance Workflow (SPECS Section 16.4)', () => {
                   valueJson: '{"identity":"主角"}',
                   displayText: '韩立是故事主角',
                   confidence: 0.95,
-                  evidence: { startOffset: 0, endOffset: 20, excerpt: '韩立背着行囊' }
+                  evidence: { startOffset: 0, endOffset: 20, excerpt: sourceContent.slice(0, 20) }
                 }
               ],
               consistencyIssues: [
@@ -203,7 +207,7 @@ describe('17-Step Full MVP Acceptance Workflow (SPECS Section 16.4)', () => {
                   issueType: 'setting_mismatch',
                   severity: 'low',
                   description: '演武场守备较为松散。',
-                  evidence: { startOffset: 0, endOffset: 10, excerpt: '气氛紧张' }
+                  evidence: { startOffset: 0, endOffset: 10, excerpt: sourceContent.slice(0, 10) }
                 }
               ]
             }

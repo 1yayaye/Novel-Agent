@@ -5,6 +5,8 @@ import {
   type ListRemoteModelsInput,
   type ListRemoteModelsResult,
   type ModelConnectionSummary,
+  type PromptSnapshot,
+  type ReasoningEffort,
   type RemoteModelSummary,
   type TaskType
 } from '../shared/project'
@@ -117,6 +119,8 @@ export interface ChatCompletionOptions {
   messages: ChatMessage[]
   temperature?: number
   maxTokens?: number
+  reasoningEffort?: ReasoningEffort
+  requestBudget?: PromptSnapshot['budget']
   responseFormat?: {
     type: 'json_schema'
     json_schema: {
@@ -139,6 +143,9 @@ export interface StructuredJsonOptions<T> {
   zodSchema: ZodType<T>
   schemaName?: string
   temperature?: number
+  maxTokens?: number
+  reasoningEffort?: ReasoningEffort
+  requestBudget?: PromptSnapshot['budget']
   signal?: AbortSignal
   isContentRequest?: boolean
   taskId?: string
@@ -546,6 +553,10 @@ export class ModelGateway {
       try {
         const result = await this.executeNonStreamingRequestWithRetry(connection, secret, {
           ...requestOptions,
+          messages: connection.capabilities.jsonSchema ? options.messages : [
+            ...options.messages,
+            { role: 'system', content: `输出必须符合以下 JSON Schema，仅返回 JSON：\n${JSON.stringify(jsonSchema)}` }
+          ],
           responseFormat: connection.capabilities.jsonSchema
             ? {
                 type: 'json_schema',
@@ -825,7 +836,7 @@ export class ModelGateway {
           throw new ProjectError('TASK_CANCELLED', '任务已由作者取消')
         }
         if (error instanceof ProjectError) {
-          if (error.code === 'AUTH_FAILED' || error.code === 'MODEL_CONTEXT_EXCEEDED' || error.code === 'TASK_CANCELLED' || error.code === 'CONTENT_TARGET_CONFIRMATION_REQUIRED') {
+          if (error.code === 'AUTH_FAILED' || error.code === 'MODEL_CONTEXT_EXCEEDED' || error.code === 'VERSION_CONFLICT' || error.code === 'CONNECTION_NOT_FOUND' || error.code === 'VALIDATION_ERROR' || error.code === 'TASK_CANCELLED' || error.code === 'CONTENT_TARGET_CONFIRMATION_REQUIRED') {
             throw error
           }
         }
@@ -852,6 +863,20 @@ export class ModelGateway {
     throw new ProjectError('CONNECTION_FAILED', '模型连接失败')
   }
 
+  private assertRequestAllowed(connection: ModelConnectionSummary, options: ChatCompletionOptions): void {
+    if (!options.requestBudget) return
+    const { connectionId } = options.requestBudget
+    if (connectionId !== options.connectionId || connectionId !== connection.id) {
+      throw new ProjectError('VALIDATION_ERROR', '冻结请求预算与模型连接不一致')
+    }
+    const { contextWindow, safetyMarginRatio, tokenEstimationRatio, maxOutputTokens } = options.requestBudget
+    const inputLimit = contextWindow - (options.maxTokens ?? maxOutputTokens) - Math.floor(contextWindow * safetyMarginRatio)
+    const schemaText = options.responseFormat ? JSON.stringify(options.responseFormat.json_schema.schema) : ''
+    const estimated = options.messages.reduce((total, message) => total + 4 + Math.ceil(message.content.length * tokenEstimationRatio), 2)
+      + Math.ceil(schemaText.length * tokenEstimationRatio)
+    if (estimated > inputLimit) throw new ProjectError('MODEL_CONTEXT_EXCEEDED', '完整请求（含结构约束）超过冻结输入预算，请缩小任务范围')
+  }
+
   private async executeNonStreamingRequestWithRetry(
     connection: ModelConnectionSummary,
     secret: { apiKey?: string; customHeaders?: Record<string, string> },
@@ -867,6 +892,7 @@ export class ModelGateway {
       }
 
       try {
+        this.assertRequestAllowed(connection, options)
         const { url } = getFinalEndpointUrl(connection.baseUrl, 'chat')
         const headers: Record<string, string> = {
           'Content-Type': 'application/json',
@@ -884,9 +910,11 @@ export class ModelGateway {
         if (options.temperature !== undefined && connection.capabilities.temperature) {
           payload.temperature = options.temperature
         }
-        if (options.maxTokens !== undefined) {
-          payload.max_tokens = options.maxTokens
+        const reasoningEffort = options.reasoningEffort ?? connection.reasoningEffort
+        if (reasoningEffort) {
+          payload.reasoning_effort = reasoningEffort
         }
+        payload.max_tokens = options.maxTokens ?? connection.maxOutputTokens
         if (options.responseFormat) {
           payload.response_format = options.responseFormat
         }
@@ -963,7 +991,7 @@ export class ModelGateway {
           throw new ProjectError('TASK_CANCELLED', '任务已由作者取消')
         }
         if (error instanceof ProjectError) {
-          if (error.code === 'AUTH_FAILED' || error.code === 'MODEL_CONTEXT_EXCEEDED' || error.code === 'TASK_CANCELLED') {
+          if (error.code === 'AUTH_FAILED' || error.code === 'MODEL_CONTEXT_EXCEEDED' || error.code === 'VERSION_CONFLICT' || error.code === 'CONNECTION_NOT_FOUND' || error.code === 'VALIDATION_ERROR' || error.code === 'TASK_CANCELLED') {
             throw error
           }
         }
@@ -995,6 +1023,7 @@ export class ModelGateway {
     secret: { apiKey?: string; customHeaders?: Record<string, string> },
     options: ChatCompletionOptions
   ): Promise<AsyncIterable<ChatStreamChunk>> {
+    this.assertRequestAllowed(connection, options)
     const { url } = getFinalEndpointUrl(connection.baseUrl, 'chat')
     const headers: Record<string, string> = {
       'Content-Type': 'application/json',
@@ -1016,9 +1045,11 @@ export class ModelGateway {
     if (options.temperature !== undefined && connection.capabilities.temperature) {
       payload.temperature = options.temperature
     }
-    if (options.maxTokens !== undefined) {
-      payload.max_tokens = options.maxTokens
+    const reasoningEffort = options.reasoningEffort ?? connection.reasoningEffort
+    if (reasoningEffort) {
+      payload.reasoning_effort = reasoningEffort
     }
+    payload.max_tokens = options.maxTokens ?? connection.maxOutputTokens
     if (options.responseFormat) {
       payload.response_format = options.responseFormat
     }

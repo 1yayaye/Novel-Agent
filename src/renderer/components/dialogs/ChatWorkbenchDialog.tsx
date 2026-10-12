@@ -356,6 +356,48 @@ export function ChatWorkbenchDialog({
     }
   }
 
+  const handleConfirmOutlineAndEnterContent = async () => {
+    if (actionLoading || isStreaming || isReadOnly) return
+    if (!latestChapterOutline || latestChapterOutline.state === 'stale') {
+      showToast('请先打开「编辑大纲」，保存并确认本章大纲。', 'warning')
+      return
+    }
+    setActionLoading(true)
+    setError('')
+    try {
+      const confirmed = latestChapterOutline.state === 'draft'
+        ? await window.novelAgent.outline.confirmChapterOutline({ sessionId, outlineId: latestChapterOutline.id, expectedVersion: latestChapterOutline.version })
+        : latestChapterOutline
+      await handleUpdateStage('content', confirmed.id, confirmed.version)
+    } catch (err) {
+      setError(errorText(err, '确认章大纲失败，请重新打开大纲检查最新版本'))
+    } finally {
+      setActionLoading(false)
+    }
+  }
+
+  const handleSaveOutlineDraft = async (message: ChatMessage) => {
+    const currentSession = sessions.find((session) => session.id === selectedSessionId)
+    if (actionLoading || isStreaming || isReadOnly || currentSession?.stage !== 'chapter_outline' || !currentSession.targetChapterId || message.role !== 'assistant' || message.state !== 'completed' || !message.contextPackageId) return
+    setActionLoading(true)
+    setError('')
+    try {
+      const sourceContext = await window.novelAgent.context.get({ sessionId, contextPackageId: message.contextPackageId })
+      if (sourceContext.stage !== 'chapter_outline' || sourceContext.workflowType !== 'creation_workflow' || sourceContext.target?.chapterId !== currentSession.targetChapterId) {
+        setError('这条回复不是当前目标章节的章大纲，请在章大纲阶段生成本章规划后保存。')
+        return
+      }
+      const existingDraft = latestChapterOutline?.chapterId === currentSession.targetChapterId && latestChapterOutline.state === 'draft' ? latestChapterOutline : null
+      const saved = await window.novelAgent.outline.saveChapterOutline({ sessionId, chapterId: currentSession.targetChapterId, content: message.content, state: 'draft', outlineId: existingDraft?.id, expectedVersion: existingDraft?.version })
+      setLatestChapterOutline(saved)
+      showToast('章大纲已保存为草稿。请编辑检查后，由作者确认并进入正文阶段。', 'success')
+    } catch (err) {
+      setError(errorText(err, '保存章大纲草稿失败，请检查最新版本后重试'))
+    } finally {
+      setActionLoading(false)
+    }
+  }
+
   const handleSendMessage = async () => {
     const text = inputContent.trim()
     if (!text || !selectedSessionId || isStreaming || isReadOnly) return
@@ -769,23 +811,7 @@ export function ChatWorkbenchDialog({
                         className="primary-button"
                         style={{ fontSize: 12, padding: '4px 10px' }}
                         disabled={actionLoading || isStreaming || isReadOnly}
-                        onClick={async () => {
-                          // If outline is confirmed, pass its id and version
-                          if (latestChapterOutline && (latestChapterOutline.state === 'confirmed' || latestChapterOutline.state === 'current')) {
-                            await handleUpdateStage('content', latestChapterOutline.id, latestChapterOutline.version)
-                          } else if (latestChapterOutline && latestChapterOutline.state === 'draft') {
-                            // Confirm then update stage
-                            const confirmed = await window.novelAgent.outline.confirmChapterOutline({
-                              sessionId,
-                              outlineId: latestChapterOutline.id,
-                              expectedVersion: latestChapterOutline.version
-                            })
-                            await handleUpdateStage('content', confirmed.id, confirmed.version)
-                          } else {
-                            // Prompt user to write/save outline first
-                            showToast('请先在右侧对话中生成并保存章大纲，或点击「编辑大纲」完成大纲确认。', 'warning')
-                          }
-                        }}
+                        onClick={() => void handleConfirmOutlineAndEnterContent()}
                       >
                         <Check size={13} />锁定大纲并进入正文
                       </Button>
@@ -815,6 +841,7 @@ export function ChatWorkbenchDialog({
                         variant="primary"
                         className="primary-button"
                         style={{ fontSize: 12, padding: '4px 10px' }}
+                        disabled={actionLoading || isStreaming || isReadOnly}
                         onClick={() => {
                           onOpenContextPreview?.(
                             'continue',
@@ -930,9 +957,9 @@ export function ChatWorkbenchDialog({
               ) : messages.length === 0 && !isStreaming ? (
                 <div style={{ padding: 60, textAlign: 'center', color: '#94a3b8' }}>
                   <Bot size={36} style={{ margin: '0 auto 12px', opacity: 0.4, color: '#059669' }} />
-                  <h3>向 AI 助手提问小说内容</h3>
+                  <h3>{currentSession?.workflowType === 'creation_workflow' ? '与 AI 协作规划当前章节' : '向 AI 助手提问小说内容'}</h3>
                   <p style={{ fontSize: 13, marginTop: 4 }}>
-                    系统会自动装配正文片段、设定库与规则作为检索证据，并在回答中提供引用溯源。
+                    {currentSession?.workflowType === 'creation_workflow' ? '先确认方向，再规划章大纲；确认大纲后生成正文候选，由作者审阅并写回。' : '系统会装配正文片段、设定库与作者规则，区分已有事实与创作建议并提供引用来源。'}
                   </p>
                 </div>
               ) : (
@@ -974,6 +1001,9 @@ export function ChatWorkbenchDialog({
                         <div className="chat-message-meta">
                           <span>{formatDate(msg.createdAt)}</span>
                           <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                            {currentSession?.workflowType === 'creation_workflow' && currentSession.stage === 'chapter_outline' && msg.role === 'assistant' && msg.state === 'completed' && msg.contextPackageId && (
+                              <Button variant="ghost" className="text-button" style={{ fontSize: 11, color: '#059669', padding: 0 }} disabled={actionLoading || isStreaming || isReadOnly} onClick={() => void handleSaveOutlineDraft(msg)} title="将当前章大纲回复保存为草稿，待作者编辑与确认"><FileEdit size={11} />保存为章大纲草稿</Button>
+                            )}
                             {msg.tokenCount && (
                               <span>~{msg.tokenCount} tokens</span>
                             )}
@@ -1033,6 +1063,12 @@ export function ChatWorkbenchDialog({
                     ? '项目处于只读模式'
                     : !selectedSessionId
                     ? '请先选择或新建一个会话'
+                    : currentSession?.workflowType === 'creation_workflow'
+                    ? currentSession.stage === 'direction'
+                      ? '描述本章核心事件、冲突与希望增加的信息…'
+                      : currentSession.stage === 'chapter_outline'
+                      ? '规划或修订本章目标、场景节拍、人物动机与连续性…'
+                      : '讨论正文创作要求；点击「生成正文候选」进入审阅流程…'
                     : '输入问题，如剧情逻辑、角色设定、前文细节... (Enter 发送，Shift+Enter 换行)'
                 }
                 isStreaming={isStreaming}

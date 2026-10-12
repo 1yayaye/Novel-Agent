@@ -2,6 +2,7 @@ using System;
 using System.Diagnostics;
 using System.IO;
 using System.Net.Http;
+using System.Runtime.InteropServices;
 using System.Threading.Tasks;
 using Microsoft.UI;
 using Microsoft.UI.Windowing;
@@ -10,13 +11,36 @@ using Microsoft.Web.WebView2.Core;
 
 namespace NovelAgent.WinUI;
 
+internal static class WindowNativeHelper
+{
+    [DllImport("user32.dll")]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    public static extern bool SetForegroundWindow(IntPtr hWnd);
+
+    [DllImport("user32.dll")]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    public static extern bool ShowWindow(IntPtr hWnd, int nCmdShow);
+
+    public const int SW_RESTORE = 9;
+
+    public static void BringToForeground(IntPtr hwnd)
+    {
+        ShowWindow(hwnd, SW_RESTORE);
+        SetForegroundWindow(hwnd);
+    }
+}
+
 public sealed partial class MainWindow : Window
 {
+    private readonly string? _initialProjectPath;
+    private string? _pendingProjectPath;
+    private bool _browserReady;
     private SidecarSupervisor? _sidecar;
     private IpcBridge? _ipcBridge;
 
-    public MainWindow()
+    public MainWindow(string? initialProjectPath = null)
     {
+        _initialProjectPath = initialProjectPath;
         InitializeComponent();
 
         ConfigureTitleBar();
@@ -25,6 +49,33 @@ public sealed partial class MainWindow : Window
 
         // Initialize WebView2 and Sidecar when window is activated/loaded
         _ = InitializeHostAsync();
+    }
+
+    public void BringToForeground()
+    {
+        DispatcherQueue.TryEnqueue(() =>
+        {
+            AppWindow.Show();
+            var hwnd = WinRT.Interop.WindowNative.GetWindowHandle(this);
+            WindowNativeHelper.BringToForeground(hwnd);
+        });
+    }
+
+    public void OpenProjectDirectly(string projectPath)
+    {
+        _pendingProjectPath = projectPath;
+        DispatcherQueue.TryEnqueue(() =>
+        {
+            BringToForeground();
+            FlushPendingProject();
+        });
+    }
+
+    private void FlushPendingProject()
+    {
+        if (!_browserReady || _ipcBridge == null || _pendingProjectPath == null) return;
+        _ipcBridge.NotifyExternalProjectOpen(_pendingProjectPath);
+        _pendingProjectPath = null;
     }
 
     private void ConfigureTitleBar()
@@ -70,6 +121,11 @@ public sealed partial class MainWindow : Window
 
             // 3. Mount IPC Bridge
             _ipcBridge = new IpcBridge(this, Browser.CoreWebView2, _sidecar);
+            Browser.CoreWebView2.NavigationCompleted += (_, _) =>
+            {
+                _browserReady = true;
+                FlushPendingProject();
+            };
 
             // 4. Configure Virtual Host Mapping & Navigation
             string distFolder = ResolveDistFolder();
@@ -82,7 +138,7 @@ public sealed partial class MainWindow : Window
                 );
             }
 
-            string targetUrl = await ResolveInitialNavigationUrlAsync(distFolder);
+            string targetUrl = await ResolveInitialNavigationUrlAsync(distFolder, _initialProjectPath);
             Browser.CoreWebView2.Navigate(targetUrl);
         }
         catch (Exception ex)
@@ -108,35 +164,36 @@ public sealed partial class MainWindow : Window
         return baseRenderer;
     }
 
-    private static async Task<string> ResolveInitialNavigationUrlAsync(string distFolder)
+    private static async Task<string> ResolveInitialNavigationUrlAsync(string distFolder, string? initialProjectPath)
     {
-        // Environment variable override
         string? envUrl = Environment.GetEnvironmentVariable("NOVEL_AGENT_DEV_URL");
-        if (!string.IsNullOrEmpty(envUrl)) return envUrl;
+        string baseUrl = !string.IsNullOrEmpty(envUrl) ? envUrl : "https://novel-agent/index.html";
 
-        // Check if local Vite dev server is running
-        try
+        if (string.IsNullOrEmpty(envUrl))
         {
-            using var client = new HttpClient { Timeout = TimeSpan.FromMilliseconds(500) };
-            var response = await client.GetAsync("http://localhost:5173");
-            if (response.IsSuccessStatusCode)
+            // Check if local Vite dev server is running
+            try
             {
-                return "http://localhost:5173";
+                using var client = new HttpClient { Timeout = TimeSpan.FromMilliseconds(500) };
+                var response = await client.GetAsync("http://localhost:5173");
+                if (response.IsSuccessStatusCode)
+                {
+                    baseUrl = "http://localhost:5173";
+                }
+            }
+            catch
+            {
+                // Dev server not active, proceed to packaged assets
             }
         }
-        catch
+
+        if (!string.IsNullOrEmpty(initialProjectPath))
         {
-            // Dev server not active, proceed to packaged assets
+            string separator = baseUrl.Contains('?') ? "&" : "?";
+            return $"{baseUrl}{separator}openProject={Uri.EscapeDataString(initialProjectPath)}";
         }
 
-        // Virtual host mapped url
-        if (Directory.Exists(distFolder) && File.Exists(Path.Combine(distFolder, "index.html")))
-        {
-            return "https://novel-agent/index.html";
-        }
-
-        // Fallback placeholder if no dist found yet
-        return "https://novel-agent/index.html";
+        return baseUrl;
     }
 
     private static string? FindRepositoryRoot()

@@ -237,4 +237,33 @@ describe('ConnectionStore', () => {
       else process.env.NODE_ENV = originalNodeEnv
     }
   })
+
+  it('persists and updates reasoningEffort on generation connections', () => {
+    const conn = store.create({
+      name: 'Reasoning Model o3-mini',
+      kind: 'generation',
+      baseUrl: 'https://api.openai.com/v1',
+      model: 'o3-mini',
+      reasoningEffort: 'medium'
+    })
+
+    expect(conn.reasoningEffort).toBe('medium')
+    expect(store.get(conn.id).reasoningEffort).toBe('medium')
+
+    const updated = store.update({
+      connectionId: conn.id,
+      expectedVersion: conn.version,
+      reasoningEffort: 'high'
+    })
+    expect(updated.reasoningEffort).toBe('high')
+    expect(store.get(conn.id).reasoningEffort).toBe('high')
+
+    const cleared = store.update({
+      connectionId: conn.id,
+      expectedVersion: updated.version,
+      reasoningEffort: null
+    })
+    expect(cleared.reasoningEffort).toBeNull()
+    expect(store.get(conn.id).reasoningEffort).toBeNull()
+  })
 })

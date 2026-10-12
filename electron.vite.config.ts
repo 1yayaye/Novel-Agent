@@ -33,6 +33,7 @@ export default defineConfig({
   renderer: {
     plugins: [tailwindcss(), react({})],
     build: {
+      minify: true,
       rollupOptions: {
         output: {
           manualChunks(id) {

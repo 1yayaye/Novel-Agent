@@ -43,7 +43,7 @@ describe('CreativeRepository - Creative Rules', () => {
 
     // Initial state has default seeded rules
     const initial = repository.getRules(opened.sessionId)
-    expect(initial.content).toContain('全书核心创作准则')
+    expect(initial.content).toContain('全书创作准则')
     expect(initial.version).toBe(1)
 
     // Update with correct expectedVersion
@@ -204,6 +204,11 @@ describe('CreativeRepository - Instruction Presets', () => {
     const delRes = repository.deletePreset(opened.sessionId, preset1.id, 2)
     expect(delRes.success).toBe(true)
     expect(repository.listPresets(opened.sessionId, 'continue').some((p) => p.id === preset1.id)).toBe(false)
+
+    // Reset default presets
+    const resetList = repository.resetDefaultPresets(opened.sessionId)
+    expect(resetList.length).toBe(14)
+    expect(resetList.some((p) => p.name === '承接前文续写')).toBe(true)
 
     store.close(opened.sessionId)
   })

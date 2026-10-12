@@ -2,6 +2,15 @@ import { create } from 'zustand'
 import type { Chapter, ChapterHeader, OpenProjectResult, RecentProject } from '../../shared/project'
 import { errorText } from '../utils/formatters'
 import { useEditorStore } from './useEditorStore'
+import { useWorkbenchStore } from './useWorkbenchStore'
+
+let projectOperation: Promise<void> = Promise.resolve()
+const pendingProjectOpens = new Map<string, Promise<void>>()
+function enqueueProjectOperation(operation: () => Promise<void>): Promise<void> {
+  const next = projectOperation.then(operation, operation)
+  projectOperation = next.catch(() => {})
+  return next
+}
 
 export interface ProjectState {
   project: OpenProjectResult | null
@@ -15,15 +24,59 @@ export interface ProjectState {
   setProject: (project: OpenProjectResult | null) => void
   setChapters: (chapters: ChapterHeader[]) => void
   selectChapter: (id: string | null) => void
-  loadProject: (opened: OpenProjectResult) => Promise<void>
-  openProjectByPath: (path: string) => Promise<void>
-  chooseAndOpenProject: () => Promise<void>
+  loadProject: (opened: OpenProjectResult, beforeSwitch?: () => Promise<boolean>) => Promise<void>
+  openProjectByPath: (path: string, beforeSwitch?: () => Promise<boolean>) => Promise<void>
+  chooseAndOpenProject: (beforeSwitch?: () => Promise<boolean>) => Promise<void>
   closeProject: () => void
   createChapter: (title?: string) => Promise<Chapter | null>
   deleteChapter: (id: string) => Promise<void>
   renameChapter: (id: string, title: string) => Promise<void>
   reorderChapters: (chapters: ChapterHeader[]) => Promise<void>
   setError: (error: string | null) => void
+}
+
+async function loadProjectInternal(
+  get: () => ProjectState,
+  set: (partial: Partial<ProjectState>) => void,
+  opened: OpenProjectResult,
+  beforeSwitch?: () => Promise<boolean>
+): Promise<void> {
+  set({ isLoading: true, error: null })
+  const previous = get().project
+  try {
+    const list = await window.novelAgent.chapter.list({ sessionId: opened.sessionId })
+    if (!(await beforeSwitch?.() ?? true)) {
+      if (previous?.sessionId !== opened.sessionId) {
+        await window.novelAgent.project.close?.({ sessionId: opened.sessionId })?.catch(() => {})
+      }
+      set({ isLoading: false, error: '当前章节尚未保存，未切换作品' })
+      return
+    }
+    const firstId = list.length > 0 ? list[0].id : null
+    useEditorStore.getState().loadChapter(null, opened.mode === 'read_only')
+    useWorkbenchStore.getState().closeDialog()
+    useWorkbenchStore.getState().closeDrawer()
+    set({
+      project: opened,
+      chapters: list,
+      selectedChapterId: firstId,
+      isLoading: false
+    })
+    if (previous && previous.sessionId !== opened.sessionId) {
+      void window.novelAgent.project.close?.({ sessionId: previous.sessionId })?.catch((err) => {
+        set({ error: errorText(err, '作品已切换，但旧作品未能完全关闭') })
+      })
+    }
+    void get().fetchRecent()
+  } catch (err) {
+    if (previous?.sessionId !== opened.sessionId) {
+      await window.novelAgent.project.close?.({ sessionId: opened.sessionId })?.catch(() => {})
+    }
+    set({
+      error: errorText(err, '加载章节列表失败'),
+      isLoading: false
+    })
+  }
 }
 
 export const useProjectStore = create<ProjectState>((set, get) => ({
@@ -47,56 +100,36 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
   setChapters: (chapters) => set({ chapters }),
   selectChapter: (id) => set({ selectedChapterId: id }),
 
-  loadProject: async (opened: OpenProjectResult) => {
-    useEditorStore.getState().loadChapter(null, opened.mode === 'read_only')
-    set({ isLoading: true, error: null })
-    try {
-      const list = await window.novelAgent.chapter.list({ sessionId: opened.sessionId })
-      const firstId = list.length > 0 ? list[0].id : null
-      set({
-        project: opened,
-        chapters: list,
-        selectedChapterId: firstId,
-        isLoading: false
-      })
-      void get().fetchRecent()
-    } catch (err) {
-      set({
-        error: errorText(err, '加载章节列表失败'),
-        isLoading: false
-      })
-    }
+  loadProject: (opened, beforeSwitch) => enqueueProjectOperation(() => loadProjectInternal(get, set, opened, beforeSwitch)),
+
+  openProjectByPath: (path, beforeSwitch) => {
+    const pending = pendingProjectOpens.get(path)
+    if (pending) return pending
+    const operation = enqueueProjectOperation(async () => {
+      if (get().project?.metadata.path === path) return
+      set({ isLoading: true, error: null })
+      try {
+        const opened = await window.novelAgent.project.open({ path })
+        await loadProjectInternal(get, set, opened, beforeSwitch)
+      } catch (err) {
+        set({ error: errorText(err, '无法打开选中的作品项目'), isLoading: false })
+      }
+    })
+    pendingProjectOpens.set(path, operation)
+    void operation.then(() => pendingProjectOpens.delete(path), () => pendingProjectOpens.delete(path))
+    return operation
   },
 
-  openProjectByPath: async (path: string) => {
-    set({ isLoading: true, error: null })
-    try {
-      const opened = await window.novelAgent.project.open({ path })
-      await get().loadProject(opened)
-    } catch (err) {
-      set({
-        error: errorText(err, '无法打开选中的作品项目'),
-        isLoading: false
-      })
-    }
-  },
-
-  chooseAndOpenProject: async () => {
+  chooseAndOpenProject: (beforeSwitch) => enqueueProjectOperation(async () => {
     set({ isLoading: true, error: null })
     try {
       const opened = await window.novelAgent.project.chooseAndOpen()
-      if (opened) {
-        await get().loadProject(opened)
-      } else {
-        set({ isLoading: false })
-      }
+      if (opened) await loadProjectInternal(get, set, opened, beforeSwitch)
+      else set({ isLoading: false })
     } catch (err) {
-      set({
-        error: errorText(err, '无法打开所选项目文件'),
-        isLoading: false
-      })
+      set({ error: errorText(err, '无法打开所选项目文件'), isLoading: false })
     }
-  },
+  }),
 
   closeProject: () => {
     useEditorStore.getState().loadChapter(null, false)

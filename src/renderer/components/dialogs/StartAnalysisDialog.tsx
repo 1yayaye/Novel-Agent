@@ -115,8 +115,8 @@ export function StartAnalysisDialog({
 
         {error && <p className="inline-error text-xs text-red-600 px-6">{error}</p>}
 
-        <ScrollArea className="h-[460px] px-6">
-          <div className="flex flex-col gap-4 p-1">
+        <ScrollArea className="flex-1 min-h-0 max-h-[60vh] px-6">
+          <div className="flex flex-col gap-4 p-1 pb-6">
             <div className="flex flex-col gap-2">
               <label className="text-xs font-semibold text-[#7d6b59]">任务类型</label>
               <div className="grid grid-cols-2 lg:grid-cols-5 gap-3">

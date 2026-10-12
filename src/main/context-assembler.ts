@@ -3,7 +3,9 @@ import { ProjectError, type ProjectStore } from './project-store'
 import type { ConnectionStore } from './connection-store'
 import type { ModelGateway } from './model-gateway'
 import type { SearchIndex } from './search-index'
-import { DEFAULT_STAGE_PROMPT_SLOTS } from './default-presets'
+import type { PromptSettingsStore } from './prompt-store'
+import { assertPromptSnapshotFresh, compilePromptMessages, promptTask, resolvePromptDefinitions, type PromptMarker } from './prompt-runtime'
+import { PromptSnapshotSchema } from '../shared/prompt-settings'
 import type {
   AssembledMessage,
   ChatWorkflowStage,
@@ -12,11 +14,8 @@ import type {
   ContextItemSourceType,
   ContextPackage,
   ContextPreviewInput,
-  DirectorControls,
   ExcludedContextItem,
-  PromptSlot,
-  PromptSlotPosition,
-  PromptSlotRole,
+  PromptSnapshot,
   TaskType
 } from '../shared/project'
 
@@ -87,114 +86,10 @@ export function expandMacros(template: string, ctx: MacroContext, warnings: stri
   })
 }
 
-export function compileDirectorControls(controls?: DirectorControls): PromptSlot[] {
-  if (!controls) return []
-  const slots: PromptSlot[] = []
-
-  if (controls.pov) {
-    let content = ''
-    if (controls.pov === 'limited_3p') {
-      content = '【叙事视角】第三人称主角限制视角。仅描写主角感知范围内的心理、行为与事态，禁止全知上帝视角越权描写。'
-    } else if (controls.pov === 'omniscient_3p') {
-      content = '【叙事视角】第三人称全知视角。展现宏观战局与多方动态。'
-    } else if (controls.pov === 'first_person') {
-      content = '【叙事视角】第一人称自白。以“我”的视角与口吻展开叙事。'
-    }
-    slots.push({
-      id: 'director-pov',
-      name: 'POV 视角锚定',
-      enabled: true,
-      role: 'system',
-      content,
-      position: 'after_context',
-      order: 10,
-      trigger: 'always'
-    })
-  }
-
-  if (controls.sensory) {
-    const content =
-      controls.sensory === 'strict'
-        ? '【感官边界】严格防全知边界。只书写角色此刻身体直接感知到的一切（目之所视、耳之所闻），未经验证的情形不可预知。'
-        : '【感官边界】宽松感知。允许在情境需要时适度交代周围环境的整体氛围。'
-    slots.push({
-      id: 'director-sensory',
-      name: '感官边界',
-      enabled: true,
-      role: 'system',
-      content,
-      position: 'after_context',
-      order: 20,
-      trigger: 'always'
-    })
-  }
-
-  if (controls.pacing) {
-    let content = ''
-    if (controls.pacing === 'fast') content = '【叙事节奏】快节奏推进。突出核心动作与冲突碰撞，精炼过渡。'
-    else if (controls.pacing === 'slow') content = '【叙事节奏】慢热铺垫。强化氛围烘托、细腻白描与心理留白。'
-    else content = '【叙事节奏】平稳推进。叙事详略得当，张弛有度。'
-    slots.push({
-      id: 'director-pacing',
-      name: '叙事节奏',
-      enabled: true,
-      role: 'system',
-      content,
-      position: 'after_context',
-      order: 30,
-      trigger: 'always'
-    })
-  }
-
-  if (controls.initiative) {
-    const content =
-      controls.initiative === 'follow_input'
-        ? '【交互规则】严格遵循作者输入与指令，不擅自替作者角色越权决策。'
-        : '【交互规则】允许根据情境合理丰富在场角色的动作与互动细节。'
-    slots.push({
-      id: 'director-initiative',
-      name: '交互规则',
-      enabled: true,
-      role: 'system',
-      content,
-      position: 'after_context',
-      order: 40,
-      trigger: 'always'
-    })
-  }
-
-  if (controls.banWords && controls.banWords.length > 0) {
-    slots.push({
-      id: 'director-ban-words',
-      name: '杀八股禁词表',
-      enabled: true,
-      role: 'system',
-      content: `【禁忌词汇】严禁在生成中使用以下词汇或八股句式：${controls.banWords.join('、')}`,
-      position: 'after_context',
-      order: 50,
-      trigger: 'always'
-    })
-  }
-
-  if (controls.enableCoT === true) {
-    slots.push({
-      id: 'director-cot',
-      name: '写前推演检查',
-      enabled: true,
-      role: 'system',
-      content: '【写前推演】在正式输出前，请先简要检查：1.人物动机与性格一致性 2.视角与感官边界合规 3.情境过渡平滑。',
-      position: 'after_context',
-      order: 60,
-      trigger: 'always'
-    })
-  }
-
-  return slots
-}
-
 export class ContextAssembler {
   constructor(
     private readonly store: ProjectStore,
+    private readonly promptStore: PromptSettingsStore,
     private readonly searchIndex: SearchIndex,
     private readonly connectionStore: ConnectionStore,
     private readonly modelGateway?: ModelGateway
@@ -204,17 +99,19 @@ export class ContextAssembler {
    * Main entrypoint to assemble an immutable ContextPackage.
    * SPEC 7.2, 7.3, 7.4 & PROMPT SPEC v2.0
    */
-  async assembleContext(input: ContextPreviewInput): Promise<ContextPackage> {
+  async assembleContext(input: ContextPreviewInput, frozenSnapshot?: PromptSnapshot, excludedHistoryMessageId?: string): Promise<ContextPackage> {
     const { sessionId, connectionId, taskType, stage, workflowType, outlineId, outlineVersion } = input
     const instruction = (input.instruction || '').trim()
     const warnings: string[] = []
 
     // 1. Read connection configuration
     const { connection } = this.connectionStore.getInternal(connectionId)
-    const contextWindow = connection.contextWindow || 128000
-    const maxOutputTokens = connection.maxOutputTokens || 4096
-    const safetyMarginRatio = connection.safetyMarginRatio ?? 0.1
-    const tokenEstimationRatio = connection.tokenEstimationRatio || 1.3
+    const promptSnapshot = frozenSnapshot ?? this.promptStore.snapshot(connection)
+    if (!promptSnapshot.budget) throw new ProjectError('STALE_CONTEXT_PACKAGE', '任务缺少冻结预算，请重新创建')
+    const contextWindow = promptSnapshot.budget.contextWindow
+    const maxOutputTokens = promptSnapshot.budget.maxOutputTokens
+    const safetyMarginRatio = promptSnapshot.budget.safetyMarginRatio
+    const tokenEstimationRatio = promptSnapshot.budget.tokenEstimationRatio
 
     const safetyMargin = Math.floor(contextWindow * safetyMarginRatio)
     const availableInputTokens = Math.max(0, contextWindow - maxOutputTokens - safetyMargin)
@@ -242,11 +139,14 @@ export class ContextAssembler {
 
         targetChapter = chap
 
-        const start = input.target.startOffset ?? 0
+        const start = input.target.startOffset ?? (taskType === 'continue' ? chap.content.length : 0)
         const end = input.target.endOffset ?? chap.content.length
+        if (start > end || end > chap.content.length) {
+          throw new ProjectError('VALIDATION_ERROR', '目标选区超出章节正文范围，请重新选择')
+        }
 
         if (taskType === 'continue') {
-          targetText = chap.content.slice(0, start > 0 ? start : chap.content.length)
+          targetText = chap.content.slice(0, start)
         } else if (taskType === 'rewrite' || taskType === 'polish') {
           targetText = chap.content.slice(start, end)
         } else {
@@ -271,12 +171,14 @@ export class ContextAssembler {
     }
 
     let bookSynopsisText = ''
+    let bookSynopsisId = ''
     this.store.read(sessionId, (db) => {
       const synopsis = db
         .prepare("SELECT id, summary FROM book_synopsis WHERE state = 'current' LIMIT 1")
         .get() as { id: string; summary: string } | undefined
       if (synopsis) {
         bookSynopsisText = synopsis.summary
+        bookSynopsisId = synopsis.id
       }
     })
 
@@ -426,73 +328,8 @@ export class ContextAssembler {
     // Expand macros in author instruction
     const expandedInstruction = expandMacros(instruction, macroCtx, warnings).trim()
 
-    // 3. Compile Prompt Slots & Director Controls (Preserving Array Ordering in Hash)
-    const userSlots = input.slots || []
-    const defaultStageSlots = stage
-      ? DEFAULT_STAGE_PROMPT_SLOTS.filter((ds) => !userSlots.some((us) => us.id === ds.id))
-      : []
-    const directorSlots = compileDirectorControls(input.directorControls)
-    const combinedRawSlots = [...defaultStageSlots, ...userSlots, ...directorSlots]
-
-    const compiledSlots: PromptSlot[] = combinedRawSlots
-      .filter((slot) => {
-        if (!slot.enabled) return false
-        if (!slot.trigger || slot.trigger === 'always') return true
-        if (stage && slot.trigger === stage) return true
-        if (slot.trigger === taskType) return true
-        if (
-          slot.trigger === 'creation' &&
-          (['continue', 'rewrite', 'polish'].includes(taskType) || stage === 'content')
-        )
-          return true
-        return false
-      })
-      .map((slot) => ({
-        ...slot,
-        content: expandMacros(slot.content, macroCtx, warnings)
-      }))
-
-    // 4. Compute Configuration Fingerprint (SPEC 7.2 & PROMPT SPEC v2.0)
-    // NOTE: Preserving slot array ordering in serializedSlots (without sort) ensures slot reordering changes fingerprint!
-    const sortedStyles = (input.styleSampleIds || []).slice().sort().join(',')
-    const sortedPinned = (input.pinnedSourceIds || []).slice().sort().join(',')
-    const serializedSlots = compiledSlots
-      .map((s, idx) => `[${idx}]${s.id}:${s.role}:${s.position}:${s.depth ?? ''}:${s.order}:${s.trigger ?? ''}:${s.content}`)
-      .join('|')
-    const directorControlsJson = JSON.stringify(input.directorControls || {})
-
-    const fingerprintRaw = [
-      connectionId,
-      taskType,
-      stage || '',
-      workflowType || '',
-      currentChapterOutline?.id || outlineId || '',
-      currentChapterOutline?.version !== undefined ? String(currentChapterOutline.version) : (outlineVersion ? String(outlineVersion) : ''),
-      currentBookOutline?.version !== undefined ? String(currentBookOutline.version) : '',
-      currentVolumeOutline?.version !== undefined ? String(currentVolumeOutline.version) : '',
-      input.target?.chapterId || '',
-      input.target?.startOffset ?? '',
-      input.target?.endOffset ?? '',
-      expandedInstruction,
-      input.presetId || '',
-      sortedStyles,
-      sortedPinned,
-      serializedSlots,
-      directorControlsJson,
-      input.includeCreativeRules !== false ? '1' : '0',
-      input.targetLength || '',
-      input.creativity || '',
-      input.scanDepth || ''
-    ].join('|')
-    const configurationFingerprint = createHash('sha256').update(fingerprintRaw).digest('hex').slice(0, 24)
-
-    // 5. Map Creativity to Temperature
-    let temperature: number | undefined
-    if (connection.capabilities.temperature && input.creativity) {
-      if (input.creativity === 'low') temperature = 0.3
-      else if (input.creativity === 'medium') temperature = 0.7
-      else if (input.creativity === 'high') temperature = 1.0
-    }
+    const optionsFingerprint = this.optionsFingerprint(input, promptSnapshot)
+    const definitions = resolvePromptDefinitions(promptTask(taskType, stage), promptSnapshot)
 
     // 6. Build candidate items across Priority Tiers
     const rawItems: Array<{
@@ -504,26 +341,26 @@ export class ContextAssembler {
       selectionReason: string
       fixed: boolean
       isUncuttable: boolean
-      slotId?: string
-      role?: PromptSlotRole
-      positionType?: PromptSlotPosition
+      moduleId?: string
+      role?: AssembledMessage['role']
+      positionType?: 'relative' | 'in_chat'
       depth?: number
       slotOrder?: number
       activationKey?: string
     }> = []
 
-    // Tier 1: System task template & safety constraints (Uncuttable)
-    const systemTemplateText = this.getSystemTemplate(taskType, input.targetLength)
-    rawItems.push({
-      sourceType: 'system_template',
-      sourceId: 'system_template',
-      authorityLevel: 1,
-      title: '系统任务模板',
-      content: systemTemplateText,
-      selectionReason: '系统核心任务指示与安全约束模板',
-      fixed: true,
-      isUncuttable: true
-    })
+    for (const definition of definitions) {
+      if (!definition.content) continue
+      rawItems.push({
+        sourceType: 'system_template',
+        sourceId: definition.id,
+        authorityLevel: 1, title: definition.name, content: definition.content,
+        selectionReason: '预设提示词模块或任务协议',
+        fixed: true, isUncuttable: true,
+        role: definition.role, positionType: definition.position ?? 'relative',
+        depth: definition.depth, slotOrder: definition.order, moduleId: definition.id
+      })
+    }
 
     // Tier 2: Creative Rules (Uncuttable if enabled)
     if (creativeRulesText.length > 0) {
@@ -564,25 +401,6 @@ export class ContextAssembler {
         selectionReason: '作者针对本次任务输入的特定创作要求',
         fixed: true,
         isUncuttable: true
-      })
-    }
-
-    // Prompt Slots (Compiled items)
-    for (const slot of compiledSlots) {
-      rawItems.push({
-        sourceType: 'prompt_slot',
-        sourceId: slot.id,
-        authorityLevel: slot.position === 'before_context' ? 4 : 5,
-        title: slot.name,
-        content: slot.content,
-        selectionReason: `已启用的 Prompt Slot [${slot.name}]`,
-        fixed: false,
-        isUncuttable: false,
-        slotId: slot.id,
-        role: slot.role,
-        positionType: slot.position,
-        depth: slot.depth,
-        slotOrder: slot.order
       })
     }
 
@@ -757,7 +575,7 @@ export class ContextAssembler {
       if (bookSynopsisText.length > 0) {
         rawItems.push({
           sourceType: 'book_synopsis',
-          sourceId: 'current_synopsis',
+          sourceId: bookSynopsisId,
           authorityLevel: 9,
           title: '全书宏观梗概',
           content: bookSynopsisText,
@@ -807,6 +625,10 @@ export class ContextAssembler {
         })
       }
     })
+
+    const materialFingerprints = new Map(rawItems.map((item) => [
+      `${item.sourceType}:${item.sourceId}`, this.materialFingerprint(sessionId, item.sourceType, item.sourceId)
+    ]))
 
     // Tier 10: Hybrid retrieved valid text chunks
     let queriesToSearch: string[] = []
@@ -918,30 +740,28 @@ export class ContextAssembler {
             `
           SELECT id, role, content
           FROM chat_message
-          WHERE chat_session_id = ? AND state = 'completed'
+          WHERE chat_session_id = ? AND state = 'completed' AND id != ?
           ORDER BY created_at DESC
           LIMIT 12
         `
           )
-          .all(chatId) as Array<{ id: string; role: string; content: string }>
+          .all(chatId, excludedHistoryMessageId ?? '') as Array<{ id: string; role: AssembledMessage['role']; content: string }>
 
-        if (recentMessages.length > 0) {
-          const chronological = recentMessages.slice().reverse()
-          const formattedHistory = chronological
-            .map((m) => `${m.role === 'user' ? '作者' : '助手'}: ${m.content}`)
-            .join('\n\n')
+        for (const message of recentMessages.reverse()) {
           rawItems.push({
-            sourceType: 'chat_history',
-            sourceId: chatId,
-            authorityLevel: 12,
-            title: '近期对话历史（最近6轮）',
-            content: formattedHistory,
-            selectionReason: '当前会话最近的多轮上下文问答记录',
-            fixed: false,
-            isUncuttable: false
+            sourceType: 'chat_history', sourceId: message.id, authorityLevel: 12,
+            title: message.role === 'user' ? '历史作者消息' : '历史助手消息',
+            content: message.content, role: message.role,
+            selectionReason: '当前会话真实历史消息，按时间顺序保留角色',
+            fixed: false, isUncuttable: false
           })
         }
       })
+    }
+
+    for (const item of rawItems) {
+      const key = `${item.sourceType}:${item.sourceId}`
+      if (!materialFingerprints.has(key)) materialFingerprints.set(key, this.materialFingerprint(sessionId, item.sourceType, item.sourceId))
     }
 
     // 7. Token Budget Allocation & Trimming (SPEC 7.3, 7.4)
@@ -980,7 +800,7 @@ export class ContextAssembler {
         position: positionIndex++,
         title: raw.title,
         content: raw.content,
-        slotId: raw.slotId,
+        moduleId: raw.moduleId,
         role: raw.role,
         positionType: raw.positionType,
         depth: raw.depth,
@@ -995,54 +815,57 @@ export class ContextAssembler {
 
     for (const raw of cuttableItems) {
       const est = estimateTokens(raw.content, tokenEstimationRatio)
-      if (currentEstimatedTokens + est <= availableInputTokens) {
-        currentEstimatedTokens += est
-        items.push({
-          id: randomUUID(),
-          contextPackageId: packageId,
-          sourceType: raw.sourceType,
-          sourceId: raw.sourceId,
-          authorityLevel: raw.authorityLevel,
-          selectionReason: raw.selectionReason,
-          estimatedTokens: est,
-          fixed: raw.fixed,
-          position: positionIndex++,
-          title: raw.title,
-          content: raw.content,
-          slotId: raw.slotId,
-          role: raw.role,
-          positionType: raw.positionType,
-          depth: raw.depth,
-          slotOrder: raw.slotOrder,
-          activationKey: raw.activationKey
-        })
-      } else {
-        excludedItems.push({
-          sourceType: raw.sourceType,
-          sourceId: raw.sourceId,
-          title: raw.title,
-          reason: 'budget_exceeded',
-          estimatedTokens: est,
-          slotId: raw.slotId
-        })
-      }
-    }
+      currentEstimatedTokens += est
+      items.push({
+        id: randomUUID(),
+        contextPackageId: packageId,
+        sourceType: raw.sourceType,
+        sourceId: raw.sourceId,
+        authorityLevel: raw.authorityLevel,
+        selectionReason: raw.selectionReason,
+        estimatedTokens: est,
+        fixed: raw.fixed,
+        position: positionIndex++,
+        title: raw.title,
+        content: raw.content,
+        moduleId: raw.moduleId,
+        role: raw.role,
+        positionType: raw.positionType,
+        depth: raw.depth,
+        slotOrder: raw.slotOrder,
+        activationKey: raw.activationKey
+      })
 
-    if (excludedItems.length > 0) {
-      warnings.push(`由于 Token 预算限制，已自动裁剪 ${excludedItems.length} 项低优先级上下文`)
     }
 
     // 8. Full Messages Assembly (SPEC v2.0 - Honors role & depth across all message slots)
-    const messages = this.buildAssembledMessages(
+    let messages = this.buildAssembledMessages(
       taskType,
       items,
       expandedInstruction,
       input.targetLength,
       input.creativity,
-      stage
+      stage,
+      promptSnapshot
     )
 
-    // Compute backward-compatible single systemMessage and userMessage strings
+    const estimateMessages = () => messages.reduce((total, message) => total + estimateTokens(message.content, tokenEstimationRatio) + 4, 2)
+    currentEstimatedTokens = estimateMessages()
+    while (currentEstimatedTokens > availableInputTokens) {
+      const trimIndex = items.reduce((selected, item, index) => {
+        if (rawItems.find((raw) => raw.sourceType === item.sourceType && raw.sourceId === item.sourceId)?.isUncuttable) return selected
+        return selected < 0 || item.authorityLevel > items[selected].authorityLevel ? index : selected
+      }, -1)
+      if (trimIndex < 0) throw new ProjectError('MODEL_CONTEXT_EXCEEDED', '固定任务协议、作者要求与目标正文超过输入预算，请缩短目标内容或调整连接预算')
+      const [trimmed] = items.splice(trimIndex, 1)
+      excludedItems.push({ sourceType: trimmed.sourceType, sourceId: trimmed.sourceId, title: trimmed.title,
+        reason: 'budget_exceeded', estimatedTokens: trimmed.estimatedTokens, moduleId: trimmed.moduleId })
+      messages = this.buildAssembledMessages(taskType, items, expandedInstruction, input.targetLength, input.creativity, stage, promptSnapshot)
+      currentEstimatedTokens = estimateMessages()
+    }
+    if (excludedItems.length && !warnings.some((warning) => warning.includes('Token'))) warnings.push(`由于 Token 预算限制，已裁剪 ${excludedItems.length} 项可选内容`)
+
+    // 汇总视图用于预览；模型发送下方冻结的 messages。
     const systemMessage = messages
       .filter((m) => m.role === 'system')
       .map((m) => m.content)
@@ -1052,6 +875,14 @@ export class ContextAssembler {
       .map((m) => m.content)
       .join('\n\n')
 
+    const materialsSnapshot = items.flatMap((item) => {
+      const fingerprint = materialFingerprints.get(`${item.sourceType}:${item.sourceId}`)
+      return fingerprint ? [{ sourceType: item.sourceType, sourceId: item.sourceId, fingerprint }] : []
+    })
+    if (materialsSnapshot.some((material) => this.materialFingerprint(sessionId, material.sourceType, material.sourceId) !== material.fingerprint)) {
+      throw new ProjectError('STALE_CONTEXT_PACKAGE', '预览期间作品资料发生更新，请重新生成预览')
+    }
+    const configurationFingerprint = createHash('sha256').update(JSON.stringify({ optionsFingerprint, materialsSnapshot })).digest('hex')
     const now = Date.now()
     const contextPackage: ContextPackage = {
       id: packageId,
@@ -1062,10 +893,11 @@ export class ContextAssembler {
       outlineVersion: currentChapterOutline?.version || outlineVersion || null,
       targetVersion: targetVersion ?? null,
           targetLength: input.targetLength ?? null,
-          creativity: input.creativity ? { level: input.creativity, temperature } : null,
+          creativity: input.creativity ? { level: input.creativity } : null,
           connectionId,
           target: input.target || null,
           configurationFingerprint,
+      promptSnapshot,
       messages,
       systemMessage,
       userMessage,
@@ -1083,7 +915,6 @@ export class ContextAssembler {
       const warningsJson = JSON.stringify(warnings)
       const targetVersions: Record<string, any> = {}
       if (targetChapter) {
-        targetVersions[targetChapter.id] = targetChapter.version
         targetVersions[`chapter:${targetChapter.id}`] = targetChapter.version
       }
       if (currentChapterOutline) {
@@ -1110,7 +941,7 @@ export class ContextAssembler {
       if (currentChapterOutline?.version !== undefined || outlineVersion !== undefined) {
         targetVersions['_meta:outlineVersion'] = currentChapterOutline?.version || outlineVersion
       }
-      const targetVersionsJson = JSON.stringify(targetVersions)
+      const targetVersionsJson = JSON.stringify({ ...targetVersions, '_meta:promptSnapshot': promptSnapshot, '_meta:creativity': input.creativity ?? null, '_meta:optionsFingerprint': optionsFingerprint, '_meta:materials': materialsSnapshot })
 
       db.prepare(
         `
@@ -1128,7 +959,7 @@ export class ContextAssembler {
         warningsJson,
         targetVersionsJson,
         input.targetLength || null,
-        temperature || null,
+        null,
         configurationFingerprint,
         now,
         taskType,
@@ -1158,7 +989,7 @@ export class ContextAssembler {
           item.position,
           item.title || null,
           item.content || null,
-          item.slotId || null,
+          item.moduleId || null,
           item.role || null,
           item.positionType || null,
           item.depth ?? null,
@@ -1214,8 +1045,8 @@ export class ContextAssembler {
         title: string | null
         content: string | null
         slot_id: string | null
-        role: PromptSlotRole | null
-        position_type: PromptSlotPosition | null
+        role: AssembledMessage['role'] | null
+        position_type: 'relative' | 'in_chat' | null
         depth: number | null
         slot_order: number | null
         activation_key: string | null
@@ -1232,6 +1063,10 @@ export class ContextAssembler {
         .join('\n\n')
       const warnings = JSON.parse(row.warnings_json) as string[]
       const excludedItems = JSON.parse(row.excluded_items_json || '[]') as ExcludedContextItem[]
+      const metadata = JSON.parse(row.target_versions_json) as Record<string, any>
+      if (!PromptSnapshotSchema.safeParse(metadata['_meta:promptSnapshot']).success) {
+        throw new ProjectError('STALE_CONTEXT_PACKAGE', '上下文包缺少有效的提示词快照，请重新生成预览')
+      }
       const target = row.target_json ? JSON.parse(row.target_json) : null
 
       const items: ContextItem[] = itemsRows.map((r) => ({
@@ -1246,7 +1081,7 @@ export class ContextAssembler {
         position: r.position,
         title: r.title || undefined,
         content: r.content || undefined,
-        slotId: r.slot_id || undefined,
+        moduleId: r.slot_id || undefined,
         role: r.role || undefined,
         positionType: r.position_type || undefined,
         depth: r.depth ?? undefined,
@@ -1269,7 +1104,7 @@ export class ContextAssembler {
         if (targetMap['_meta:outlineVersion']) outlineVersion = targetMap['_meta:outlineVersion']
 
         for (const [k, v] of Object.entries(targetMap)) {
-          if (!k.startsWith('_meta:') && !k.includes(':') && typeof v === 'number') {
+          if (k.startsWith('chapter:') && typeof v === 'number') {
             targetVersion = v
             break
           }
@@ -1287,7 +1122,8 @@ export class ContextAssembler {
         outlineVersion,
         targetVersion,
         targetLength: row.target_length,
-        creativity: row.creativity !== null ? { level: 'medium', temperature: row.creativity } : null,
+        creativity: metadata['_meta:creativity'] ? { level: metadata['_meta:creativity'] } : null,
+        promptSnapshot: PromptSnapshotSchema.parse(metadata['_meta:promptSnapshot']),
         configurationFingerprint: row.configuration_fingerprint,
         messages,
         systemMessage,
@@ -1313,6 +1149,9 @@ export class ContextAssembler {
   ): ContextPackage {
     const pkg = this.getContextPackage({ sessionId, contextPackageId: packageId })
 
+    if (!pkg.connectionId) throw new ProjectError('STALE_CONTEXT_PACKAGE', '上下文包缺少连接信息')
+    assertPromptSnapshotFresh(this.promptStore, pkg.promptSnapshot, this.connectionStore.getInternal(pkg.connectionId).connection)
+
     // 1. Verify target chapter and outline versions and staleness
     this.store.read(sessionId, (db) => {
       const rawPkg = db
@@ -1321,6 +1160,13 @@ export class ContextAssembler {
       if (rawPkg) {
         try {
           const targetVersions = JSON.parse(rawPkg.target_versions_json) as Record<string, any>
+          const materials = targetVersions['_meta:materials'] as Array<{ sourceType: ContextItemSourceType; sourceId: string; fingerprint: string }>
+          if (!Array.isArray(materials) || materials.some((material) => this.materialFingerprint(sessionId, material.sourceType, material.sourceId) !== material.fingerprint)) {
+            throw new ProjectError('STALE_CONTEXT_PACKAGE', '作品资料已更新，请重新生成预览')
+          }
+          if (currentOptions && this.optionsFingerprint(currentOptions, pkg.promptSnapshot) !== targetVersions['_meta:optionsFingerprint']) {
+            throw new ProjectError('STALE_CONTEXT_PACKAGE', '本次任务选项已变化，请重新生成预览')
+          }
           for (const [key, expectedVer] of Object.entries(targetVersions)) {
             if (key.startsWith('_meta:')) continue
             if (key.startsWith('chapter:')) {
@@ -1355,14 +1201,7 @@ export class ContextAssembler {
               if (!vol || vol.version !== expectedVer || vol.state === 'stale') {
                 throw new ProjectError('STALE_CONTEXT_PACKAGE', '分卷大纲已发生更新或已过时，上下文包已失效，请重新生成预览')
               }
-            } else {
-              // Raw chapter ID for backward compatibility
-              const chap = db
-                .prepare('SELECT version, deleted_at FROM chapter WHERE id = ?')
-                .get(key) as { version: number; deleted_at: number | null } | undefined
-              if (chap && (chap.deleted_at !== null || chap.version !== expectedVer)) {
-                throw new ProjectError('STALE_CONTEXT_PACKAGE', '目标章节正文已发生更新，上下文包已失效，请重新生成预览')
-              }
+
             }
           }
         } catch (e) {
@@ -1384,372 +1223,70 @@ export class ContextAssembler {
       }
     })
 
-    // 2. Re-compute fingerprint to check for configuration changes if options passed
-    if (currentOptions) {
-      const sortedStyles = (currentOptions.styleSampleIds || []).slice().sort().join(',')
-      const sortedPinned = (currentOptions.pinnedSourceIds || []).slice().sort().join(',')
-
-      const userSlots = currentOptions.slots || []
-      const defaultStageSlots = currentOptions.stage
-        ? DEFAULT_STAGE_PROMPT_SLOTS.filter((ds) => !userSlots.some((us) => us.id === ds.id))
-        : []
-      const directorSlots = compileDirectorControls(currentOptions.directorControls)
-      const combinedRawSlots = [...defaultStageSlots, ...userSlots, ...directorSlots]
-      const compiledSlots: PromptSlot[] = combinedRawSlots.filter((slot) => {
-        if (!slot.enabled) return false
-        if (!slot.trigger || slot.trigger === 'always') return true
-        if (currentOptions.stage && slot.trigger === currentOptions.stage) return true
-        if (slot.trigger === currentOptions.taskType) return true
-        if (
-          slot.trigger === 'creation' &&
-          (['continue', 'rewrite', 'polish'].includes(currentOptions.taskType) || currentOptions.stage === 'content')
-        )
-          return true
-        return false
-      })
-
-      // NOTE: Preserving slot array ordering in serializedSlots (without sort)
-      const serializedSlots = compiledSlots
-        .map((s, idx) => `[${idx}]${s.id}:${s.role}:${s.position}:${s.depth ?? ''}:${s.order}:${s.trigger ?? ''}:${s.content}`)
-        .join('|')
-      const directorControlsJson = JSON.stringify(currentOptions.directorControls || {})
-
-      let curChapOutlineId = currentOptions.outlineId || ''
-      let curChapOutlineVersion = ''
-      let curBookOutlineVersion = ''
-      let curVolumeOutlineVersion = ''
-      this.store.read(sessionId, (db) => {
-        if (currentOptions.outlineId) {
-          const co = db.prepare("SELECT id, version FROM chapter_outline WHERE id = ? AND state != 'stale'").get(currentOptions.outlineId) as { id: string; version: number } | undefined
-          if (co) {
-            curChapOutlineId = co.id
-            curChapOutlineVersion = String(co.version)
-          }
-        } else if (currentOptions.target?.chapterId) {
-          if (currentOptions.outlineVersion) {
-            const co = db.prepare("SELECT id, version FROM chapter_outline WHERE chapter_id = ? AND version = ? AND state != 'stale'").get(currentOptions.target.chapterId, currentOptions.outlineVersion) as { id: string; version: number } | undefined
-            if (co) {
-              curChapOutlineId = co.id
-              curChapOutlineVersion = String(co.version)
-            }
-          } else {
-            const confirmedCo = db.prepare("SELECT id, version FROM chapter_outline WHERE chapter_id = ? AND state IN ('confirmed', 'current') ORDER BY version DESC LIMIT 1").get(currentOptions.target.chapterId) as { id: string; version: number } | undefined
-            if (confirmedCo) {
-              curChapOutlineId = confirmedCo.id
-              curChapOutlineVersion = String(confirmedCo.version)
-            } else {
-              const latestCo = db.prepare("SELECT id, version FROM chapter_outline WHERE chapter_id = ? AND state != 'stale' ORDER BY version DESC LIMIT 1").get(currentOptions.target.chapterId) as { id: string; version: number } | undefined
-              if (latestCo) {
-                curChapOutlineId = latestCo.id
-                curChapOutlineVersion = String(latestCo.version)
-              }
-            }
-          }
-        }
-
-        const bo = db.prepare("SELECT version FROM book_outline WHERE state IN ('confirmed', 'current') ORDER BY updated_at DESC LIMIT 1").get() as { version: number } | undefined
-        if (bo) {
-          curBookOutlineVersion = String(bo.version)
-        } else {
-          const draftBo = db.prepare("SELECT version FROM book_outline WHERE state != 'stale' ORDER BY updated_at DESC LIMIT 1").get() as { version: number } | undefined
-          if (draftBo) curBookOutlineVersion = String(draftBo.version)
-        }
-
-        if (currentOptions.target?.chapterId) {
-          const chapOutline = db.prepare("SELECT volume_id FROM chapter_outline WHERE chapter_id = ? AND state != 'stale' ORDER BY version DESC LIMIT 1").get(currentOptions.target.chapterId) as { volume_id: string | null } | undefined
-          if (chapOutline?.volume_id) {
-            const vo = db.prepare("SELECT version FROM volume_outline WHERE id = ? AND state != 'stale'").get(chapOutline.volume_id) as { version: number } | undefined
-            if (vo) curVolumeOutlineVersion = String(vo.version)
-          }
-        }
-        if (!curVolumeOutlineVersion) {
-          const vo = db.prepare("SELECT version FROM volume_outline WHERE state IN ('confirmed', 'current') ORDER BY position ASC LIMIT 1").get() as { version: number } | undefined
-          if (vo) {
-            curVolumeOutlineVersion = String(vo.version)
-          } else {
-            const fallbackVo = db.prepare("SELECT version FROM volume_outline WHERE state != 'stale' ORDER BY position ASC LIMIT 1").get() as { version: number } | undefined
-            if (fallbackVo) curVolumeOutlineVersion = String(fallbackVo.version)
-          }
-        }
-      })
-
-      const fingerprintRaw = [
-        currentOptions.connectionId,
-        currentOptions.taskType,
-        currentOptions.stage || '',
-        currentOptions.workflowType || '',
-        curChapOutlineId,
-        curChapOutlineVersion,
-        curBookOutlineVersion,
-        curVolumeOutlineVersion,
-        currentOptions.target?.chapterId || '',
-        currentOptions.target?.startOffset ?? '',
-        currentOptions.target?.endOffset ?? '',
-        currentOptions.instruction.trim(),
-        currentOptions.presetId || '',
-        sortedStyles,
-        sortedPinned,
-        serializedSlots,
-        directorControlsJson,
-        currentOptions.includeCreativeRules !== false ? '1' : '0',
-        currentOptions.targetLength || '',
-        currentOptions.creativity || '',
-        currentOptions.scanDepth || ''
-      ].join('|')
-      const currentFingerprint = createHash('sha256').update(fingerprintRaw).digest('hex').slice(0, 24)
-
-      if (currentFingerprint !== pkg.configurationFingerprint) {
-        throw new ProjectError('STALE_CONTEXT_PACKAGE', '创作配置或选项发生变化，原上下文包已失效，请重新生成预览')
-      }
-    }
-
     return pkg
   }
 
-  private getSystemTemplate(taskType: TaskType, targetLength?: number): string {
-    const lengthHint = targetLength ? `本次目标输出字数约为 ${targetLength} 字。` : ''
-    switch (taskType) {
-      case 'continue':
-        return `你是一位专业的小说创作助手。请根据提供的创作规则、设定背景和前文脉络，紧随作者光标位置进行自然流畅的中文正文续写。保持人设、叙事口吻与行文风格一致。${lengthHint}`
-      case 'rewrite':
-        return `你是一位专业的小说创作助手。请重写作者指定的正文选区，遵循指令要求改变叙事节奏或表达方式，同时保持基本世界观与人物事实一致。${lengthHint}`
-      case 'polish':
-        return `你是一位专业的小说创作助手。请对作者指定的正文选区进行精细润色，优化文笔、句式与修辞，严禁改变原有情节走向与设定事实。${lengthHint}`
-      case 'chat':
-        return '你是一位博学且严谨的小说设定与情节助手，请基于提供的作品正文事实与知识设定回答作者的提问。引述必须准确，在回答中引述参考内容时请注明来源编号（如 [来源1]、[设定:条目名] 等）。不可臆造事实，不得修改或臆造与提供设定相违背的内容。'
-      case 'knowledge':
-        return '你是一位小说知识提取与剧情逻辑分析专家，负责从章节正文中梳理人物、世界观、时间线与伏笔线索，并排查矛盾漏洞。'
-      case 'report':
-        return '你是一位专业的小说文学编辑与评论家，负责针对作品进行主题、视角、文风、结构、人物弧光和连续性的六维深度分析。'
-      case 'style_distill':
-        return '你是一位小说文风蒸馏专家，负责从正文中提炼可执行的语言、节奏、叙事和表达规律。'
-      case 'book_summary':
-        return '你是一位长篇小说总结专家，负责按章节梳理事实、人物变化、伏笔和未解问题。'
+  private materialFingerprint(sessionId: string, sourceType: ContextItemSourceType, sourceId: string): string | null {
+    const tables: Partial<Record<ContextItemSourceType, string>> = {
+      target_text: 'chapter', knowledge_entry: 'knowledge_entry', style_sample: 'style_sample',
+      instruction_preset: 'instruction_preset', book_synopsis: 'book_synopsis', chapter_summary: 'chapter_summary',
+      book_outline: 'book_outline', volume_outline: 'volume_outline', chapter_outline: 'chapter_outline',
+      retrieved_chunk: 'content_chunk', ai_suggestion: 'ai_fact_suggestion'
     }
+    return this.store.read(sessionId, (db) => {
+      let row: Record<string, unknown> | undefined
+      if (sourceType === 'creative_rules') {
+        row = db.prepare('SELECT creative_rules AS content FROM project_meta LIMIT 1').get() as typeof row
+      } else if (sourceType === 'chat_history') {
+        row = (db.prepare('SELECT * FROM chat_message WHERE id = ?').get(sourceId) ?? db.prepare('SELECT * FROM chat_summary WHERE id = ?').get(sourceId)) as typeof row
+      } else if (sourceType === 'pinned_source') {
+        row = (db.prepare('SELECT * FROM content_chunk WHERE id = ?').get(sourceId) ?? db.prepare('SELECT * FROM knowledge_entry WHERE id = ?').get(sourceId)) as typeof row
+      } else if (tables[sourceType]) {
+        row = db.prepare(`SELECT * FROM ${tables[sourceType]} WHERE id = ?`).get(sourceId) as typeof row
+      } else return null
+      if (!row) return 'missing'
+      return createHash('sha256').update(JSON.stringify({
+        version: row.version ?? row.chapter_version, content: row.content ?? row.author_content ?? row.summary ?? row.display_text,
+        state: row.state, role: row.role, deletedAt: row.deleted_at
+      })).digest('hex')
+    })
   }
 
-  /**
-   * Assembles the full message array, correctly honoring:
-   * - slot.role ('system' | 'user' | 'assistant')
-   * - slot.position ('before_context' | 'after_context' | 'absolute_depth')
-   * - slot.depth (in-chat depth relative to end of message stream)
-   * - slot.order (priority within same depth/position)
-   */
+  private optionsFingerprint(input: ContextPreviewInput, snapshot: PromptSnapshot): string {
+    return createHash('sha256').update(JSON.stringify({
+      promptFingerprint: snapshot.fingerprint, budget: snapshot.budget,
+      connectionId: input.connectionId, taskType: input.taskType, stage: input.stage ?? null,
+      workflowType: input.workflowType ?? null, outlineId: input.outlineId ?? null, outlineVersion: input.outlineVersion ?? null,
+      target: input.target ? { chapterId: input.target.chapterId ?? null, startOffset: input.target.startOffset ?? null,
+        endOffset: input.target.endOffset ?? null, chatId: input.target.chatId ?? null } : null,
+      instruction: input.instruction.trim(), presetId: input.presetId ?? null,
+      styleSampleIds: [...(input.styleSampleIds ?? [])].sort(), pinnedSourceIds: [...(input.pinnedSourceIds ?? [])].sort(),
+      includeCreativeRules: input.includeCreativeRules !== false, targetLength: input.targetLength ?? null,
+      creativity: input.creativity ?? null, scanDepth: input.scanDepth ?? null, enableQueryRewrite: input.enableQueryRewrite ?? false
+    })).digest('hex')
+  }
+
   private buildAssembledMessages(
-    taskType: TaskType,
-    items: ContextItem[],
-    instruction: string,
-    targetLength?: number,
-    creativity?: string,
-    stage?: ChatWorkflowStage
+    taskType: TaskType, items: ContextItem[], instruction: string,
+    targetLength: number | undefined, creativity: 'low' | 'medium' | 'high' | undefined,
+    stage: ChatWorkflowStage | undefined, snapshot: PromptSnapshot
   ): AssembledMessage[] {
-    const messages: AssembledMessage[] = []
-
-    // 1. Build Base System Message
-    const systemSections: string[] = []
-    const templateItem = items.find((i) => i.sourceType === 'system_template')
-    if (templateItem?.content) {
-      systemSections.push(templateItem.content)
+    const markers: Partial<Record<ContextItemSourceType, PromptMarker>> = {
+      creative_rules: 'project_rules', book_outline: 'outlines', volume_outline: 'outlines', chapter_outline: 'outlines',
+      knowledge_entry: 'knowledge', book_synopsis: 'synopsis', chapter_summary: 'synopsis',
+      style_sample: 'style_samples', pinned_source: 'references', retrieved_chunk: 'references',
+      ai_suggestion: 'suggestions', instruction_preset: 'preset', target_text: 'target', chat_history: 'history'
     }
-
-    const rulesItem = items.find((i) => i.sourceType === 'creative_rules')
-    if (rulesItem?.content) {
-      systemSections.push(`【全书创作规则】\n${rulesItem.content}`)
+    const materials: Partial<Record<PromptMarker, AssembledMessage[]>> = {}
+    for (const item of [...items].sort((a, b) => a.position - b.position)) {
+      const marker = item.sourceType === 'chat_history' && !item.role ? 'synopsis' : markers[item.sourceType]
+      if (!marker || !item.content) continue
+      const content = marker === 'history' && item.role ? item.content : `【${item.title ?? item.sourceType}】\n${item.content}`
+      ;(materials[marker] ??= []).push({ role: item.role ?? 'user', content })
     }
-
-    // before_context slots with role === 'system'
-    const beforeSysSlots = items
-      .filter(
-        (i) =>
-          i.sourceType === 'prompt_slot' &&
-          i.positionType === 'before_context' &&
-          (i.role === 'system' || !i.role)
-      )
-      .sort((a, b) => (a.slotOrder ?? 0) - (b.slotOrder ?? 0))
-
-    for (const slot of beforeSysSlots) {
-      if (slot.content) {
-        systemSections.push(slot.content)
-      }
-    }
-
-    if (systemSections.length > 0) {
-      messages.push({ role: 'system', content: systemSections.join('\n\n') })
-    }
-
-    // 2. before_context slots with role !== 'system' (e.g. user preamble)
-    const beforeOtherSlots = items
-      .filter(
-        (i) =>
-          i.sourceType === 'prompt_slot' &&
-          i.positionType === 'before_context' &&
-          i.role !== 'system' &&
-          Boolean(i.role)
-      )
-      .sort((a, b) => (a.slotOrder ?? 0) - (b.slotOrder ?? 0))
-
-    for (const slot of beforeOtherSlots) {
-      if (slot.content) {
-        messages.push({ role: slot.role!, content: slot.content })
-      }
-    }
-
-    // 3. Build Core Context & Materials Block
-    const contextBlocks: string[] = []
-
-    // Project Outlines (book_outline, volume_outline, chapter_outline)
-    const outlineItems = items.filter(
-      (i) =>
-        i.sourceType === 'book_outline' ||
-        i.sourceType === 'volume_outline' ||
-        i.sourceType === 'chapter_outline'
-    )
-    if (outlineItems.length > 0) {
-      const ot = outlineItems.map((o) => `### ${o.title}\n${o.content}`).join('\n\n')
-      contextBlocks.push(`【项目大纲规划】\n${ot}`)
-    }
-
-    // Chat history & rolling summary (Tier 12)
-    const chatHistoryItems = items.filter((i) => i.sourceType === 'chat_history')
-    if (chatHistoryItems.length > 0) {
-      const ch = chatHistoryItems.map((c) => `### ${c.title}\n${c.content}`).join('\n\n')
-      contextBlocks.push(`【会话历史与对话记忆】\n${ch}`)
-    }
-
-    // Background Knowledge & Setting Entries
-    const knowledgeItems = items.filter(
-      (i) => i.sourceType === 'knowledge_entry' || (i.sourceType === 'pinned_source' && i.title?.includes('设定'))
-    )
-    if (knowledgeItems.length > 0) {
-      const kw = knowledgeItems.map((k) => `### ${k.title}\n${k.content}`).join('\n\n')
-      contextBlocks.push(`【背景设定与人物档案】\n${kw}`)
-    }
-
-    // Plot Synopsis & Summaries
-    const synopsisItems = items.filter((i) => i.sourceType === 'book_synopsis' || i.sourceType === 'chapter_summary')
-    if (synopsisItems.length > 0) {
-      const sw = synopsisItems.map((s) => `### ${s.title}\n${s.content}`).join('\n\n')
-      contextBlocks.push(`【剧情大纲与前情提要】\n${sw}`)
-    }
-
-    // Style Samples & References
-    const styleItems = items.filter((i) => i.sourceType === 'style_sample')
-    if (styleItems.length > 0) {
-      const st = styleItems.map((s) => `### ${s.title}\n${s.content}`).join('\n\n')
-      contextBlocks.push(`【参考文风样本】\n${st}`)
-    }
-
-    // Retrieved Context Fragments
-    const retrievedItems = items.filter(
-      (i) => i.sourceType === 'retrieved_chunk' || (i.sourceType === 'pinned_source' && i.title?.includes('片段'))
-    )
-    if (retrievedItems.length > 0) {
-      const rt = retrievedItems.map((r, idx) => `### [来源${idx + 1}] ${r.title}\n${r.content}`).join('\n\n')
-      contextBlocks.push(`【相关正文引用片段】\n${rt}`)
-    }
-
-    // Instruction Presets
-    const presetItem = items.find((i) => i.sourceType === 'instruction_preset')
-    if (presetItem?.content) {
-      contextBlocks.push(`【常用创作要求】\n${presetItem.content}`)
-    }
-
-    // Target Text
-    const targetItem = items.find((i) => i.sourceType === 'target_text')
-    if (targetItem?.content) {
-      if (taskType === 'continue') {
-        contextBlocks.push(`【前文内容】\n${targetItem.content}`)
-      } else {
-        contextBlocks.push(`【待修改原文选区】\n${targetItem.content}`)
-      }
-    }
-
-    // 4. after_context slots
-    const afterSlots = items
-      .filter((i) => i.sourceType === 'prompt_slot' && i.positionType === 'after_context')
-      .sort((a, b) => (a.slotOrder ?? 0) - (b.slotOrder ?? 0))
-
-    const afterSysSlots = afterSlots.filter((s) => s.role === 'system' || !s.role)
-    const afterUserSlots = afterSlots.filter((s) => s.role === 'user')
-    const afterAssistantSlots = afterSlots.filter((s) => s.role === 'assistant')
-
-    if (afterSysSlots.length > 0) {
-      contextBlocks.push(`【创作控制与即时要求】\n${afterSysSlots.map((s) => s.content).join('\n\n')}`)
-    }
-
-    if (afterUserSlots.length > 0) {
-      contextBlocks.push(`【补充说明】\n${afterUserSlots.map((s) => s.content).join('\n\n')}`)
-    }
-
-    if (taskType === 'chat') {
-      if (stage === 'direction') {
-        contextBlocks.push(`【阶段任务：方向确认】\n${instruction.trim() || '请结合大纲与设定梳理本章创作核心方向与待确认问题。'}`)
-      } else if (stage === 'chapter_outline') {
-        contextBlocks.push(`【阶段任务：章大纲规划】\n${instruction.trim() || '请规划本章的六模块结构化章大纲。'}`)
-      } else if (stage === 'content') {
-        contextBlocks.push(`【阶段任务：正文生成】\n${instruction.trim() || '请基于已确认的章大纲生成正文候选。'}`)
-      } else {
-        contextBlocks.push(`【作者提问】\n${instruction.trim() || '请根据以上设定与正文内容回答。'}`)
-      }
-    } else {
-      const paramsList: string[] = []
-      if (targetLength) paramsList.push(`- 目标长度：约 ${targetLength} 字`)
-      if (creativity) {
-        paramsList.push(
-          `- 创意倾向：${creativity === 'low' ? '低（严谨保守）' : creativity === 'medium' ? '中（平衡自然）' : '高（发散探索）'}`
-        )
-      }
-
-      let finalInstructionBlock = '【本次创作任务指令】\n'
-      if (paramsList.length > 0) {
-        finalInstructionBlock += `${paramsList.join('\n')}\n`
-      }
-      finalInstructionBlock += instruction.trim() ? instruction.trim() : '请基于以上背景脉络与要求开始生成。'
-      contextBlocks.push(finalInstructionBlock)
-    }
-
-    // Push Core User Message
-    messages.push({ role: 'user', content: contextBlocks.join('\n\n---\n\n') })
-
-    // after_context slots with assistant role (e.g. prefill/continuation)
-    for (const slot of afterAssistantSlots) {
-      if (slot.content) {
-        messages.push({ role: 'assistant', content: slot.content })
-      }
-    }
-
-    // 5. In-Chat Depth Injections (absolute_depth)
-    // Depth D = 0 -> inserted at the very end of messages (after last message)
-    // Depth D = 1 -> inserted before the last message (1 message back from end)
-    // Depth D = N -> inserted N messages back from end (preserving system prompt at index 0)
-    const depthSlots = items
-      .filter((i) => i.sourceType === 'prompt_slot' && i.positionType === 'absolute_depth')
-      .sort((a, b) => (a.slotOrder ?? 0) - (b.slotOrder ?? 0))
-
-    const baseCount = messages.length
-    const depthBuckets: AssembledMessage[][] = Array.from({ length: baseCount + 1 }, () => [])
-
-    for (const slot of depthSlots) {
-      if (!slot.content) continue
-      const d = slot.depth ?? 0
-      const bucketIdx = d === 0 ? baseCount : Math.max(1, baseCount - d)
-      depthBuckets[bucketIdx].push({
-        role: slot.role || 'user',
-        content: slot.content
-      })
-    }
-
-    const finalMessages: AssembledMessage[] = []
-    for (let i = 0; i < baseCount; i++) {
-      if (depthBuckets[i].length > 0) {
-        finalMessages.push(...depthBuckets[i])
-      }
-      finalMessages.push(messages[i])
-    }
-    if (depthBuckets[baseCount].length > 0) {
-      finalMessages.push(...depthBuckets[baseCount])
-    }
-
-    return finalMessages
+    return compilePromptMessages(promptTask(taskType, stage), {
+      instruction, materials, targetLength, creativity,
+      includedDefinitionIds: items.filter((item) => item.sourceType === 'system_template' || item.sourceType === 'prompt_module').map((item) => item.sourceId)
+    }, snapshot)
   }
 }

@@ -1,4 +1,6 @@
-import React, { Suspense, useEffect, useState } from 'react'
+import React, { Suspense, useCallback, useEffect, useRef, useState } from 'react'
+import { Sliders } from 'lucide-react'
+import { Button } from '@appica/ui-react/button'
 import type { ImportPreviewResult, OpenProjectResult } from '../shared/project'
 import { errorText } from './utils/formatters'
 import { WindowControls } from './components/common/WindowControls'
@@ -6,9 +8,12 @@ import { ToastProvider } from './components/common/Toast'
 import { ProjectShelf } from './features/shelf/ProjectShelf'
 import { ImportPreviewModal } from './features/shelf/ImportPreviewModal'
 import { WorkbenchLayout } from './features/workbench/WorkbenchLayout'
+import { CreativeSettingsDialog } from './components/dialogs/CreativeSettingsDialog'
 import { useProjectStore } from './stores/useProjectStore'
+import type { EditorHandle } from './types/editor'
 
 export default function App() {
+  const [isGlobalPromptOpen, setIsGlobalPromptOpen] = useState(false)
   const {
     project,
     recentProjects,
@@ -23,6 +28,12 @@ export default function App() {
   } = useProjectStore()
 
   const [preview, setPreview] = useState<NonNullable<ImportPreviewResult> | null>(null)
+  const editorHandleRef = useRef<EditorHandle | null>(null)
+  const flushBeforeProjectSwitch = useCallback(async () => {
+    const current = useProjectStore.getState().project
+    if (!current || current.mode === 'read_only') return true
+    return (await editorHandleRef.current?.flush()) ?? true
+  }, [])
 
   useEffect(() => {
     void fetchRecent()
@@ -33,6 +44,28 @@ export default function App() {
       ? `${project.metadata.title} - Novel Agent by matsuri`
       : 'Novel Agent by matsuri'
   }, [project])
+
+  useEffect(() => {
+    const unsub = window.novelAgent?.project?.onOpenProjectRequested?.((path: string) => {
+      if (path) {
+        void openProjectByPath(path, flushBeforeProjectSwitch)
+      }
+    })
+
+    return () => {
+      unsub?.()
+    }
+  }, [flushBeforeProjectSwitch, openProjectByPath])
+
+  useEffect(() => {
+    const url = new URL(window.location.href)
+    const openPath = url.searchParams.get('openProject')
+    if (url.searchParams.has('openProject')) {
+      url.searchParams.delete('openProject')
+      window.history.replaceState(window.history.state, '', url)
+    }
+    if (openPath) void openProjectByPath(openPath, flushBeforeProjectSwitch)
+  }, [flushBeforeProjectSwitch, openProjectByPath])
 
   const startImport = async () => {
     try {
@@ -51,8 +84,11 @@ export default function App() {
             <WorkbenchLayout
               project={project}
               initialChapters={chapters}
-              onProjectReloaded={(reopened) => void loadProject(reopened)}
+              onProjectReloaded={(reopened) => void loadProject(reopened, flushBeforeProjectSwitch)}
               onCloseProject={closeProject}
+              onEditorHandleChange={(handle) => {
+                editorHandleRef.current = handle
+              }}
             />
           </Suspense>
         ) : (
@@ -66,6 +102,17 @@ export default function App() {
                 <span className="text-[10px] text-[#7d6b59] font-sans">by matsuri</span>
               </div>
               <div className="no-drag-region flex items-center gap-3 text-xs text-[#7d6b59]">
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => setIsGlobalPromptOpen(true)}
+                  className="flex items-center gap-1.5 px-2.5 py-1 text-xs text-[#54473b] hover:text-[#2c2523] hover:bg-[#efe6da] rounded-lg transition-colors h-7"
+                  title="配置全局提示词模块"
+                >
+                  <Sliders size={13} className="text-[#2d6a4f]" />
+                  <span>提示词设置</span>
+                </Button>
+                <div className="h-3 w-px bg-[#e5ddd3]" />
                 <div className="flex items-center gap-1.5 text-[11px]">
                   <span className="w-1.5 h-1.5 rounded-full bg-[#2d6a4f]" />
                   <span>本地离线存储</span>
@@ -79,11 +126,17 @@ export default function App() {
             <ProjectShelf
               recentProjects={recentProjects}
               error={error}
-              onOpenProject={(path) => void openProjectByPath(path)}
-              onChooseOpen={() => void chooseAndOpenProject()}
+              onOpenProject={(path) => void openProjectByPath(path, flushBeforeProjectSwitch)}
+              onChooseOpen={() => void chooseAndOpenProject(flushBeforeProjectSwitch)}
               onStartImport={() => void startImport()}
             />
           </div>
+        )}
+
+        {isGlobalPromptOpen && (
+          <CreativeSettingsDialog
+            onClose={() => setIsGlobalPromptOpen(false)}
+          />
         )}
 
         {preview && (
@@ -92,7 +145,7 @@ export default function App() {
               onClose={() => setPreview(null)}
               onImported={(opened) => {
                 setPreview(null)
-                void loadProject(opened)
+                void loadProject(opened, flushBeforeProjectSwitch)
               }}
             />
           )}

@@ -1,33 +1,13 @@
 import { randomUUID } from 'node:crypto'
 import type Database from 'better-sqlite3'
-import type { ChatWorkflowStage, PromptSlot } from '../shared/project'
 
-export const DEFAULT_CREATIVE_RULES = `# 全书核心创作准则与行文规范
+export const DEFAULT_CREATIVE_RULES = `# 全书创作准则
 
-## 一、核心原则：真实感与白描化（Show, Don't Tell）
-1. **情感外化呈现**：角色内心状态只能通过身体动作、生理反应、视线落点与呼吸停顿呈现。禁止直接下定义（如“他感到悲伤”、“她很紧张”）。
-2. **动词精准推进**：动作要有形状、重量、方向与物理阻力，以具体动词为核心，不靠抽象修饰词填充。
-3. **伤害与生理真实**：身体创伤、疲惫与疼痛会实时限制角色行动，遵循客观人体的自然反应与恢复规律。
+遵循本作品已确认的人物、世界观、事件、时间线与作者意图。角色行动应有符合其已知信息、目标、关系和处境的理由；区分事实、角色判断与尚未确认的构想。
 
-## 二、严格文风与去 AI 感规范（杀八股）
-1. **句式禁忌**：
-   - 严禁“全肯定对比”句式（“不是A而是B”、“并非A却是B”、“不像A更像B”）。
-   - 严禁从句倒置（“如此……以至于……”、“当……的时候”），严格按“先因后果”的时间流推进。
-   - 避免泛滥使用破折号“——”，多以逗号自然断句或句号落地。
-   - 连续 SVO 结构或等长句必须适度打乱，保持呼吸节奏。
-2. **细节与禁词约束**：
-   - 全文严格控制“一+量词”（一下、一会儿、一阵、一个等）出现频率（单场景 ≤ 3次）。
-   - 严禁滥用“那+量词”（那张、那件、那个等）及“x了x”叠词（看了看、顿了顿、想了想等）。
-   - 严禁套路化比喻库（石子/泛起涟漪/古井无波/手术刀/热刀切黄油/搁浅的鱼/破布娃娃/断线风筝/达摩克利斯之剑等）。
-   - 严禁说明书式类比（“这就好比……”、“这就像……”）与医学报告腔（表皮、毛细血管、心率加快等）。
-3. **对白与收尾规范**：
-   - 严禁对白余波（“这句话落下”、“话说完”、“话音刚落”），对白后直接承接动作、环境或留白。
-   - 严禁“等待式结尾”（“在等你的回复”、“等待着你的回应”等），场景必须自然停在角色的动作、台词、离场或环境动静上。
+延续作品已有文风和叙述视角，根据场景需要安排动作、对白、环境与心理描写。语言清楚自然，细节服务人物和情节，避免重复解释与无目的铺陈。
 
-## 三、世界观刚性与叙事中立
-1. **防魅与现实检验**：主角或玩家角色的行为仅为“尝试”，必须经过情境、距离、持有资源与身份权限的逻辑检验；NPC 具备独立动机与利益边界，绝不无端屈服或降智配合。
-2. **叙事客观中立**：叙述者保持客观摄像机机位，不主观替角色脑补恶意、支配、试探或霸总式心理动机。
-3. **严格限制性视角**：遵守单一主控角色的感官边界（目之所视、耳之所闻），未经验证的信息不可全知预判。
+续写承接前文，改写遵循作者指定范围，润色保留事件、人物意图和信息内容。作者本次明确要求优先；存在无法确定的关键事实时保留不确定性，不自行补成既定设定。
 `
 
 export type DefaultPresetDef = {
@@ -37,148 +17,77 @@ export type DefaultPresetDef = {
 }
 
 export const DEFAULT_INSTRUCTION_PRESETS: DefaultPresetDef[] = [
-  // 1. 续写类 (continue)
   {
     taskType: 'continue',
-    name: '🦊 智能长短文 · 动态节拍续写',
-    instruction: `【任务：正文智能续写】
-请承接上文剧情与上下文，根据场景类型自适应控制篇幅与推进节奏：
-1. 日常交互/简要过渡：精炼交代动作与微反应，点到为止；
-2. 剧情推进/关系变化：充分展开感官细节与对白交错，让沉默与停顿具备分量；
-3. 冲突高潮/重大转折：用具体物理动作撑张力，用身体受力与环境反馈支撑情绪。
-
-【硬性规则】：
-- 严格按先因后果时间线推进，严禁“不是A而是B”式对比与因果倒置。
-- 单行聚焦核心微动作，动词有力，禁止堆砌套路比喻（如涟漪、手术刀等）。
-- 禁止使用“在等你的回复”等等待式收尾，自然收束在角色的动作、对白或具体环境动静上。`
+    name: '承接前文续写',
+    instruction: '从前文结束处承接，结合作者意图和已确认大纲推进当前场景。延续已有文风、视角与人物状态，按场景重要程度分配篇幅，让动作、对白、心理与环境各自发挥作用。输出连贯正文。'
   },
   {
     taskType: 'continue',
-    name: '🔪 影视白描 · 短句快切续写',
-    instruction: `【任务：影视级白描快切续写】
-1. 核心动作一行动词推进，单行最多不超过两句，长短句交替形成呼吸感。
-2. 不描写心理旁白，情绪全部通过手指、视线、站姿、呼吸、重心与物理停顿表达。
-3. 关键动作拆解为起手、发力、碰撞与受力后果，冲突场景以短句快切推进。
-4. 绝不使用套路化比喻与医学报告腔，所见即所得。`
+    name: '行动与对话续写',
+    instruction: '围绕当前人物要做的事和要说的话推进场景，交代必要的位置、阻碍与行动后果。保持角色各自的说话习惯与信息边界，心理描写按场景需要使用，不强行制造冲突或转折。'
   },
   {
     taskType: 'continue',
-    name: '👣 严格限制视角 · 单主控深度续写',
-    instruction: `【任务：严格限制性视角续写】
-1. 严格锁定当前主控角色的感知边界：只能描写其双眼所见、双耳所闻与身体直接触感，未知之事绝不上帝全知。
-2. 在场其他角色只描写外显言行，禁止直接窥探或定义他人内心。
-3. 叙述语调与当前主控角色的性格、认知及知识边界深度绑定。`
-  },
-
-  // 2. 润色类 (polish)
-  {
-    taskType: 'polish',
-    name: '✨ 深度去AI感 · 白描质感润色',
-    instruction: `【任务：正文去AI感白描润色】
-对目标选区文本进行深度润色与质感重塑，严格执行以下修正：
-1. 【句式清洗】：彻底删除所有“不是……而是……”、“并非……却是……”、“不像……更像……”结构；消除“当……的时候”、“如此……以至于……”等从句倒置。
-2. 【去套路化】：剔除所有“涟漪/古井/手术刀/断线风筝/搁浅的鱼”等AI高频套路比喻；删除说明书式类比。
-3. 【情感具象】：将所有直接下定义的情绪词（“他感到紧张/愤怒/释然”）转化为手指、呼吸、视线等具体的身体物理动作。
-4. 【消除对白余波】：删除“话音刚落”、“话说完”、“这句话散开”等过渡废话；删除对白后的自我解释句。
-5. 【精简量词叠词】：将“看了看/想了想/顿了顿”等叠词替换为单个精准动词，精简“一+量词”与“那+量词”的冗余堆砌。`
+    name: '人物体验续写',
+    instruction: '延续作品当前叙述视角，写出焦点人物对事件的感受、理解与选择。区分其已知信息、记忆、推测和误解；其他人物的内心是否可写由作品既定视角决定。不要为加强情绪新增未确认经历。'
   },
   {
     taskType: 'polish',
-    name: '🛡️ 叙事去油 · 关系与语气质感润色',
-    instruction: `【任务：叙事去油与中立质感润色】
-1. 消除霸总式油腻台词与肢体侵犯描写（如无故壁咚、捏下巴、冷笑定性），让权力角色的压迫感回归体制、资源与专业沉稳。
-2. 保持叙事中立，清除叙述者对角色意图的主观阴谋化/暧昧化过度脑补。
-3. 修正所有不符合生理规律与物理受力的违和描写，保持动作与对话的现实质地。`
+    name: '语言与节奏润色',
+    instruction: '改善目标文字的准确性、句段节奏与衔接，削减重复、含混和无目的解释，保留有作用的心理与修辞。保持原有事件、人物意图、信息、叙述视角和情节顺序，不通过新增动作或事件美化表达。'
   },
-
-  // 3. 改写类 (rewrite)
   {
-    taskType: 'rewrite',
-    name: '🔄 多视角交接 · POV重构改写',
-    instruction: `【任务：多视角POV交接改写】
-将目标片段以指定角色的视角进行彻底重构：
-1. 确立排他性主控：整段仅深入该角色的主观感知、生理直觉与思维推测。
-2. 视角切换遵循物理交接桥梁（目光对视、肢体接触、递物、转场动作），切换后另起新段。
-3. 原文中的全知旁白与他人心理描写全部降级为客观外显的动作与表情观察。`
+    taskType: 'polish',
+    name: '对白与人物表达润色',
+    instruction: '使对白和人物表达更符合已有身份、关系与说话习惯，改善指代和动作衔接。保留每句话的信息与意图、已有关系和行为，不凭语气改写人物动机，不新增肢体接触或关系进展。'
   },
   {
     taskType: 'rewrite',
-    name: '⚡ 场景张力 · 动作冲突重写',
-    instruction: `【任务：动作张力与高冲突重写】
-1. 削减冗长拖沓的静态环境说明，以突发的动作碰撞或危机事件切入。
-2. 提升动词密度，打碎长句结构，用短句链条强化压迫感与临场感。
-3. 强调每一次发力、阻力与伤害后果，避免悬浮虚招。`
+    name: '叙述组织改写',
+    instruction: '依照作者本次要求重组指定片段的叙述顺序、重心与表达。保留未被授权改变的事件、人物关系、信息与设定；延续既有视角，只有作者明确要求时才改变视角。'
   },
-
-  // 5. 全书分析流水线
+  {
+    taskType: 'rewrite',
+    name: '场景节奏改写',
+    instruction: '调整指定场景的铺垫、展开与收束，使重要选择和信息变化得到合适篇幅，压缩重复过渡。遵循作者授权范围，不默认增加危机、伤害、反转或新剧情；安静场景也可通过认识与关系变化推进。'
+  },
   {
     taskType: 'style_distill',
-    name: '文风蒸馏 · 可执行规则',
-    instruction: '提炼语言、句式、段落、叙事距离、对白、动作、节奏和禁用项，输出可直接用于续写的规则；只归纳规律，不复述剧情，不照抄原文。'
+    name: '文风蒸馏',
+    instruction: '依据原文证据归纳语言、句式、段落、叙事距离、对白、动作、心理与节奏特征。区分反复出现的规律、局部做法与不确定判断，输出可用于参考的写作规则，不把单次现象变成绝对禁令，不复述剧情或照抄原文。'
   },
   {
     taskType: 'book_summary',
-    name: '全书总结 · 事实与伏笔',
-    instruction: '按原文顺序整理主线、角色变化、世界观、关系、时间线、伏笔和未解问题；区分已确认事实与推测，避免遗漏跨章节因果。'
-  },
-
-  // 4. 工作台对话 (chat)
-  {
-    taskType: 'chat',
-    name: '🎬 导演视角 · 剧情推敲与反套路推翻',
-    instruction: `【任务：导演视角构思与剧情推敲】
-在探讨剧情走向与场景设计时，请按以下框架进行推演：
-1. 【感知与边界核定】：梳理在场各角色的位置、已知情报与绝不可知的信息禁区。
-2. 【反套路推翻】：主动列出当前场景最容易落入的 3 个脸谱化剧情/人物俗套，并给出推翻策略。
-3. 【核心节拍设计】：设计 2~3 个具备信息增量、权力距离偏移或关系转折的具体行动节拍。
-4. 【潜文本挖掘】：分析关键台词的表层意图 vs 底层真实动机。`
+    name: '全书事实与结构总结',
+    instruction: '按原文顺序整理主线、角色变化、世界观、关系、时间线、伏笔与未解问题，保留跨章节因果。区分已发生事件、角色说法、推测与未证实线索，不补写后续剧情。'
   },
   {
     taskType: 'chat',
-    name: '👤 角色深度解剖 · 身体与动机分析',
-    instruction: `【任务：角色深度动机解剖】
-针对指定角色或人物互动进行深度解剖：
-1. 核心性格内核与认知天花板（身份/时代/背景限制）。
-2. 面具 vs 底层真实渴望：其外在言行在试图掩饰什么，身体小动作（肩/视线/重心）在出卖什么。
-3. 拒绝扁平工具化，给出符合其人设利益与尊严的独立反应方案。`
+    name: '剧情方向推敲',
+    instruction: '结合已有剧情与作者意图，讨论可行的发展方向，说明各方案的动机、前置条件、收益与代价。将建议明确标为待作者确认的构想，不写入既定事实；需要澄清时聚焦影响后续选择的问题。'
   },
-
-  // 5. 设定与知识库 (knowledge)
   {
-    taskType: 'knowledge',
-    name: '🧠 实体认知边界与关系网提取',
-    instruction: `【任务：实体认知与知识网络抽取】
-从目标章节中提取角色、势力、道具等关键设定信息：
-1. 提取角色核心特征、持有资源及其当前所处的知识/认知边界（知晓什么、误解什么）。
-2. 梳理人物之间的权力关系与态度变化，区分客观发生的事实与角色的主观推测。
-3. 整理新增的世界观规则与物理常识。`
+    taskType: 'chat',
+    name: '人物动机与互动推敲',
+    instruction: '根据人物已有行为、信息、目标与关系讨论合理反应，区分文本证据与解释假设。允许真诚、误解、犹豫与日常互动，不默认所有言行都有隐秘目的；提出方案供作者选择。'
   },
   {
     taskType: 'knowledge',
-    name: '📌 伏笔埋设与大纲阶段梳理',
-    instruction: `【任务：大纲阶段与伏笔状态梳理】
-按照以下结构梳理当前章节的脉络信息：
-- #主线进度：一句话概括当前推进节点；
-- #已完成事件：列出本章完成的关键转折；
-- #当前阶段 / #下一阶段：明确剧情阶段划分；
-- #伏笔状态：列出新埋设或已回收的伏笔名称及线索；
-- #剧情走向：后续 1~2 个自然延伸的发展方向。`
+    name: '人物与设定提取',
+    instruction: '从目标原文提取角色、势力、地点、道具、世界规则与关系变化，保留来源依据。区分客观事件、人物持有信息、误解与未确认说法；只更新原文支持的信息，不推断未来结果。'
   },
-
-  // 6. 报告分析 (report)
+  {
+    taskType: 'knowledge',
+    name: '事件与伏笔状态梳理',
+    instruction: '梳理当前原文的已发生事件、阶段进度、新出现线索、已回收伏笔与未解问题，并保留时间和因果联系。尚未证实的伏笔解释明确标为推测，不把可能的发展方向记录为事实。'
+  },
   {
     taskType: 'report',
-    name: '🔍 文学质感与去AI八股诊断',
-    instruction: `【任务：全篇文学质感与去AI感深度评估】
-对章节正文进行多维度诊断：
-1. 【AI八股与句式硬伤】：检查是否存在“不是……而是”、因果倒置、破折号泛滥、“一+量词”超标、叠词堆叠等问题。
-2. 【比喻与修辞审查】：定位套路化比喻（涟漪、手术刀等）及说明书式类比。
-3. 【视角与感知违规】：检查是否出现上帝视角读心、NPC心理越界或全知总结。
-4. 【结尾与停顿检验】：检查是否存在“等待式收尾”或对白余波废话。
-5. 给出具体的修改建议与示范改写。`
+    name: '叙事与表达评估',
+    instruction: '根据原文证据评估人物因果、视角一致性、信息组织、对白、场景节奏与语言表达。指出影响阅读的具体问题与位置，区分事实矛盾、表达问题和风格偏好；必要时给出局部修改建议，不以固定句式、量词次数或单一文风作为通用合格标准。'
   }
 ]
-
 export type DefaultStyleSampleDef = {
   name: string
   tags: string[]
@@ -229,14 +138,14 @@ export const DEFAULT_STYLE_SAMPLES: DefaultStyleSampleDef[] = [
   }
 ]
 
-export function seedDefaultCreativePresets(database: Database.Database, force = false): void {
+export function seedDefaultCreativePresets(database: Database.Database): void {
   const now = Date.now()
 
   // 1. Creative Rules
   const meta = database.prepare('SELECT creative_rules FROM project_meta LIMIT 1').get() as
     | { creative_rules: string }
     | undefined
-  if (meta && (!meta.creative_rules || meta.creative_rules.trim().length === 0 || force)) {
+  if (meta && (!meta.creative_rules || meta.creative_rules.trim().length === 0)) {
     database
       .prepare('UPDATE project_meta SET creative_rules = ?, updated_at = ?')
       .run(DEFAULT_CREATIVE_RULES, now)
@@ -248,20 +157,12 @@ export function seedDefaultCreativePresets(database: Database.Database, force = 
       count: number
     }
   ).count
-  if (presetCount === 0 || force) {
+  if (presetCount === 0) {
     const insertPreset = database.prepare(
       'INSERT INTO instruction_preset(id, task_type, name, instruction, version, created_at, updated_at) VALUES (?, ?, ?, ?, 1, ?, ?)'
     )
     for (const p of DEFAULT_INSTRUCTION_PRESETS) {
       insertPreset.run(randomUUID(), p.taskType, p.name, p.instruction, now, now)
-    }
-  } else {
-    const insertPreset = database.prepare(
-      'INSERT INTO instruction_preset(id, task_type, name, instruction, version, created_at, updated_at) VALUES (?, ?, ?, ?, 1, ?, ?)'
-    )
-    for (const p of DEFAULT_INSTRUCTION_PRESETS.filter((item) => item.taskType === 'style_distill' || item.taskType === 'book_summary')) {
-      const exists = database.prepare('SELECT 1 FROM instruction_preset WHERE task_type = ? LIMIT 1').get(p.taskType)
-      if (!exists) insertPreset.run(randomUUID(), p.taskType, p.name, p.instruction, now, now)
     }
   }
 
@@ -269,7 +170,7 @@ export function seedDefaultCreativePresets(database: Database.Database, force = 
   const sampleCount = (
     database.prepare('SELECT count(*) as count FROM style_sample').get() as { count: number }
   ).count
-  if (sampleCount === 0 || force) {
+  if (sampleCount === 0) {
     const insertSample = database.prepare(
       'INSERT INTO style_sample(id, name, content, tags_json, version, created_at, updated_at) VALUES (?, ?, ?, ?, 1, ?, ?)'
     )
@@ -278,106 +179,4 @@ export function seedDefaultCreativePresets(database: Database.Database, force = 
     }
   }
 }
-
-export const DEFAULT_STAGE_PROMPT_SLOTS: PromptSlot[] = [
-  // 1. 项目身份与架构设定
-  {
-    id: 'slot-project-identity',
-    name: '项目身份与架构设定',
-    enabled: true,
-    role: 'system',
-    content: '【项目身份与核心设定】\n你是一位资深小说主笔与剧情架构师。本项目是一部严谨的长篇连载小说，所有创作必须严格恪守已建立的人设、世界观逻辑与时间线连续性。',
-    position: 'before_context',
-    order: 1,
-    trigger: 'always'
-  },
-  // 2. 长期白描与去AI感准则
-  {
-    id: 'slot-longterm-rules',
-    name: '长期白描与去AI感准则',
-    enabled: true,
-    role: 'system',
-    content: '【长期行文准则】\n1. 白描呈现（Show, Don\'t Tell）：情绪只能通过微动作、身体受力、呼吸停顿与视线呈现，禁止直接下定义。\n2. 去除AI腔：严禁“不是A而是B”对比、因果倒置、套路比喻（涟漪/手术刀等）与等待式收尾。\n3. 时间单向流：严格按先因后果自然推进。',
-    position: 'before_context',
-    order: 2,
-    trigger: 'always'
-  },
-  // 3. 限知视角与感官边界 (POV)
-  {
-    id: 'slot-limited-pov',
-    name: '限知视角与感官边界 (POV)',
-    enabled: true,
-    role: 'system',
-    content: '【限知视角约束 (POV)】\n严格锁定当前主控角色的感知边界。只能描写其双眼所见、双耳所闻与身体直接触感；未经主控角色亲自见证或推知的信息绝不上帝全知，在场其他角色只描写外显言行，严禁直接窥探他人内心。',
-    position: 'after_context',
-    order: 10,
-    trigger: 'content'
-  },
-  // 4. 人物认知边界与独立动机
-  {
-    id: 'slot-character-boundaries',
-    name: '人物认知边界与独立动机',
-    enabled: true,
-    role: 'system',
-    content: '【人物认知边界与自主性】\n各角色具备独立动机、认知天花板与利益边界。角色绝不掌握超出其身份和经历的情报，绝不无端配合或强行降智，一切互动必须经受情境与资源现实检验。',
-    position: 'after_context',
-    order: 20,
-    trigger: 'always'
-  },
-  // 5. 阶段输出协议 - direction
-  {
-    id: 'slot-stage-direction',
-    name: '阶段输出协议：方向确认',
-    enabled: true,
-    role: 'system',
-    content: '【阶段输出协议：方向确认 (direction)】\n请结合全书/分卷大纲、章节摘要与作者意图，梳理本章创作核心方向。输出格式必须包含：\n1. 本章核心事件与剧情定位\n2. 核心冲突与信息增量\n3. 最多 3 个待作者确认的关键问题或分支选项。',
-    position: 'after_context',
-    order: 30,
-    trigger: 'direction'
-  },
-  // 6. 阶段输出协议 - chapter_outline
-  {
-    id: 'slot-stage-chapter-outline',
-    name: '阶段输出协议：章大纲规划',
-    enabled: true,
-    role: 'system',
-    content: '【阶段输出协议：章大纲规划 (chapter_outline)】\n输出结构化 Markdown 章大纲，必须严格包含以下六个模块：\n1. 【本章目标】：明确本章剧情使命与核心转折\n2. 【场景节拍】：按发生顺序划分 2~4 个具体场景与节拍\n3. 【人物与动机】：在场角色动机、行动与权力关系偏移\n4. 【冲突与信息增量】：核心对抗焦点与揭示的新信息\n5. 【连续性风险】：伏笔衔接、时间线与设定一致性检查\n6. 【结尾钩子】：本章结尾悬念或收束动作。',
-    position: 'after_context',
-    order: 30,
-    trigger: 'chapter_outline'
-  },
-  // 7. 阶段输出协议 - content
-  {
-    id: 'slot-stage-content',
-    name: '阶段输出协议：正文候选',
-    enabled: true,
-    role: 'system',
-    content: '【阶段输出协议：正文生成 (content)】\n依据已确认的章大纲生成连贯正文候选。严格禁止在正文中夹带大纲、分析说明、选项或思维链文本；正文纯粹为小说叙事文本。',
-    position: 'after_context',
-    order: 30,
-    trigger: 'content'
-  },
-  // 8. 连续性与前文呼应检查
-  {
-    id: 'slot-continuity-check',
-    name: '连续性与前文呼应检查',
-    enabled: true,
-    role: 'system',
-    content: '【连续性与前文呼应检查】\n确保当前情节与前文摘要、已确认事实及伏笔状态严格吻合，检查时间先后、人物在场状态与道具持有情况，避免前后矛盾。',
-    position: 'after_context',
-    order: 40,
-    trigger: 'always'
-  }
-]
-
-export function getDefaultStagePromptSlots(stage?: ChatWorkflowStage): PromptSlot[] {
-  if (!stage) {
-    return DEFAULT_STAGE_PROMPT_SLOTS.filter((s) => s.trigger === 'always')
-  }
-  return DEFAULT_STAGE_PROMPT_SLOTS.filter(
-    (s) => s.trigger === 'always' || s.trigger === stage
-  )
-}
-
-export const seedDefaultCreativeData = seedDefaultCreativePresets
 

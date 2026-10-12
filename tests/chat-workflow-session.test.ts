@@ -1,3 +1,4 @@
+import { PromptSettingsStore } from '../src/main/prompt-store'
 import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -12,6 +13,7 @@ import { ChatService } from '../src/main/chat-service'
 describe('T04: Chat Workflow Session Metadata & State Transitions', () => {
   let tempDir: string
   let store: ProjectStore
+  let promptStore: PromptSettingsStore
   let connStore: ConnectionStore
   let searchIndex: SearchIndex
   let chapterRepo: ChapterRepository
@@ -24,12 +26,13 @@ describe('T04: Chat Workflow Session Metadata & State Transitions', () => {
   beforeEach(async () => {
     tempDir = mkdtempSync(join(tmpdir(), 'novel-chat-workflow-test-'))
     store = new ProjectStore(tempDir)
+    promptStore = new PromptSettingsStore(store.dataDirectory)
     connStore = new ConnectionStore(tempDir)
     searchIndex = new SearchIndex(store)
     chapterRepo = new ChapterRepository(store, searchIndex)
-    contextAssembler = new ContextAssembler(store, searchIndex, connStore)
+    contextAssembler = new ContextAssembler(store, promptStore, searchIndex, connStore)
     // chatService with minimal gateway mock for session management
-    chatService = new ChatService(store, {} as any, connStore, contextAssembler, searchIndex)
+    chatService = new ChatService(store, promptStore, {} as any, connStore, contextAssembler, searchIndex)
 
     const conn = connStore.create({
       name: 'Test LLM',

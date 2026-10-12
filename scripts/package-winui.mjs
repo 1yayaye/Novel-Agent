@@ -153,11 +153,33 @@ const exeStat = await stat(exePath)
 const totalBytes = await getDirectorySize(DIST_DIR)
 const totalMB = (totalBytes / (1024 * 1024)).toFixed(2)
 
+// Step 4: Generate Standalone ZIP Archive (aligned with dist/ standard)
+const zipFileName = 'Novel-Agent-WinUI-0.1.0-win-x64.zip'
+const zipDistWinui = join(DIST_DIR, zipFileName)
+const distDirGlobal = resolve(PROJECT_ROOT, 'dist')
+const zipDistGlobal = join(distDirGlobal, zipFileName)
+
+console.log(`\nGenerating standalone distribution archive (${zipFileName})...`)
+if (process.platform === 'win32') {
+  spawnSync('tar.exe', ['-a', '-c', '-f', zipDistWinui, '-C', DIST_DIR, '--exclude=*.zip', '.'], {
+    stdio: 'inherit'
+  })
+}
+if (existsSync(distDirGlobal)) {
+  await cp(zipDistWinui, zipDistGlobal, { force: true })
+}
+const zipStat = existsSync(zipDistWinui) ? await stat(zipDistWinui) : null
+const zipMB = zipStat ? (zipStat.size / (1024 * 1024)).toFixed(2) : 'N/A'
+
 console.log('----------------------------------------------------')
 console.log('  WinUI 3 Release Package Verification Succeeded!')
 console.log('----------------------------------------------------')
 console.log(`- Executable:       ${exePath} (${(exeStat.size / (1024 * 1024)).toFixed(2)} MB)`)
 console.log(`- Frontend Assets:  ${RENDERER_DEST}`)
-console.log(`- Total Dist Size:  ~${totalMB} MB`)
+console.log(`- Unpacked Size:    ~${totalMB} MB`)
 console.log(`- Output Directory: ${DIST_DIR}`)
+if (zipStat) {
+  console.log(`- ZIP Distribution: ${zipDistWinui} (${zipMB} MB)`)
+  console.log(`- Synced to dist/:  ${zipDistGlobal}`)
+}
 console.log('====================================================')

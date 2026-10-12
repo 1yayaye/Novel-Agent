@@ -16,6 +16,7 @@ import { ContextAssembler } from './context-assembler'
 import { CandidateService } from './candidate-service'
 import { CreationRunner } from './creation-runner'
 import { ChatService } from './chat-service'
+import { PromptSettingsStore } from './prompt-store'
 
 if (app.isPackaged && !process.env.NODE_ENV) {
   process.env.NODE_ENV = 'production'
@@ -26,6 +27,38 @@ protocol.registerSchemesAsPrivileged([{ scheme: 'app', privileges: { standard: t
 const dataPath = dataDirectory(process.execPath, app.isPackaged)
 const probeArgument = process.argv.find((argument) => argument.startsWith('--native-probe-output='))
 const probeOutput = app.commandLine.getSwitchValue('native-probe-output') || probeArgument?.slice('--native-probe-output='.length) || ''
+let mainWindowInstance: BrowserWindow | undefined
+let pendingProjectPath: string | undefined
+
+function extractProjectArg(args: string[]): string | undefined {
+  const fileArg = args.find((arg) => arg.toLowerCase().endsWith('.novelproj'))
+  if (fileArg && existsSync(fileArg)) {
+    return resolve(fileArg)
+  }
+  return undefined
+}
+
+const hasSingleInstanceLock = Boolean(probeOutput) || app.requestSingleInstanceLock()
+if (!hasSingleInstanceLock) {
+  app.quit()
+} else if (!probeOutput) {
+  app.on('second-instance', (_event, commandLine) => {
+    const projectArg = extractProjectArg(commandLine)
+    if (projectArg) pendingProjectPath = projectArg
+    if (!mainWindowInstance || mainWindowInstance.isDestroyed()) return
+    if (mainWindowInstance.isMinimized()) mainWindowInstance.restore()
+    mainWindowInstance.show()
+    mainWindowInstance.focus()
+
+    if (projectArg) {
+      if (!mainWindowInstance.webContents.isLoading()) {
+        mainWindowInstance.webContents.send('project:open-path', projectArg)
+        pendingProjectPath = undefined
+      }
+    }
+  })
+}
+
 let projectStore: ProjectStore | undefined
 let connectionStore: ConnectionStore | undefined
 let modelGateway: ModelGateway | undefined
@@ -35,11 +68,13 @@ let analysisRunner: AnalysisRunner | undefined
 let candidateService: CandidateService | undefined
 let creationRunner: CreationRunner | undefined
 let chatService: ChatService | undefined
+let promptStore: PromptSettingsStore
 let dataPathError: unknown
 try {
   app.setPath('userData', dataPath)
   app.setPath('logs', join(dataPath, 'logs'))
   ensureWritableDirectory(dataPath)
+  promptStore = new PromptSettingsStore(dataPath)
 } catch (error) {
   dataPathError = error
 }
@@ -103,15 +138,29 @@ function createWindow(
   })
   window.webContents.on('will-attach-webview', (event) => event.preventDefault())
   window.once('ready-to-show', () => window.show())
-  registerProjectIpc(window, store, connections, gateway, diagnostics, runner, creation, candidate, chat, searchIndexInstance)
+  registerProjectIpc(window, store, promptStore, connections, gateway, diagnostics, runner, creation, candidate, chat, searchIndexInstance)
   const devServerUrl = rendererUrl(app.isPackaged, process.env.ELECTRON_RENDERER_URL)
   window.webContents.session.webRequest.onHeadersReceived((details, callback) => callback({ responseHeaders: { ...details.responseHeaders, 'Content-Security-Policy': [contentSecurityPolicy(Boolean(devServerUrl))] } }))
-  if (devServerUrl) window.loadURL(devServerUrl)
-  else window.loadURL('app://novel-agent/index.html')
+  window.webContents.on('did-finish-load', () => {
+    if (!pendingProjectPath || window.isDestroyed()) return
+    window.webContents.send('project:open-path', pendingProjectPath)
+    pendingProjectPath = undefined
+  })
+  mainWindowInstance = window
+  const initialProject = extractProjectArg(process.argv)
+  const projectParam = initialProject ? `?openProject=${encodeURIComponent(initialProject)}` : ''
+  if (devServerUrl) window.loadURL(`${devServerUrl}${projectParam}`)
+  else window.loadURL(`app://novel-agent/index.html${projectParam}`)
+  window.on('closed', () => {
+    if (mainWindowInstance === window) {
+      mainWindowInstance = undefined
+    }
+  })
   return window
 }
 
 async function start(): Promise<void> {
+  if (!hasSingleInstanceLock) return
   if (dataPathError) {
     await dialog.showMessageBox({ type: 'error', title: 'Novel Agent 无法启动', message: `无法写入数据目录：${dataPath}`, detail: dataPathError instanceof Error ? dataPathError.message : String(dataPathError) })
     app.quit()
@@ -128,11 +177,11 @@ async function start(): Promise<void> {
   modelGateway = new ModelGateway(connectionStore, diagnosticsService)
   projectStore = new ProjectStore(dataPath, connectionStore)
   searchIndex = new SearchIndex(projectStore, modelGateway, connectionStore)
-  analysisRunner = new AnalysisRunner(projectStore, modelGateway, connectionStore, searchIndex)
-  const contextAssembler = new ContextAssembler(projectStore, searchIndex, connectionStore, modelGateway)
+  analysisRunner = new AnalysisRunner(projectStore, promptStore, modelGateway, connectionStore, searchIndex)
+  const contextAssembler = new ContextAssembler(projectStore, promptStore, searchIndex, connectionStore, modelGateway)
   candidateService = new CandidateService(projectStore, searchIndex)
   creationRunner = new CreationRunner(projectStore, modelGateway, connectionStore, contextAssembler, candidateService)
-  chatService = new ChatService(projectStore, modelGateway, connectionStore, contextAssembler, searchIndex)
+  chatService = new ChatService(projectStore, promptStore, modelGateway, connectionStore, contextAssembler, searchIndex)
   createWindow(projectStore, connectionStore, modelGateway, diagnosticsService, analysisRunner, creationRunner, candidateService, chatService, searchIndex)
 }
 

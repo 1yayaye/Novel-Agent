@@ -60,7 +60,7 @@ export function ProjectShelf({
           <div className="flex flex-wrap items-center justify-center gap-3 pt-2">
             <Button onClick={onStartImport} className="gap-2">
               <FolderInput size={16} />
-              <span>导入作品原文</span>
+              <span>导入作品</span>
             </Button>
             <Button variant="secondary" onClick={onChooseOpen} className="gap-2">
               <FolderOpen size={16} />

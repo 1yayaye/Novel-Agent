@@ -89,6 +89,15 @@
     transform: none;
   }
 
+  /* Ensure dialog content fills dialog popup height when dialog popup has explicit height */
+  [data-slot="dialog-popup"] > [data-slot="dialog-content"],
+  [data-slot="alert-dialog-popup"] > [data-slot="alert-dialog-content"] {
+    display: flex;
+    flex: 1 1 auto;
+    min-height: 0;
+    height: 100%;
+  }
+
   /* Custom scrollbar styling in warm palette */
   ::-webkit-scrollbar {
     width: 6px;
@@ -284,6 +293,14 @@
 .theme-dark .empty-chapter-title{color:#f3f4f6}
 .theme-sepia .empty-chapter-card{background:#fcf9f2;border-color:#dfd8c7}
 .theme-sepia .empty-chapter-title{color:#2c251e}
+
+/* 修复 BaseDialog.Popup 内部容器未能占满父容器高度的 flex 链问题，防止内容被底栏遮挡 */
+[data-slot="dialog-popup"] > [data-slot="dialog-content"] {
+  display: flex;
+  flex: 1 1 0%;
+  height: 100%;
+  min-height: 0;
+}
 
 /* Candidate Diff Review & badges */
 .candidate-dialog {
@@ -590,3 +607,34 @@
 /* Alert Banners */
 .alert-banner.success{background:#ecfdf5;border:1px solid #a7f3d0;color:#065f46}
 .theme-dark .alert-banner.success{background:#064e3b;border-color:#059669;color:#ecfdf5}
+
+/* 提示词编辑器（ProseEditor）：全局 .cm-content 的 32/160 内边距是按章节正文调的，弹窗里要收紧 */
+.prose-editor {
+  height: 100%;
+  min-height: 0;
+  overflow: hidden;
+}
+.prose-editor .cm-editor {
+  background: transparent;
+}
+.prose-editor .cm-content {
+  padding: 12px 0 28px 0 !important;
+  font-family: "Noto Serif SC","Source Han Serif SC","Songti SC","STSong","Microsoft YaHei","PingFang SC",serif;
+}
+.prose-editor .cm-scroller {
+  line-height: 1.7;
+  font-size: 13px;
+}
+.prose-editor .cm-gutters {
+  background: transparent;
+  border-right: 1px solid #ece4d9;
+  color: #b9a894;
+  font-size: 11px;
+}
+.prose-editor .cm-lineNumbers .cm-gutterElement {
+  padding: 0 6px 0 4px;
+  min-width: 22px;
+}
+.prose-editor.cm-editor-focused .cm-gutters {
+  color: #9c8b78;
+}

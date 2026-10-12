@@ -51,6 +51,9 @@ export const foreshadowStateLabel: Record<string, string> = {
 
 export const taskTypeLabel: Record<string, string> = {
   continue: '续写',
+  direction: '创作方向',
+  chapter_outline: '章大纲',
+  content: '正文创作',
   rewrite: '重写',
   polish: '润色',
   knowledge: '知识分析',

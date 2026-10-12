@@ -1,3 +1,4 @@
+import { PromptSettingsStore } from '../src/main/prompt-store'
 import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -11,6 +12,7 @@ import { ContextAssembler, expandMacros } from '../src/main/context-assembler'
 describe('T06: Outline & Stage Context Assembly', () => {
   let tempDir: string
   let store: ProjectStore
+  let promptStore: PromptSettingsStore
   let connStore: ConnectionStore
   let searchIndex: SearchIndex
   let chapterRepo: ChapterRepository
@@ -22,10 +24,11 @@ describe('T06: Outline & Stage Context Assembly', () => {
   beforeEach(async () => {
     tempDir = mkdtempSync(join(tmpdir(), 'novel-outline-ctx-test-'))
     store = new ProjectStore(tempDir)
+    promptStore = new PromptSettingsStore(store.dataDirectory)
     connStore = new ConnectionStore(tempDir)
     searchIndex = new SearchIndex(store)
     chapterRepo = new ChapterRepository(store, searchIndex)
-    contextAssembler = new ContextAssembler(store, searchIndex, connStore)
+    contextAssembler = new ContextAssembler(store, promptStore, searchIndex, connStore)
 
     const conn = connStore.create({
       name: 'Test LLM',
@@ -124,7 +127,7 @@ describe('T06: Outline & Stage Context Assembly', () => {
     expect(volItem?.content).toContain('第一卷聚焦边陲要塞')
     expect(chapItem?.content).toContain('【本章目标】：确立冲突与危机')
 
-    expect(pkg.userMessage).toContain('【项目大纲规划】')
+    expect(pkg.userMessage).toContain('【全书大纲】')
     expect(pkg.userMessage).toContain('全书大纲')
     expect(pkg.userMessage).toContain('分卷大纲（第一卷：边陲风云）')
     expect(pkg.userMessage).toContain('章大纲（第一章 破晓之战）')
@@ -151,7 +154,7 @@ describe('T06: Outline & Stage Context Assembly', () => {
 
     expect(() => {
       contextAssembler.verifyContextPackage(sessionId, pkg.id)
-    }).toThrow('关联章大纲已发生更新或已过时')
+    }).toThrow(expect.objectContaining({ code: 'STALE_CONTEXT_PACKAGE' }))
   })
 
   it('detects stale context package when outline state is marked stale', async () => {
@@ -174,6 +177,6 @@ describe('T06: Outline & Stage Context Assembly', () => {
 
     expect(() => {
       contextAssembler.verifyContextPackage(sessionId, pkg.id)
-    }).toThrow('全书大纲已发生更新或已过时')
+    }).toThrow(expect.objectContaining({ code: 'STALE_CONTEXT_PACKAGE' }))
   })
 })

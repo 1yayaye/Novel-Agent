@@ -1,10 +1,11 @@
-import { useState, useEffect, useCallback } from 'react'
-import { AlertTriangle, Copy, Eye, RotateCw, Sparkles } from 'lucide-react'
+import { useState, useEffect, useCallback, useRef } from 'react'
+import { AlertTriangle, Copy, Eye, RotateCw, Sparkles, Sliders } from 'lucide-react'
 import {
   ChapterHeader,
   ChatWorkflowStage,
   ChatWorkflowType,
   ContextPackage,
+  ContextPreviewInput,
   InstructionPreset,
   ModelConnectionSummary,
   StyleSample,
@@ -23,6 +24,19 @@ import { Textarea } from '@appica/ui-react/textarea'
 import { Checkbox } from '@appica/ui-react/checkbox'
 import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from '@appica/ui-react/select'
 
+const CREATIVITY_DESCRIPTIONS = {
+  low: '保守承接：优先既有事实与直接因果，少量局部拓展。',
+  medium: '适度拓展：在人物、设定与任务范围内探索合理变化。',
+  high: '积极探索：尝试更多局部表达和发展可能，保留事实与任务边界。'
+}
+
+const EXCLUSION_REASONS = {
+  budget_exceeded: '超出输入预算',
+  conflict: '与当前资料冲突',
+  stale: '资料版本已过时',
+  invalid_source: '来源无效'
+}
+
 export function ContextPreviewDialog({
   sessionId,
   chapters,
@@ -32,10 +46,15 @@ export function ContextPreviewDialog({
   initialWorkflowType,
   initialOutlineId,
   initialOutlineVersion,
+  initialTarget,
+  initialInstruction,
+  initialConnectionId,
+  contextPackageId,
   chatSessionId,
   onClose,
   onStartCreation,
-  onOpenConnections
+  onOpenConnections,
+  onOpenCreativeSettings
 }: {
   sessionId: string
   chapters: ChapterHeader[]
@@ -45,15 +64,20 @@ export function ContextPreviewDialog({
   initialWorkflowType?: ChatWorkflowType
   initialOutlineId?: string
   initialOutlineVersion?: number
+  initialTarget?: NonNullable<ContextPreviewInput['target']>
+  initialInstruction?: string
+  initialConnectionId?: string
+  contextPackageId?: string
   chatSessionId?: string
   onClose: () => void
-  onStartCreation?: (contextPackageId: string, taskType: TaskType) => void
+  onStartCreation?: (contextPackageId: string, taskType: TaskType) => void | Promise<void>
   onOpenConnections?: () => void
+  onOpenCreativeSettings?: () => void
 }) {
   const [taskType, setTaskType] = useState<TaskType>(initialTaskType)
-  const [targetChapterId, setTargetChapterId] = useState<string>(currentChapterId || (chapters[0]?.id ?? ''))
+  const [targetChapterId, setTargetChapterId] = useState<string>(initialTarget?.chapterId || currentChapterId || (chapters[0]?.id ?? ''))
   const [connections, setConnections] = useState<ModelConnectionSummary[]>([])
-  const [selectedConnectionId, setSelectedConnectionId] = useState('')
+  const [selectedConnectionId, setSelectedConnectionId] = useState(initialConnectionId || '')
   const [presets, setPresets] = useState<InstructionPreset[]>([])
   const [selectedPresetId, setSelectedPresetId] = useState('')
   const [styleSamples, setStyleSamples] = useState<StyleSample[]>([])
@@ -61,22 +85,42 @@ export function ContextPreviewDialog({
   const [includeCreativeRules, setIncludeCreativeRules] = useState(true)
   const [targetLength, setTargetLength] = useState<number>(1000)
   const [creativity, setCreativity] = useState<'low' | 'medium' | 'high'>('medium')
-  const [instruction, setInstruction] = useState('')
+  const [instruction, setInstruction] = useState(initialInstruction || '')
   const [previewing, setPreviewing] = useState(false)
+  const [startingCreation, setStartingCreation] = useState(false)
   const [contextPackage, setContextPackage] = useState<ContextPackage | null>(null)
-  const [activeTab, setActiveTab] = useState<'items' | 'system' | 'user'>('items')
+  const [activeTab, setActiveTab] = useState<'items' | 'messages'>('messages')
   const [error, setError] = useState('')
   const [copied, setCopied] = useState(false)
+  const previewInputKey = JSON.stringify({ sessionId, selectedConnectionId, taskType, initialStage, initialWorkflowType, initialOutlineId, initialOutlineVersion, initialTarget, chatSessionId, targetChapterId, instruction, selectedPresetId, selectedStyleIds, includeCreativeRules, targetLength, creativity })
+  const latestPreviewInputKey = useRef(previewInputKey)
+  latestPreviewInputKey.current = previewInputKey
 
-  const handleGeneratePreview = useCallback(async (connIdOverride?: string) => {
-    const connId = connIdOverride || selectedConnectionId
+  useEffect(() => { if (!contextPackageId) setContextPackage(null) }, [previewInputKey, contextPackageId])
+
+  useEffect(() => {
+    if (!contextPackageId) return
+    let current = true
+    setPreviewing(true)
+    setError('')
+    void window.novelAgent.context.get({ sessionId, contextPackageId })
+      .then((stored) => { if (current) setContextPackage(stored) })
+      .catch((err) => { if (current) setError(errorText(err, '加载历史上下文包失败')) })
+      .finally(() => { if (current) setPreviewing(false) })
+    return () => { current = false }
+  }, [sessionId, contextPackageId])
+
+  const handleGeneratePreview = useCallback(async () => {
+    const connId = selectedConnectionId
     if (!connId) {
       setError('请选择模型连接')
       return
     }
 
     setPreviewing(true)
+    setContextPackage(null)
     setError('')
+    const requestedInputKey = previewInputKey
     try {
       const pkg = await window.novelAgent.context.preview({
         sessionId,
@@ -87,7 +131,7 @@ export function ContextPreviewDialog({
         outlineId: initialOutlineId,
         outlineVersion: initialOutlineVersion,
         chatSessionId,
-        target: targetChapterId ? { chapterId: targetChapterId } : undefined,
+        target: targetChapterId ? { ...(initialTarget?.chapterId === targetChapterId ? initialTarget : {}), chapterId: targetChapterId, chatId: chatSessionId || initialTarget?.chatId } : undefined,
         instruction,
         presetId: selectedPresetId || undefined,
         styleSampleIds: selectedStyleIds.length > 0 ? selectedStyleIds : undefined,
@@ -95,13 +139,26 @@ export function ContextPreviewDialog({
         targetLength: targetLength > 0 ? targetLength : undefined,
         creativity
       })
-      setContextPackage(pkg)
+      if (latestPreviewInputKey.current === requestedInputKey) setContextPackage(pkg)
     } catch (err) {
-      setError(errorText(err, '生成上下文装配预览失败'))
+      if (latestPreviewInputKey.current === requestedInputKey) setError(errorText(err, '生成上下文装配预览失败'))
     } finally {
       setPreviewing(false)
     }
-  }, [sessionId, selectedConnectionId, taskType, initialStage, initialWorkflowType, initialOutlineId, initialOutlineVersion, chatSessionId, targetChapterId, instruction, selectedPresetId, selectedStyleIds, includeCreativeRules, targetLength, creativity])
+  }, [sessionId, selectedConnectionId, taskType, initialStage, initialWorkflowType, initialOutlineId, initialOutlineVersion, initialTarget, chatSessionId, targetChapterId, instruction, selectedPresetId, selectedStyleIds, includeCreativeRules, targetLength, creativity, previewInputKey])
+
+  const handleStartCreation = async () => {
+    if (!contextPackage || !onStartCreation || startingCreation) return
+    setStartingCreation(true)
+    setError('')
+    try {
+      await onStartCreation(contextPackage.id, contextPackage.taskType)
+    } catch (err) {
+      setError(errorText(err, '启动正文候选生成失败，请重新生成预览后重试'))
+    } finally {
+      setStartingCreation(false)
+    }
+  }
 
   const loadDependencies = useCallback(async () => {
     try {
@@ -111,22 +168,17 @@ export function ContextPreviewDialog({
         window.novelAgent.styleSample.list({ sessionId })
       ])
       setConnections(connList)
-      let activeConn = selectedConnectionId
-      if (connList.length > 0 && !activeConn) {
-        activeConn = connList[0].id
-        setSelectedConnectionId(activeConn)
-      }
+      setSelectedConnectionId((current) => connList.some((connection) => connection.id === current) ? current : connList[0]?.id ?? '')
       setPresets(presetList)
       setStyleSamples(sampleList)
-      if (activeConn) {
-        void handleGeneratePreview(activeConn)
-      }
-    } catch {}
-  }, [sessionId, selectedConnectionId, handleGeneratePreview])
+    } catch (err) {
+      setError(errorText(err, '加载预览所需资料失败'))
+    }
+  }, [sessionId])
 
   useEffect(() => {
-    void loadDependencies()
-  }, [loadDependencies])
+    if (!contextPackageId) void loadDependencies()
+  }, [loadDependencies, contextPackageId])
 
   const handleCopyText = (text: string) => {
     void navigator.clipboard.writeText(text)
@@ -150,14 +202,17 @@ export function ContextPreviewDialog({
         )
       )
     : 0
+  const effectiveTemplates = contextPackage?.items.filter((item) => item.sourceType === 'system_template') ?? []
+  const activePresetName = contextPackage?.promptSnapshot.activePreset?.name ?? '无活跃预设（默认回退）'
+  const snapshotBudget = contextPackage?.promptSnapshot.budget
 
   return (
     <Dialog open onOpenChange={(open) => { if (!open) onClose() }}>
       <DialogContent frame={false} className="flex flex-col w-[90vw] max-w-[90vw] h-[90vh]" closeLabel="关闭">
         <DialogHeader>
-          <DialogTitle>上下文装配预览与 Token 预算</DialogTitle>
+          <DialogTitle>{contextPackageId ? '历史上下文消息与冻结预算' : '上下文装配预览与 Token 预算'}</DialogTitle>
           <DialogDescription>
-            12 级优先级装配规则、Token 输入预算分配、不可裁剪内容保护及最终 Prompt 查看
+            查看本次请求的实际消息、生效模块、冻结预算与资料裁剪说明。
           </DialogDescription>
         </DialogHeader>
 
@@ -165,7 +220,7 @@ export function ContextPreviewDialog({
 
         <div className="flex flex-1 gap-5 overflow-hidden border-t border-[#e5ddd3] pt-3 px-6">
           {/* Controls Left Column */}
-          <div className="flex w-80 flex-col gap-3 border-r border-[#e5ddd3] pr-4 shrink-0">
+          {!contextPackageId && <div className="flex w-80 flex-col gap-3 border-r border-[#e5ddd3] pr-4 shrink-0">
             <ScrollArea className="flex-1 pr-2">
               <div className="flex flex-col gap-3 p-1 text-xs">
                 <div className="flex flex-col gap-1">
@@ -192,6 +247,7 @@ export function ContextPreviewDialog({
                   <label className="font-semibold text-[#7d6b59]">目标章节</label>
                   <Select
                     value={targetChapterId}
+                    disabled={initialWorkflowType === 'creation_workflow'}
                     onValueChange={(val) => setTargetChapterId(val as string)}
                   >
                     <SelectTrigger className="rounded-lg border border-[#dacdbe] bg-white px-3 py-1.5 text-xs text-[#2c2523] outline-none">
@@ -307,26 +363,28 @@ export function ContextPreviewDialog({
                     <label className="font-semibold text-[#7d6b59]">创意倾向</label>
                     <Select
                       value={creativity}
-                      onValueChange={(val) => setCreativity(val as any)}
+                      onValueChange={(val) => setCreativity(val as typeof creativity)}
                     >
                       <SelectTrigger className="rounded-lg border border-[#dacdbe] bg-white px-2 py-1 text-xs text-[#2c2523] outline-none">
                         <SelectValue />
                       </SelectTrigger>
                       <SelectContent>
-                        <SelectItem value="low">低 (严谨)</SelectItem>
-                        <SelectItem value="medium">中 (平衡)</SelectItem>
-                        <SelectItem value="high">高 (探索)</SelectItem>
+                        <SelectItem value="low">保守承接</SelectItem>
+                        <SelectItem value="medium">适度拓展</SelectItem>
+                        <SelectItem value="high">积极探索</SelectItem>
                       </SelectContent>
                     </Select>
                   </div>
                 </div>
+
+                <p className="text-[11px] leading-relaxed text-[#7d6b59]">{CREATIVITY_DESCRIPTIONS[creativity]} 该选择通过任务指令控制局部拓展程度。</p>
 
                 <label className="flex items-center gap-2 cursor-pointer font-medium text-[#2c2523]">
                   <Checkbox
                     checked={includeCreativeRules}
                     onCheckedChange={(checked) => setIncludeCreativeRules(Boolean(checked))}
                   />
-                  <span>注入全书创作规则 (第2优先级)</span>
+                  <span>使用本作品创作规则</span>
                 </label>
 
                 <div className="flex flex-col gap-1">
@@ -343,7 +401,7 @@ export function ContextPreviewDialog({
             </ScrollArea>
 
             <Button
-              disabled={previewing || !selectedConnectionId}
+              disabled={previewing || startingCreation || !selectedConnectionId}
               onClick={() => void handleGeneratePreview()}
               className="w-full justify-center shrink-0"
             >
@@ -354,7 +412,7 @@ export function ContextPreviewDialog({
               )}
               {previewing ? '装配中...' : '生成装配预览'}
             </Button>
-          </div>
+          </div>}
 
           {/* Result Right Column */}
           <div className="flex flex-1 flex-col overflow-hidden">
@@ -364,16 +422,16 @@ export function ContextPreviewDialog({
                   <Sparkles size={24} />
                 </div>
                 <div>
-                  <h3 className="text-sm font-semibold text-[#2c2523] mb-1">尚未生成装配预览</h3>
+                  <h3 className="text-sm font-semibold text-[#2c2523] mb-1">{contextPackageId ? '正在读取历史上下文包' : '尚未生成装配预览'}</h3>
                   <p className="max-w-xs text-xs text-[#7d6b59] leading-relaxed">
-                    在左侧配置任务目标、参数与模型，点击「生成装配预览」即可查看 12 级优先级裁剪预算与组装后的 Prompt 全文。
+                    {contextPackageId ? '显示该次请求保存的消息与配置，不会重新装配历史请求。' : '在左侧配置任务目标、参数与模型，点击「生成装配预览」查看实际消息与预算。修改任务参数后，需要重新生成预览。'}
                   </p>
                 </div>
               </div>
             ) : (
               <div className="flex flex-1 flex-col overflow-hidden gap-3">
                 {/* Token Budget Meter */}
-                <Card className="flex flex-col gap-2 p-3 bg-white border-[#e5ddd3] shrink-0 text-xs">
+                <Card className="flex flex-col gap-2 p-3 bg-white border-[#e5ddd3] shrink-0 text-xs max-h-[26vh] overflow-auto">
                   <div className="flex items-center justify-between">
                     <span>
                       Token 预算消耗：
@@ -410,7 +468,7 @@ export function ContextPreviewDialog({
                     <span>包含 {contextPackage.items.length} 个上下文条目</span>
                     {contextPackage.excludedItems.length > 0 && (
                       <span className="font-semibold text-red-600">
-                        已裁剪 {contextPackage.excludedItems.length} 项超出预算条目
+                        已排除 {contextPackage.excludedItems.length} 个参考条目
                       </span>
                     )}
                     <span>
@@ -419,6 +477,12 @@ export function ContextPreviewDialog({
                         {contextPackage.configurationFingerprint}
                       </code>
                     </span>
+                  </div>
+                  <div className="space-y-1.5 border-t border-[#e5ddd3] pt-2 text-[11px] text-[#7d6b59]">
+                    <p className="flex flex-wrap gap-1.5 items-center"><strong className="text-[#2c2523]">提示词模板条目：</strong>{effectiveTemplates.length > 0 ? effectiveTemplates.map((item) => <Badge key={item.sourceId} variant="outline" className="text-[10px] border-[#dacdbe]" title={item.sourceId}>{item.title || item.sourceId}</Badge>) : <span>当前任务无注入模板</span>}</p>
+                    <p>当前活跃预设：{activePresetName}。后台分析任务按严格 JSON 协议执行，创作类任务由预设接管。</p>
+                    {contextPackage.creativity && <p>本次创意倾向：{CREATIVITY_DESCRIPTIONS[contextPackage.creativity.level]}</p>}
+                    {snapshotBudget && <p>冻结预算：上下文窗口 {snapshotBudget.contextWindow.toLocaleString()} · 输出上限 {snapshotBudget.maxOutputTokens.toLocaleString()} · 安全余量 {Math.round(snapshotBudget.safetyMarginRatio * 100)}% · 估算系数 {snapshotBudget.tokenEstimationRatio} · 连接版本 v{snapshotBudget.connectionVersion}</p>}
                   </div>
                 </Card>
 
@@ -431,20 +495,19 @@ export function ContextPreviewDialog({
 
                 <Tabs
                   value={activeTab}
-                  onValueChange={(v) => setActiveTab(v as any)}
-                  className="flex flex-1 flex-col overflow-hidden"
+                  onValueChange={(v) => setActiveTab(v as typeof activeTab)}
+                  className="flex flex-1 min-h-0 flex-col overflow-hidden"
                 >
                   <TabsList className="self-start">
                     <TabsTrigger value="items">
                       上下文条目清单 ({contextPackage.items.length})
                     </TabsTrigger>
-                    <TabsTrigger value="system">System Prompt</TabsTrigger>
-                    <TabsTrigger value="user">User Prompt</TabsTrigger>
+                    <TabsTrigger value="messages">实际请求消息 ({contextPackage.messages.length})</TabsTrigger>
                   </TabsList>
 
                   <TabsContent value="items" className="flex-1 overflow-hidden mt-2">
-                    <ScrollArea className="h-[360px] pr-2">
-                      <div className="flex flex-col gap-2 p-1">
+                    <ScrollArea className="h-full pr-2">
+                      <div className="flex flex-col gap-2 p-1 pb-8">
                         {contextPackage.items.map((item) => (
                           <Card
                             key={item.id}
@@ -460,6 +523,7 @@ export function ContextPreviewDialog({
                               <span className="text-[11px] text-[#7d6b59] truncate">
                                 {item.selectionReason}
                               </span>
+                              <span className="text-[10px] text-[#7d6b59]" title={`来源：${item.sourceType} / ${item.sourceId}`}>{item.role || '资料'}{item.moduleId && ` · ${item.moduleId}`}</span>
                             </div>
                             <div className="flex items-center gap-2 shrink-0">
                               {item.fixed && <Badge variant="primary">不可裁剪</Badge>}
@@ -473,7 +537,7 @@ export function ContextPreviewDialog({
                         {contextPackage.excludedItems.length > 0 && (
                           <div className="flex flex-col gap-1.5 pt-3">
                             <h5 className="text-xs font-semibold text-red-600">
-                              被裁剪的低优先级项:
+                              未纳入请求的参考资料：
                             </h5>
                             {contextPackage.excludedItems.map((ex, idx) => (
                               <div
@@ -481,7 +545,7 @@ export function ContextPreviewDialog({
                                 className="flex items-center justify-between rounded-lg border border-red-200 bg-red-50 p-2 text-xs text-red-700"
                               >
                                 <span>{ex.title || ex.sourceType}</span>
-                                <span>超出预算 (~{ex.estimatedTokens} tokens)</span>
+                                <span>{EXCLUSION_REASONS[ex.reason]} (~{ex.estimatedTokens} tokens)</span>
                               </div>
                             ))}
                           </div>
@@ -490,37 +554,23 @@ export function ContextPreviewDialog({
                     </ScrollArea>
                   </TabsContent>
 
-                  <TabsContent value="system" className="flex-1 overflow-hidden mt-2 relative">
-                    <Button
-                      size="sm"
-                      variant="ghost"
-                      className="absolute right-3 top-2 z-10 text-xs"
-                      onClick={() => handleCopyText(contextPackage.systemMessage)}
-                    >
-                      <Copy size={12} />
-                      {copied ? '已复制' : '复制全文'}
-                    </Button>
-                    <ScrollArea className="h-[360px] rounded-xl border border-[#e5ddd3] bg-white p-3">
-                      <pre className="font-mono text-xs leading-relaxed text-[#2c2523] whitespace-pre-wrap">
-                        {contextPackage.systemMessage}
-                      </pre>
-                    </ScrollArea>
-                  </TabsContent>
-
-                  <TabsContent value="user" className="flex-1 overflow-hidden mt-2 relative">
-                    <Button
-                      size="sm"
-                      variant="ghost"
-                      className="absolute right-3 top-2 z-10 text-xs"
-                      onClick={() => handleCopyText(contextPackage.userMessage)}
-                    >
-                      <Copy size={12} />
-                      {copied ? '已复制' : '复制全文'}
-                    </Button>
-                    <ScrollArea className="h-[360px] rounded-xl border border-[#e5ddd3] bg-white p-3">
-                      <pre className="font-mono text-xs leading-relaxed text-[#2c2523] whitespace-pre-wrap">
-                        {contextPackage.userMessage}
-                      </pre>
+                  <TabsContent value="messages" className="flex flex-1 min-h-0 flex-col overflow-hidden mt-2">
+                    <div className="flex justify-end gap-2 pb-2 shrink-0">
+                      {onOpenCreativeSettings && (
+                        <Button size="sm" variant="outline" className="text-xs h-7 border-[#dacdbe]" onClick={() => { onClose(); onOpenCreativeSettings() }}><Sliders size={12} className="mr-1 text-[#2d6a4f]" />提示词设置</Button>
+                      )}
+                      <Button size="sm" variant="ghost" className="text-xs h-7" onClick={() => handleCopyText(JSON.stringify(contextPackage.messages, null, 2))}><Copy size={12} />{copied ? '已复制' : '复制实际消息'}</Button>
+                    </div>
+                    <ScrollArea className="flex-1 min-h-0 rounded-xl border border-[#e5ddd3] bg-white">
+                      <div className="space-y-3 p-3 pb-8">
+                        {contextPackage.messages.map((message, index) => (
+                          <div key={index} className="space-y-2">
+                            <Badge variant="outline" className="text-[10px] border-[#dacdbe]">{index + 1} · {message.role}</Badge>
+                            <pre className="font-mono text-xs leading-relaxed text-[#2c2523] whitespace-pre-wrap break-words">{message.content}</pre>
+                          </div>
+                        ))}
+                        {contextPackage.messages.length === 0 && <p className="text-xs text-[#7d6b59]">本预览未包含实际请求消息，请重新生成预览。</p>}
+                      </div>
                     </ScrollArea>
                   </TabsContent>
                 </Tabs>
@@ -529,7 +579,7 @@ export function ContextPreviewDialog({
           </div>
         </div>
 
-        <DialogFooter className="flex items-center justify-between border-t border-[#e5ddd3] pt-3 text-[11px] text-[#7d6b59]">
+        <DialogFooter className="flex items-center justify-between border-t border-[#e5ddd3] pt-3 px-6 pb-4 shrink-0 text-[11px] text-[#7d6b59]">
           <span>
             上下文包写入数据库后具备唯一指纹，正文或配置变更将触发过时失效保护
           </span>
@@ -537,15 +587,13 @@ export function ContextPreviewDialog({
             <Button variant="ghost" onClick={onClose}>
               关闭
             </Button>
-            {onStartCreation && (
+            {onStartCreation && !contextPackageId && (
               <Button
-                disabled={!contextPackage}
-                onClick={() => {
-                  if (contextPackage) onStartCreation(contextPackage.id, taskType)
-                }}
+                disabled={!contextPackage || previewing || startingCreation}
+                onClick={() => void handleStartCreation()}
               >
                 <Sparkles size={14} />
-                开始生成候选
+                {startingCreation ? '正在启动…' : '开始生成候选'}
               </Button>
             )}
           </div>

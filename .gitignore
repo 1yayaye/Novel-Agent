@@ -21,6 +21,7 @@ test-results/
 playwright-report/
 blob-report/
 playwright/.cache/
+docs/**/screenshots/
 
 # Local agent / editor working files
 .agents/
@@ -32,6 +33,7 @@ skills-lock.json
 
 # Generated architecture diagrams (local only)
 diagrams/
+.archify/
 scratch/
 src-winui/bin/
 src-winui/obj/

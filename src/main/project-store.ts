@@ -394,10 +394,6 @@ export class ProjectStore {
 
       if (!readOnly) {
         this.recoverInterruptedTasks(database)
-        try {
-          seedDefaultCreativePresets(database)
-        } catch {}
-
         const delay = options?.autoBackupDelayMs !== undefined ? options.autoBackupDelayMs : this.autoBackupDelayMs
         if (delay <= 0) {
           await this.executeAutoBackupSync(path, database)

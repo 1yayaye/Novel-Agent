@@ -1,5 +1,5 @@
 import React from 'react'
-import { BookOpen, Radio, Loader2, Compass, ScrollText, Sparkles, HelpCircle, FileDown } from 'lucide-react'
+import { BookOpen, Radio, Loader2, Compass, ScrollText, Sparkles, HelpCircle, FileDown, Sliders } from 'lucide-react'
 import { WindowControls } from '../../components/common/WindowControls'
 import { Button } from '@appica/ui-react/button'
 import { useWorkbenchStore } from '../../stores/useWorkbenchStore'
@@ -65,6 +65,18 @@ export function TopBar({
           <span className="truncate max-w-[140px]">
             {defaultConnection ? `${defaultConnection.name} (${getEndpointHost(defaultConnection.baseUrl)})` : '未连接模型'}
           </span>
+        </Button>
+
+        <Button
+          variant="ghost"
+          size="sm"
+          onClick={() => openDialog('creative')}
+          className="flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[11px] bg-[#efe6da] hover:bg-[#e5ddd3] text-[#54473b] transition-colors border border-[#dacdbe]/60 h-auto"
+          title="打开提示词与创作设置"
+          aria-label="提示词与文风"
+        >
+          <Sliders size={11} className="text-[#2d6a4f]" />
+          <span className="font-medium">提示词与文风</span>
         </Button>
 
         {activeTaskProgress && (

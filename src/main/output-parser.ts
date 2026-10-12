@@ -22,15 +22,44 @@ interface TagToken {
 
 const KNOWN_TAGS = [
   'thinking',
+  'think',
+  'thought',
+  'analysis',
+  'reasoning',
+  'interleaved_thinking',
+  'interleaving',
+  'chain_of_thought',
   'summary',
   'options',
   'plot_options',
+  'choice',
+  'choices',
+  'fox_selc',
   'outline',
   'chapter_outline',
+  'fox_hugou',
   'direction',
   'questions',
   'content'
 ]
+
+function isReasoningTag(tag: string): boolean {
+  const t = tag.toLowerCase()
+  return (
+    t === 'thinking' ||
+    t === 'think' ||
+    t === 'thought' ||
+    t === 'analysis' ||
+    t === 'reasoning' ||
+    t === 'interleaved_thinking' ||
+    t === 'chain_of_thought' ||
+    t.startsWith('thinking_') ||
+    t.startsWith('think_') ||
+    t.endsWith('_planning') ||
+    t.endsWith('_planning~') ||
+    t.endsWith('_cot')
+  )
+}
 
 /**
  * Scans text for known XML-like tags (case-insensitive) and isolates sections,
@@ -48,14 +77,14 @@ function scanXmlSections(rawText: string): {
   const warnings: string[] = []
   if (!rawText) return { sections, warnings, hasTags: false }
 
-  const tagRegex = /<(\/)?([a-zA-Z_]+)(?:\s+[^>]*)?>/g
+  const tagRegex = /<(\/)?([a-zA-Z0-9_\-~]+)(?:\s+[^>]*)?>/g
   const tokens: TagToken[] = []
   let match: RegExpExecArray | null
 
   while ((match = tagRegex.exec(rawText)) !== null) {
     const isClosing = match[1] === '/'
     const tagName = match[2].toLowerCase()
-    if (KNOWN_TAGS.includes(tagName)) {
+    if (KNOWN_TAGS.includes(tagName) || isReasoningTag(tagName)) {
       tokens.push({
         tag: tagName,
         isClosing,
@@ -119,6 +148,38 @@ function extractOptionsList(text: string): string[] {
     .filter((opt) => opt.length > 0 && !/^###?\s+/.test(opt))
 }
 
+function stripReasoning(text: string): string {
+  const tags = /<(\/)?([a-zA-Z0-9_\-~]+)(?:\s+[^>]*)?>/g
+  const reasoning: string[] = []
+  const parts: string[] = []
+  let offset = 0
+  let match: RegExpExecArray | null
+  while ((match = tags.exec(text)) !== null) {
+    if (!reasoning.length) parts.push(text.slice(offset, match.index))
+    const name = match[2].toLowerCase()
+    if (isReasoningTag(name)) {
+      if (match[1]) {
+        if (reasoning.at(-1) === name) reasoning.pop()
+      } else {
+        reasoning.push(name)
+      }
+    } else {
+      if (!match[1]) {
+        reasoning.length = 0
+      }
+      if (!reasoning.length && name !== 'interleaving') {
+        parts.push(match[0])
+      }
+    }
+    offset = tags.lastIndex
+  }
+  // An unfinished reasoning section cannot safely be treated as prose.
+  if (!reasoning.length) parts.push(text.slice(offset))
+  return parts.join('')
+    .replace(/(?:^|\n)#{1,6}\s*【?(?:思考过程|写前推演|构思推演|思维链|分析过程)】?[^\n]*\n[\s\S]*?(?=\n#{1,6}\s*【?(?:正文|方向|核心事件|本章目标|待确认问题)|$)/g, '')
+    .trim()
+}
+
 /**
  * Robust creation output parser.
  * Guarantees that candidate content only contains story prose,
@@ -134,7 +195,12 @@ export function parseCreationOutput(rawText: string): ParsedCreationOutput {
     }
   }
 
-  const { sections, warnings, hasTags } = scanXmlSections(rawText)
+  const cleanText = stripReasoning(rawText)
+  const { sections, warnings, hasTags } = scanXmlSections(cleanText)
+  const { warnings: rawWarnings } = scanXmlSections(rawText)
+  for (const w of rawWarnings) {
+    if (!warnings.includes(w)) warnings.push(w)
+  }
 
   let thinking: string | undefined
   let summary: string | undefined
@@ -143,21 +209,25 @@ export function parseCreationOutput(rawText: string): ParsedCreationOutput {
   let direction: string | undefined
   let content: string | undefined
 
-  if (sections.has('thinking')) {
-    thinking = sections.get('thinking')!.join('\n\n').trim()
+  for (const [key, val] of sections.entries()) {
+    if (isReasoningTag(key)) {
+      thinking = val.join('\n\n').trim()
+    }
   }
   if (sections.has('summary')) {
     summary = sections.get('summary')!.join('\n\n').trim()
   }
-  if (sections.has('options')) {
-    plotOptions = extractOptionsList(sections.get('options')!.join('\n'))
-  } else if (sections.has('plot_options')) {
-    plotOptions = extractOptionsList(sections.get('plot_options')!.join('\n'))
+  for (const optTag of ['options', 'plot_options', 'choice', 'choices', 'fox_selc']) {
+    if (sections.has(optTag)) {
+      plotOptions = extractOptionsList(sections.get(optTag)!.join('\n'))
+      break
+    }
   }
-  if (sections.has('outline')) {
-    outline = sections.get('outline')!.join('\n\n').trim()
-  } else if (sections.has('chapter_outline')) {
-    outline = sections.get('chapter_outline')!.join('\n\n').trim()
+  for (const outlineTag of ['chapter_outline', 'outline', 'fox_hugou']) {
+    if (sections.has(outlineTag)) {
+      outline = sections.get(outlineTag)!.join('\n\n').trim()
+      break
+    }
   }
   if (sections.has('direction')) {
     direction = sections.get('direction')!.join('\n\n').trim()
@@ -168,18 +238,22 @@ export function parseCreationOutput(rawText: string): ParsedCreationOutput {
   } else if (hasTags) {
     // If other tags exist but <content> was not explicitly tagged,
     // strip out all non-content tag blocks from the raw text to extract pure content.
-    let stripped = rawText
-    stripped = stripped.replace(/<thinking>[\s\S]*?(?:<\/thinking>|$)/gi, '')
+    let stripped = cleanText
+    stripped = stripped.replace(/<([a-zA-Z0-9_\-~]+)>[\s\S]*?(?:<\/\1>|$)/gi, (m, tag) => {
+      if (isReasoningTag(tag)) return ''
+      return m
+    })
+    stripped = stripped.replace(/<\/?(interleaving|interleaved_thinking)(?:\s+[^>]*)?>/gi, '')
     stripped = stripped.replace(/<summary>[\s\S]*?(?:<\/summary>|$)/gi, '')
-    stripped = stripped.replace(/<(?:plot_options|options)>[\s\S]*?(?:<\/(?:plot_options|options)>|$)/gi, '')
-    stripped = stripped.replace(/<(?:chapter_outline|outline)>[\s\S]*?(?:<\/(?:chapter_outline|outline)>|$)/gi, '')
+    stripped = stripped.replace(/<(?:plot_options|options|choice|choices|fox_selc)>[\s\S]*?(?:<\/(?:plot_options|options|choice|choices|fox_selc)>|$)/gi, '')
+    stripped = stripped.replace(/<(?:chapter_outline|outline|fox_hugou)>[\s\S]*?(?:<\/(?:chapter_outline|outline|fox_hugou)>|$)/gi, '')
     stripped = stripped.replace(/<direction>[\s\S]*?(?:<\/direction>|$)/gi, '')
     stripped = stripped.replace(/<questions>[\s\S]*?(?:<\/questions>|$)/gi, '')
     stripped = stripped.trim()
     content = stripped
   } else {
     // Completely untagged plain text -> check for Markdown header blocks
-    let workingText = rawText.trim()
+    let workingText = cleanText
 
     // 1. Check for thinking section in markdown: ### 【思考过程】 or ### 【推演】
     const mdThinkMatch = workingText.match(/(?:###?\s*【?(?:思考过程|写前推演|构思推演|思维链)】?)([\s\S]*?)(?=(?:###?\s*【?(?:正文|正文内容|续写正文|剧情选项|大纲)】?)|$)/i)
@@ -212,11 +286,11 @@ export function parseCreationOutput(rawText: string): ParsedCreationOutput {
   }
 
   // Ensure content falls back safely to rawText if empty and no other sections extracted
-  const finalContent = content && content.length > 0 ? content : (!thinking && !outline && !summary ? rawText.trim() : (content || ''))
+  const finalContent = content?.trim() || ''
+  if (!finalContent && rawText.trim()) warnings.push('输出未包含可供审阅的小说正文')
 
   return {
     content: finalContent,
-    thinking,
     summary,
     plotOptions: plotOptions && plotOptions.length > 0 ? plotOptions : undefined,
     outline,
@@ -235,7 +309,8 @@ export function parseDirectionOutput(rawText: string): ParsedDirectionOutput {
     return { direction: '', questions: [], warnings: [], rawOutput: rawText || '' }
   }
 
-  const { sections, warnings } = scanXmlSections(rawText)
+  const cleanText = stripReasoning(rawText)
+  const { sections, warnings } = scanXmlSections(cleanText)
   let thinking: string | undefined
   let direction = ''
   let questions: string[] = []
@@ -254,9 +329,9 @@ export function parseDirectionOutput(rawText: string): ParsedDirectionOutput {
 
   if (!direction) {
     // Parse Markdown structure
-    let workingText = rawText.trim()
+    let workingText = cleanText
     if (thinking) {
-      workingText = workingText.replace(/<thinking>[\s\S]*?(?:<\/thinking>|$)/gi, '').trim()
+      workingText = workingText.replace(/<(thinking|think|thought|analysis|reasoning|interleaved_thinking)>[\s\S]*?(?:<\/\1>|$)/gi, '').trim()
     }
 
     // Match question block in markdown: 【待确认问题】 or ### 待确认问题
@@ -270,9 +345,8 @@ export function parseDirectionOutput(rawText: string): ParsedDirectionOutput {
   }
 
   return {
-    direction: direction || rawText.trim(),
-    questions,
-    thinking,
+    direction,
+    questions: questions.slice(0, 3),
     warnings,
     rawOutput: rawText
   }
@@ -292,7 +366,8 @@ export function parseChapterOutlineOutput(rawText: string): ParsedChapterOutline
     }
   }
 
-  const { sections, warnings } = scanXmlSections(rawText)
+  const cleanText = stripReasoning(rawText)
+  const { sections, warnings } = scanXmlSections(cleanText)
   let thinking: string | undefined
   let outline = ''
 
@@ -305,9 +380,9 @@ export function parseChapterOutlineOutput(rawText: string): ParsedChapterOutline
   } else if (sections.has('outline')) {
     outline = sections.get('outline')!.join('\n\n').trim()
   } else {
-    let workingText = rawText.trim()
+    let workingText = cleanText
     if (thinking) {
-      workingText = workingText.replace(/<thinking>[\s\S]*?(?:<\/thinking>|$)/gi, '').trim()
+      workingText = workingText.replace(/<(thinking|think|thought|analysis|reasoning|interleaved_thinking)>[\s\S]*?(?:<\/thinking>|$)/gi, '').trim()
     }
     outline = workingText
   }
@@ -332,9 +407,8 @@ export function parseChapterOutlineOutput(rawText: string): ParsedChapterOutline
   modules.endingHook = matchSection(['结尾钩子', '结尾悬念', '收尾动作'])
 
   return {
-    outline: outline || rawText.trim(),
+    outline,
     modules,
-    thinking,
     warnings,
     rawOutput: rawText
   }

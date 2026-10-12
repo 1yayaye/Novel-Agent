@@ -10,6 +10,7 @@ import { CandidateService } from './candidate-service.js'
 import { CreationRunner } from './creation-runner.js'
 import { ChatService } from './chat-service.js'
 import { AnalysisRunner } from './analysis-runner.js'
+import { PromptSettingsStore } from './prompt-store.js'
 import {
   createServiceRouter,
   type ServiceRouter,
@@ -29,19 +30,21 @@ export interface SidecarOptions {
 export function createDefaultSidecarDeps(customDataPath?: string): ServiceRouterDependencies {
   const dataPath = customDataPath || process.env.NOVEL_AGENT_DATA_PATH || dataDirectory(process.execPath, false)
   ensureWritableDirectory(dataPath)
+  const promptStore = new PromptSettingsStore(dataPath)
   const store = new ProjectStore(dataPath)
   const connectionStore = new ConnectionStore(dataPath)
   const diagnostics = new DiagnosticsService(dataPath)
   const modelGateway = new ModelGateway(connectionStore, diagnostics)
   const searchIndexInstance = new SearchIndex(store, modelGateway, connectionStore)
-  const contextAssembler = new ContextAssembler(store, searchIndexInstance, connectionStore, modelGateway)
+  const contextAssembler = new ContextAssembler(store, promptStore, searchIndexInstance, connectionStore, modelGateway)
   const candidateService = new CandidateService(store, searchIndexInstance)
   const creationRunner = new CreationRunner(store, modelGateway, connectionStore, contextAssembler, candidateService)
-  const chatService = new ChatService(store, modelGateway, connectionStore, contextAssembler, searchIndexInstance)
-  const analysisRunner = new AnalysisRunner(store, modelGateway, connectionStore, searchIndexInstance)
+  const chatService = new ChatService(store, promptStore, modelGateway, connectionStore, contextAssembler, searchIndexInstance)
+  const analysisRunner = new AnalysisRunner(store, promptStore, modelGateway, connectionStore, searchIndexInstance)
 
   return {
     store,
+    promptStore,
     connectionStore,
     modelGateway,
     diagnostics,

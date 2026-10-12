@@ -6,14 +6,17 @@ import { ProjectStore } from '../src/main/project-store'
 import { ChapterRepository } from '../src/main/chapter-repository'
 import { SearchIndex } from '../src/main/search-index'
 import { ConnectionStore, calculateContentTargetFingerprint } from '../src/main/connection-store'
-import { ContextAssembler, expandMacros, compileDirectorControls } from '../src/main/context-assembler'
+import { ContextAssembler, expandMacros } from '../src/main/context-assembler'
+import { PromptSettingsStore } from '../src/main/prompt-store'
+import { DEFAULT_PRESET_STORE, type NovelPromptPreset } from '../src/shared/prompt-settings'
 import { parseCreationOutput } from '../src/main/creation-runner'
 import { CreativeRepository } from '../src/main/creative-repository'
 import { KnowledgeRepository } from '../src/main/knowledge-repository'
 
-describe('PromptSlot, Macros, Lorebook Aliases & Director Controls (SPEC v2.0)', () => {
+describe('Prompt material boundaries and author macros', () => {
   let tempDir: string
   let store: ProjectStore
+  let promptStore: PromptSettingsStore
   let connStore: ConnectionStore
   let searchIndex: SearchIndex
   let chapterRepo: ChapterRepository
@@ -27,13 +30,14 @@ describe('PromptSlot, Macros, Lorebook Aliases & Director Controls (SPEC v2.0)',
 
   beforeEach(async () => {
     tempDir = mkdtempSync(join(tmpdir(), 'novel-prompt-slot-test-'))
+    promptStore = new PromptSettingsStore(tempDir)
     store = new ProjectStore(tempDir)
     connStore = new ConnectionStore(tempDir)
     searchIndex = new SearchIndex(store)
     chapterRepo = new ChapterRepository(store, searchIndex)
     creativeRepo = new CreativeRepository(store, searchIndex)
     knowledgeRepo = new KnowledgeRepository(store, searchIndex)
-    assembler = new ContextAssembler(store, searchIndex, connStore)
+    assembler = new ContextAssembler(store, promptStore, searchIndex, connStore)
 
     const conn = connStore.create({
       name: 'Test LLM',
@@ -96,65 +100,6 @@ describe('PromptSlot, Macros, Lorebook Aliases & Director Controls (SPEC v2.0)',
     } catch {}
   })
 
-  it('compiles and orders PromptSlots across before_context, after_context and absolute_depth', async () => {
-    const pkg = await assembler.assembleContext({
-      sessionId,
-      connectionId: connId,
-      taskType: 'continue',
-      target: { chapterId: chapter1Id },
-      instruction: '描写韩立通过考核',
-      slots: [
-        {
-          id: 'slot-1',
-          name: '前置身份增强',
-          enabled: true,
-          role: 'system',
-          content: '【前置强化】你是金牌网文主编，精通节奏调控。',
-          position: 'before_context',
-          order: 5,
-          trigger: 'always'
-        },
-        {
-          id: 'slot-2',
-          name: '禁用Slot',
-          enabled: false,
-          role: 'system',
-          content: '【此条不应出现】',
-          position: 'before_context',
-          order: 1
-        },
-        {
-          id: 'slot-3',
-          name: '深度注入Prompt',
-          enabled: true,
-          role: 'user',
-          content: '【深度提示】此处主角应表现出内敛隐忍的眼神细节。',
-          position: 'absolute_depth',
-          depth: 2,
-          order: 1,
-          trigger: 'creation'
-        },
-        {
-          id: 'slot-4',
-          name: '临门一脚指令',
-          enabled: true,
-          role: 'system',
-          content: '【即时要求】文末以悬念收尾。',
-          position: 'after_context',
-          order: 10
-        }
-      ]
-    })
-
-    expect(pkg.systemMessage).toContain('【前置强化】你是金牌网文主编')
-    expect(pkg.systemMessage).not.toContain('【此条不应出现】')
-    expect(pkg.userMessage).toContain('【深度提示】此处主角应表现出内敛隐忍的眼神细节。')
-    expect(pkg.userMessage).toContain('【即时要求】文末以悬念收尾。')
-
-    const slotItems = pkg.items.filter((i) => i.sourceType === 'prompt_slot')
-    expect(slotItems.length).toBe(3)
-  })
-
   it('dynamically triggers Knowledge Entries via Lorebook Aliases matching', async () => {
     // Chapter 2 text contains "二愣子" (alias for 韩立) and "神秘小瓶" (alias for 掌天瓶)
     const pkg = await assembler.assembleContext({
@@ -177,7 +122,7 @@ describe('PromptSlot, Macros, Lorebook Aliases & Director Controls (SPEC v2.0)',
     expect(bottleItem?.content).toContain('太古玄天之宝')
   })
 
-  it('correctly expands whitelisted macro variables in instructions and slots', () => {
+  it('correctly expands whitelisted macro variables in author instructions', () => {
     const warnings: string[] = []
     const template = '章节: {{chapter_title}}, 规则: {{creative_rules}}, 前文段落: [{{previous_paragraphs count=2}}], 人物: [{{character_card name="韩立"}}], 未知: {{custom_foo}}'
 
@@ -206,42 +151,7 @@ describe('PromptSlot, Macros, Lorebook Aliases & Director Controls (SPEC v2.0)',
     expect(warnings[0]).toContain('未知宏变量: {{custom_foo}}')
   })
 
-  it('compiles Director Controls into PromptSlots and enforces configuration fingerprint change', async () => {
-    const pkg1 = await assembler.assembleContext({
-      sessionId,
-      connectionId: connId,
-      taskType: 'continue',
-      target: { chapterId: chapter1Id },
-      instruction: '写一段试炼'
-    })
-
-    const pkg2 = await assembler.assembleContext({
-      sessionId,
-      connectionId: connId,
-      taskType: 'continue',
-      target: { chapterId: chapter1Id },
-      instruction: '写一段试炼',
-      directorControls: {
-        pov: 'limited_3p',
-        sensory: 'strict',
-        pacing: 'fast',
-        banWords: ['极其', '共犯', '眼神一暗'],
-        enableCoT: true
-      }
-    })
-
-    // Fingerprints must differ when DirectorControls are active
-    expect(pkg1.configurationFingerprint).not.toBe(pkg2.configurationFingerprint)
-
-    // Check compiled director controls in message
-    expect(pkg2.userMessage).toContain('【叙事视角】第三人称主角限制视角')
-    expect(pkg2.userMessage).toContain('【感官边界】严格防全知边界')
-    expect(pkg2.userMessage).toContain('【叙事节奏】快节奏推进')
-    expect(pkg2.userMessage).toContain('【禁忌词汇】严禁在生成中使用以下词汇或八股句式：极其、共犯、眼神一暗')
-    expect(pkg2.userMessage).toContain('【写前推演】')
-  })
-
-  it('correctly parses tagged output and cleanly extracts content, thinking, summary, and plot options', () => {
+  it('correctly parses tagged output and cleanly extracts content separately from reasoning and summary, and plot options', () => {
     const rawTagged = `
 <thinking>
 1. 检查人设：韩立坚毅低调，不张扬。
@@ -266,7 +176,7 @@ describe('PromptSlot, Macros, Lorebook Aliases & Director Controls (SPEC v2.0)',
 `
     const parsed = parseCreationOutput(rawTagged)
 
-    expect(parsed.thinking).toContain('检查人设：韩立坚毅低调')
+    expect(parsed).not.toHaveProperty('thinking')
     expect(parsed.content).toContain('月华如水，透过神手谷上方的树梢斑驳洒下。')
     expect(parsed.content).not.toContain('<thinking>')
     expect(parsed.content).not.toContain('<summary>')
@@ -278,123 +188,94 @@ describe('PromptSlot, Macros, Lorebook Aliases & Director Controls (SPEC v2.0)',
     const rawPlain = '秋风萧瑟，残阳如血。韩立一步步走上七玄门的山道。'
     const parsedPlain = parseCreationOutput(rawPlain)
     expect(parsedPlain.content).toBe(rawPlain)
-    expect(parsedPlain.thinking).toBeUndefined()
+    expect(parsed).not.toHaveProperty('thinking')
     expect(parsedPlain.summary).toBeUndefined()
   })
 
-  it('triggers fingerprint change when slot order in array changes even if order number is identical', async () => {
-    const slotA = {
-      id: 'slot-a',
-      name: '插槽A',
-      enabled: true,
-      role: 'system' as const,
-      content: '规则A',
-      position: 'before_context' as const,
-      order: 0
+
+  it('freezes settings and invalidates unstarted previews without current options', async () => {
+    const testPreset: NovelPromptPreset = {
+      id: 'test-preset',
+      name: '测试预设',
+      blocks: [
+        { id: 'b1', name: '系统创作设定', role: 'system', content: '测试提示词正文', enabled: true, position: 'relative', depth: 0, order: 0 }
+      ],
+      createdAt: 1,
+      updatedAt: 1
     }
-    const slotB = {
-      id: 'slot-b',
-      name: '插槽B',
-      enabled: true,
-      role: 'system' as const,
-      content: '规则B',
-      position: 'before_context' as const,
-      order: 0
-    }
-
-    const pkg1 = await assembler.assembleContext({
-      sessionId,
-      connectionId: connId,
-      taskType: 'continue',
-      target: { chapterId: chapter1Id },
-      instruction: '测试指纹变动',
-      slots: [slotA, slotB]
-    })
-
-    const pkg2 = await assembler.assembleContext({
-      sessionId,
-      connectionId: connId,
-      taskType: 'continue',
-      target: { chapterId: chapter1Id },
-      instruction: '测试指纹变动',
-      slots: [slotB, slotA]
-    })
-
-    expect(pkg1.configurationFingerprint).not.toBe(pkg2.configurationFingerprint)
+    promptStore.save({ activePresetId: 'test-preset', presets: [testPreset] })
+    const input = { sessionId, connectionId: connId, taskType: 'continue' as const,
+      target: { chapterId: chapter1Id }, instruction: '承接前文' }
+    const pkg = await assembler.assembleContext(input)
+    expect(pkg.items.some((item) => item.moduleId === 'b1')).toBe(true)
+    promptStore.save({ activePresetId: 'test-preset', presets: [{ ...testPreset, blocks: [{ ...testPreset.blocks[0], enabled: false }] }] })
+    expect(() => assembler.verifyContextPackage(sessionId, pkg.id)).toThrow(expect.objectContaining({ code: 'STALE_CONTEXT_PACKAGE' }))
+    const frozen = assembler.getContextPackage({ sessionId, contextPackageId: pkg.id })
+    expect(frozen.messages).toEqual(pkg.messages)
+    const fresh = await assembler.assembleContext(input)
+    expect(fresh.items.some((item) => item.moduleId === 'b1')).toBe(false)
+    expect(fresh.configurationFingerprint).not.toBe(pkg.configurationFingerprint)
   })
 
-  it('correctly executes slot roles and in-chat absolute_depth message insertion into messages array', async () => {
-    const pkg = await assembler.assembleContext({
-      sessionId,
-      connectionId: connId,
-      taskType: 'continue',
-      target: { chapterId: chapter1Id },
-      instruction: '描写韩立通过考核',
-      slots: [
-        {
-          id: 'slot-sys-before',
-          name: '系统前置增强',
-          enabled: true,
-          role: 'system',
-          content: '【系统前置】你是修仙小说宗师。',
-          position: 'before_context',
-          order: 1
-        },
-        {
-          id: 'slot-user-before',
-          name: '用户前置引子',
-          enabled: true,
-          role: 'user',
-          content: '【背景引子】前情回顾：七玄门招收弟子。',
-          position: 'before_context',
-          order: 2
-        },
-        {
-          id: 'slot-depth-1',
-          name: '深度为1的系统插槽',
-          enabled: true,
-          role: 'system',
-          content: '【深度1约束】严控心理活动描写篇幅。',
-          position: 'absolute_depth',
-          depth: 1,
-          order: 1
-        },
-        {
-          id: 'slot-depth-0',
-          name: '深度为0的助手Prefill插槽',
-          enabled: true,
-          role: 'assistant',
-          content: '【开篇接续】狂风呼啸，',
-          position: 'absolute_depth',
-          depth: 0,
-          order: 1
-        }
-      ]
+  it('counts real history roles and excludes current author message from history', async () => {
+    store.transaction(sessionId, (db) => {
+      db.prepare("INSERT INTO chat_session(id,title,version,created_at,updated_at) VALUES ('history','角色历史',1,1,1)").run()
+      const insert = db.prepare("INSERT INTO chat_message(id,chat_session_id,role,content,state,created_at) VALUES (?,'history',?,?,'completed',?)")
+      insert.run('old-user','user','作者决定保留秘密',1)
+      insert.run('old-assistant','assistant','建议通过误会推进',2)
+      insert.run('current-user','user','规划本章',3)
+      db.prepare("INSERT INTO chat_summary(id,chat_session_id,content,version,created_at,updated_at) VALUES ('summary','history','先前的作者决定',1,0,0)").run()
     })
+    const pkg = await assembler.assembleContext({ sessionId, connectionId: connId, taskType: 'chat', stage: 'direction',
+      target: { chapterId: chapter1Id, chatId: 'history' }, instruction: '规划本章' }, undefined, 'current-user')
+    const messages = pkg.messages
+    expect(messages.filter((message) => message.content.includes('规划本章'))).toHaveLength(1)
+    const userIndex = messages.findIndex((message) => message.content === '作者决定保留秘密')
+    const assistantIndex = messages.findIndex((message) => message.content === '建议通过误会推进')
+    expect(messages[userIndex].role).toBe('user')
+    expect(messages[assistantIndex].role).toBe('assistant')
+    expect(assistantIndex).toBe(userIndex + 1)
+    expect(messages[assistantIndex + 1].content).toContain('【本次作者任务】')
+    expect(messages.at(-1)?.content).toContain('【本次作者任务】')
+  })
 
-    expect(pkg.messages.length).toBeGreaterThanOrEqual(4)
+  it('trims oldest history first and budgets the complete transmitted messages', async () => {
+    const oldest = '较早的讨论。'.repeat(200)
+    store.transaction(sessionId, (db) => {
+      db.prepare("INSERT INTO chat_session(id,title,version,created_at,updated_at) VALUES ('trim-history','预算历史',1,1,1)").run()
+      const insert = db.prepare("INSERT INTO chat_message(id,chat_session_id,role,content,state,created_at) VALUES (?,'trim-history',?,?,'completed',?)")
+      insert.run('oldest', 'user', oldest, 1)
+      insert.run('recent-assistant', 'assistant', '保留最近的讨论', 2)
+      insert.run('recent-user', 'user', '最新作者决定', 3)
+    })
+    const input = { sessionId, connectionId: connId, taskType: 'chat' as const, stage: 'direction' as const,
+      target: { chapterId: chapter1Id, chatId: 'trim-history' }, instruction: '规划本章' }
+    const full = await assembler.assembleContext(input)
+    const connection = connStore.get(connId)
+    connStore.update({ connectionId: connId, expectedVersion: connection.version,
+      contextWindow: full.estimatedInputTokens + connection.maxOutputTokens,
+      safetyMarginRatio: 0 })
+    // A short added author request forces one history message out of the frozen budget.
+    const trimmed = await assembler.assembleContext({ ...input, instruction: '规划本章，并明确角色在场景中的行动选择和后果。' })
+    expect(trimmed.excludedItems.some((item) => item.sourceId === 'oldest')).toBe(true)
+    const history = trimmed.messages.filter((message) => ['保留最近的讨论', '最新作者决定', oldest].includes(message.content))
+    expect(history.map((message) => message.content)).toEqual(['保留最近的讨论', '最新作者决定'])
+    expect(history.map((message) => message.role)).toEqual(['assistant', 'user'])
+    const completeEstimate = trimmed.messages.reduce((total, message) => total + Math.ceil(message.content.length * connection.tokenEstimationRatio) + 4, 2)
+    expect(trimmed.estimatedInputTokens).toBe(completeEstimate)
+    expect(completeEstimate).toBeLessThanOrEqual(trimmed.availableInputTokens)
+  })
 
-    // First message should be system containing '【系统前置】你是修仙小说宗师。'
-    expect(pkg.messages[0].role).toBe('system')
-    expect(pkg.messages[0].content).toContain('【系统前置】你是修仙小说宗师。')
-
-    // Second message should be user containing '【背景引子】'
-    expect(pkg.messages[1].role).toBe('user')
-    expect(pkg.messages[1].content).toContain('【背景引子】前情回顾')
-
-    // Depth 0 assistant slot must be at the very end of messages
-    const lastMsg = pkg.messages[pkg.messages.length - 1]
-    expect(lastMsg.role).toBe('assistant')
-    expect(lastMsg.content).toBe('【开篇接续】狂风呼啸，')
-
-    // Main user context message is before the depth 0 assistant slot
-    const secondToLastMsg = pkg.messages[pkg.messages.length - 2]
-    expect(secondToLastMsg.role).toBe('user')
-    expect(secondToLastMsg.content).toContain('描写韩立通过考核')
-
-    // Depth 1 system slot is placed before the main user context message
-    const thirdToLastMsg = pkg.messages[pkg.messages.length - 3]
-    expect(thirdToLastMsg.role).toBe('system')
-    expect(thirdToLastMsg.content).toBe('【深度1约束】严控心理活动描写篇幅。')
+  it('rejects a material change and a connection budget change before execution', async () => {
+    const sample = creativeRepo.createSample(sessionId, '样本', '只参考表达方式', [])
+    const input = { sessionId, connectionId: connId, taskType: 'continue' as const,
+      target: { chapterId: chapter1Id }, styleSampleIds: [sample.id], instruction: '续写' }
+    const pkg = await assembler.assembleContext(input)
+    creativeRepo.updateSample(sessionId, sample.id, sample.name, '已修改表达方式', sample.tags, sample.version)
+    expect(() => assembler.verifyContextPackage(sessionId, pkg.id)).toThrow(expect.objectContaining({ code: 'STALE_CONTEXT_PACKAGE' }))
+    const fresh = await assembler.assembleContext(input)
+    const connection = connStore.get(connId)
+    connStore.update({ connectionId: connId, expectedVersion: connection.version, maxOutputTokens: 3000 })
+    expect(() => assembler.verifyContextPackage(sessionId, fresh.id)).toThrow(expect.objectContaining({ code: 'STALE_CONTEXT_PACKAGE' }))
   })
 })

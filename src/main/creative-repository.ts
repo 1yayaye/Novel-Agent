@@ -5,9 +5,11 @@ import type {
   InstructionPreset,
   StyleSample,
   SuccessResult
-} from '../shared/project'
-import { ProjectError, ProjectStore } from './project-store'
-import type { SearchIndex } from './search-index'
+} from '../shared/project.js'
+import type { PromptBundle } from '../shared/contracts/ai.js'
+import { ProjectError, ProjectStore } from './project-store.js'
+import type { SearchIndex } from './search-index.js'
+import { DEFAULT_INSTRUCTION_PRESETS } from './default-presets.js'
 
 type StyleSampleRow = {
   id: string
@@ -217,6 +219,22 @@ export class CreativeRepository {
     return { success: true }
   }
 
+  resetDefaultPresets(sessionId: string): InstructionPreset[] {
+    this.store.assertAnalysisPipelines(sessionId)
+    const now = Date.now()
+    return this.store.transaction(sessionId, (db) => {
+      db.prepare('DELETE FROM instruction_preset').run()
+      const insertPreset = db.prepare(
+        'INSERT INTO instruction_preset(id, task_type, name, instruction, version, created_at, updated_at) VALUES (?, ?, ?, ?, 1, ?, ?)'
+      )
+      for (const p of DEFAULT_INSTRUCTION_PRESETS) {
+        insertPreset.run(randomUUID(), p.taskType, p.name, p.instruction, now, now)
+      }
+      const rows = db.prepare('SELECT id, task_type, name, instruction, version, created_at, updated_at FROM instruction_preset ORDER BY created_at ASC').all() as InstructionPresetRow[]
+      return rows.map(mapInstructionPreset)
+    })
+  }
+
   listPresets(sessionId: string, taskType?: 'chat' | 'knowledge' | 'report' | 'continue' | 'rewrite' | 'polish' | 'style_distill' | 'book_summary'): InstructionPreset[] {
     this.store.assertAnalysisPipelines(sessionId)
     return this.store.read(sessionId, (db) => {
@@ -323,5 +341,14 @@ export class CreativeRepository {
     })
 
     return { success: true }
+  }
+
+  /** 小说项目级创作资料。软件内置提示词不在此处，走应用级 PromptConfigStore。 */
+  getPromptBundle(sessionId: string): PromptBundle {
+    return {
+      rules: this.getRules(sessionId),
+      presets: this.listPresets(sessionId),
+      styleSamples: this.listSamples(sessionId)
+    }
   }
 }

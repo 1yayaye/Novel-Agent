@@ -1,6 +1,7 @@
 import { createHash, randomUUID } from 'node:crypto'
 import { z } from 'zod'
 import {
+  StartAnalysisInputSchema,
   type BookOutline,
   type CancelTaskInput,
   type ConsistencyIssueSeverity,
@@ -19,10 +20,26 @@ import {
   type TaskProgressEvent,
   type TaskSummary
 } from '../shared/project'
+import { PromptSnapshotSchema, type PromptSnapshot } from '../shared/prompt-settings'
 import { ProjectError, type ProjectStore } from './project-store'
 import type { ModelGateway, TokenUsage } from './model-gateway'
 import type { ConnectionStore } from './connection-store'
 import type { SearchIndex } from './search-index'
+import { assertPromptSnapshotFresh, compilePromptMessages } from './prompt-runtime.js'
+import type { PromptSettingsStore } from './prompt-store.js'
+
+const AnalysisScopeSchema = StartAnalysisInputSchema.shape.scope.extend({
+  instruction: z.string(),
+  promptSnapshot: PromptSnapshotSchema.refine((snapshot) => Boolean(snapshot.budget)),
+  segments: z.array(z.object({
+    chapterId: z.string().uuid(),
+    startOffset: z.number().int().nonnegative(),
+    endOffset: z.number().int().nonnegative(),
+    title: z.string(),
+    segmentIndex: z.number().int().positive(),
+    segmentTotal: z.number().int().positive()
+  })).optional()
+})
 
 type RollingAnalysisState = {
   mainline: string
@@ -197,6 +214,7 @@ export class AnalysisRunner {
 
   constructor(
     private readonly store: ProjectStore,
+    private readonly promptStore: PromptSettingsStore,
     private readonly modelGateway?: ModelGateway,
     private readonly connectionStore?: ConnectionStore,
     private readonly searchIndex?: SearchIndex
@@ -253,10 +271,11 @@ export class AnalysisRunner {
       }
     }
 
-    if (connectionId && this.connectionStore) {
-      const conn = this.connectionStore.get(connectionId)
-      if (!conn) throw new ProjectError('CONNECTION_NOT_FOUND', '绑定的模型连接不存在')
+    if (!connectionId || !this.connectionStore || !this.modelGateway) {
+      throw new ProjectError('CONNECTION_NOT_FOUND', '未配置或未解析到可用的生成模型连接')
     }
+    const promptSnapshot = this.promptStore.snapshot(this.connectionStore.get(connectionId))
+    const instruction = this.resolveInstruction(input.sessionId, input)
 
     const isPipeline = input.type === 'style_distill' || input.type === 'book_summary'
     const segments = isPipeline
@@ -273,9 +292,7 @@ export class AnalysisRunner {
           }))
         })
       : []
-    const taskScope = isPipeline
-      ? { ...input.scope, presetId: input.presetId, instruction: input.instruction, segments }
-      : input.scope
+    const taskScope: z.infer<typeof AnalysisScopeSchema> = { ...input.scope, instruction, promptSnapshot, ...(isPipeline ? { segments } : {}) }
     const taskChapterIds = isPipeline ? segments.map((segment) => segment.chapterId) : targetChapterIds
     const task = this.store.createTask(
       input.sessionId,
@@ -320,6 +337,8 @@ export class AnalysisRunner {
       throw new ProjectError('INVALID_STATE_TRANSITION', '只有中断或失败的任务可以恢复')
     }
 
+    this.assertTaskSnapshotFresh(task)
+
     this.store.updateTask(input.sessionId, input.taskId, {
       state: 'queued',
       errorCode: null,
@@ -332,6 +351,7 @@ export class AnalysisRunner {
 
   async retryStep(input: RetryStepInput): Promise<TaskSummary> {
     this.store.assertTaskControls(input.sessionId)
+    this.assertTaskSnapshotFresh(this.store.getTask(input.sessionId, input.taskId))
     const summary = this.store.retryTaskStep(input.sessionId, input.taskId, input.stepId)
     void this.runTask(input.sessionId, input.taskId)
     return summary
@@ -339,6 +359,7 @@ export class AnalysisRunner {
 
   async retryTask(input: GetTaskInput): Promise<TaskSummary> {
     this.store.assertTaskControls(input.sessionId)
+    this.assertTaskSnapshotFresh(this.store.getTask(input.sessionId, input.taskId))
     const summary = this.store.retryFailedTask(input.sessionId, input.taskId)
     void this.runTask(input.sessionId, input.taskId)
     return summary
@@ -346,6 +367,7 @@ export class AnalysisRunner {
 
   async skipStep(input: SkipStepInput): Promise<TaskSummary> {
     this.store.assertTaskControls(input.sessionId)
+    this.assertTaskSnapshotFresh(this.store.getTask(input.sessionId, input.taskId))
     const summary = this.store.skipTaskStep(input.sessionId, input.taskId, input.stepId)
     void this.runTask(input.sessionId, input.taskId)
     return summary
@@ -391,12 +413,24 @@ export class AnalysisRunner {
     } catch {}
   }
 
-  private getRollingStateLimit(connectionId: string): number {
-    const connection = this.connectionStore?.get(connectionId)
-    const contextWindow = connection?.contextWindow ?? 128000
-    const maxOutputTokens = connection?.maxOutputTokens ?? 4096
-    const safetyMarginRatio = connection?.safetyMarginRatio ?? 0.1
-    const tokenEstimationRatio = connection?.tokenEstimationRatio ?? 1.3
+  private taskScope(task: TaskDetail): z.infer<typeof AnalysisScopeSchema> {
+    try {
+      return AnalysisScopeSchema.parse(JSON.parse(task.scopeJson))
+    } catch {
+      throw new ProjectError('STALE_CONTEXT_PACKAGE', '分析任务缺少有效的指令或创作配置快照，请重新发起分析')
+    }
+  }
+
+  private assertTaskSnapshotFresh(task: TaskDetail): void {
+    if (!task.connectionId || !this.connectionStore) {
+      throw new ProjectError('CONNECTION_NOT_FOUND', '分析任务未绑定模型连接，请重新发起分析')
+    }
+    assertPromptSnapshotFresh(this.promptStore, this.taskScope(task).promptSnapshot, this.connectionStore.get(task.connectionId))
+  }
+
+  private getRollingStateLimit(snapshot: PromptSnapshot): number {
+    if (!snapshot.budget) throw new ProjectError('STALE_CONTEXT_PACKAGE', '分析任务缺少请求预算，请重新发起分析')
+    const { contextWindow, maxOutputTokens, safetyMarginRatio, tokenEstimationRatio } = snapshot.budget
     const availableInputTokens = Math.max(0, contextWindow - maxOutputTokens - Math.floor(contextWindow * safetyMarginRatio))
     return Math.max(1, Math.floor((availableInputTokens * 0.2) / ROLLING_STATE_FIELDS.length / tokenEstimationRatio))
   }
@@ -437,19 +471,14 @@ export class AnalysisRunner {
     return this.readRollingState(latest?.checkpointJson, maxChars)
   }
 
-  private presetInstruction(sessionId: string, scopeJson: string): string {
-    try {
-      const config = JSON.parse(scopeJson) as { presetId?: string; instruction?: string }
-      if (config.instruction !== undefined) return config.instruction
-      const presetId = config.presetId
-      if (!presetId) return ''
-      return this.store.read(sessionId, (database) => {
-        const row = database.prepare('SELECT instruction FROM instruction_preset WHERE id = ?').get(presetId) as { instruction: string } | undefined
-        return row?.instruction ?? ''
-      })
-    } catch {
-      return ''
-    }
+  private resolveInstruction(sessionId: string, input: { presetId?: string; instruction?: string }): string {
+    if (input.instruction !== undefined) return input.instruction
+    if (!input.presetId) return ''
+    return this.store.read(sessionId, (database) => {
+      const row = database.prepare('SELECT instruction FROM instruction_preset WHERE id = ?').get(input.presetId) as { instruction: string } | undefined
+      if (!row) throw new ProjectError('VALIDATION_ERROR', '分析指令预设不存在，请重新选择')
+      return row.instruction
+    })
   }
 
   private saveStyleSample(sessionId: string, content: string, taskId: string): void {
@@ -483,6 +512,7 @@ export class AnalysisRunner {
     fallback: RollingAnalysisState,
     maxChars: number,
     signal: AbortSignal,
+    snapshot: PromptSnapshot,
     onUsage?: (usage: TokenUsage) => void
   ): Promise<RollingAnalysisState> {
     const parsed = RollingAnalysisStateSchema.safeParse(input)
@@ -494,21 +524,18 @@ export class AnalysisRunner {
     try {
       const result = await this.modelGateway!.generateStructuredJson({
         connectionId,
-        messages: [
-          {
-            role: 'system',
-            content: `请压缩滚动故事状态，每个字段不超过 ${maxChars} 个字符。必须保留已确认事实、未解问题和后文需要追踪的变化；不要新增事实，不要丢弃时间线和伏笔状态。`
-          },
-          { role: 'user', content: JSON.stringify(parsed.data) }
-        ],
+        messages: compilePromptMessages('synopsis_compress', { instruction: JSON.stringify(parsed.data) }, snapshot),
+        maxTokens: snapshot.budget?.maxOutputTokens,
+        requestBudget: snapshot.budget,
         zodSchema: RollingStateCompressionOutputSchema,
-        jsonSchema: { type: 'object', properties: Object.fromEntries(ROLLING_STATE_FIELDS.map((field) => [field, { type: 'string' }])) },
+        jsonSchema: z.toJSONSchema(RollingStateCompressionOutputSchema),
         signal,
         priority: 'low'
       })
       if (result.usage) onUsage?.(result.usage)
       return normalizeRollingState(result.data, maxChars)
-    } catch {
+    } catch (error) {
+      if (error instanceof ProjectError && ['MODEL_CONTEXT_EXCEEDED', 'STALE_CONTEXT_PACKAGE', 'VERSION_CONFLICT', 'CONNECTION_NOT_FOUND', 'TASK_CANCELLED'].includes(error.code)) throw error
       return normalizeRollingState(parsed.data, maxChars)
     }
   }
@@ -519,6 +546,8 @@ export class AnalysisRunner {
     initialState: RollingAnalysisState,
     maxChars: number,
     signal: AbortSignal,
+    snapshot: PromptSnapshot,
+    instruction: string,
     replaySummaries = true
   ): Promise<{ synopsis: string; usage?: TokenUsage }> {
     let state = normalizeRollingState(initialState, maxChars)
@@ -538,24 +567,21 @@ export class AnalysisRunner {
     for (const chapter of replaySummaries ? summaries : []) {
       const result = await this.modelGateway!.generateStructuredJson({
         connectionId,
-        messages: [
-          {
-            role: 'system',
-            content: '请按章节顺序滚动更新故事梗概。前文状态是已知上下文，只处理当前章节摘要带来的新增或变化；保留跨章因果、人物状态、时间线、伏笔和未解问题，不把猜测写成已确认事实。返回更新后的主线和结构化梗概文本。'
-          },
-          {
-            role: 'user',
-            content: `【上一版主线】${state.mainline || '无'}\n\n【必要连续资料】\n${formatRollingState(state)}\n\n【上一版结构化梗概】\n${synopsis || '无'}\n\n【当前章节标题】${chapter.chapterTitle ?? '章节'}\n\n【当前章节摘要】${chapter.summary}\n\n当前章节没有变化时请明确写“无新增”，不要重写整份资料。`
-          }
-        ],
+        messages: compilePromptMessages('synopsis_step', {
+          instruction: [
+            instruction,
+            `【上一版主线】${state.mainline || '无'}`,
+            `【必要连续资料】\n${formatRollingState(state)}`,
+            `【上一版结构化梗概】\n${synopsis || '无'}`,
+            `【当前章节标题】${chapter.chapterTitle ?? '章节'}`,
+            `【当前章节摘要】\n${chapter.summary}`,
+            '返回更新后的完整主线与梗概。当前章节无变化时保留既有资料，不用“无新增”替换已有事实。'
+          ].join('\n\n')
+        }, snapshot),
+        maxTokens: snapshot.budget?.maxOutputTokens,
+        requestBudget: snapshot.budget,
         zodSchema: RollingSynopsisStepOutputSchema,
-        jsonSchema: {
-          type: 'object',
-          properties: {
-            mainline: { type: 'string' },
-            synopsis: { type: 'string' }
-          }
-        },
+        jsonSchema: z.toJSONSchema(RollingSynopsisStepOutputSchema),
         signal,
         priority: 'low'
       })
@@ -568,25 +594,26 @@ export class AnalysisRunner {
       synopsis = result.data.synopsis || synopsis
     }
 
+    const extraBlock = `${
+      replaySummaries
+        ? ''
+        : `\n\n【本次任务章节摘要补充】\n${summaries.map((item) => `- ${item.chapterTitle ?? '章节'}：${item.summary}`).join('\n')}`
+    }${summaries.length === 0 ? '\n\n（暂无章节摘要）' : ''}`
+
     const finalResult = await this.modelGateway!.generateStructuredJson({
       connectionId,
-      messages: [
-        {
-          role: 'system',
-          content: '请根据已有滚动故事梗概资料，生成最终连贯、宏观的全书故事梗概，只输出最终梗概文本。'
-        },
-        {
-          role: 'user',
-          content: `【最终滚动主线】${state.mainline || '无'}\n\n【最终连续资料】\n${formatRollingState(state)}\n\n【上一版结构化梗概】\n${synopsis || '无'}${replaySummaries ? '' : `\n\n【本次任务章节摘要补充】\n${summaries.map((item) => `- ${item.chapterTitle ?? '章节'}：${item.summary}`).join('\n')}`}${summaries.length === 0 ? '\n\n（暂无章节摘要）' : ''}`
-        }
-      ],
+      messages: compilePromptMessages('synopsis_final', {
+        instruction: [
+          instruction,
+          `【最终滚动主线】${state.mainline || '无'}`,
+          `【最终连续资料】\n${formatRollingState(state)}`,
+          `【上一版结构化梗概】\n${synopsis || '无'}${extraBlock}`
+        ].join('\n\n')
+      }, snapshot),
+      maxTokens: snapshot.budget?.maxOutputTokens,
+      requestBudget: snapshot.budget,
       zodSchema: SynopsisOutputSchema,
-      jsonSchema: {
-        type: 'object',
-        properties: {
-          synopsis: { type: 'string' }
-        }
-      },
+      jsonSchema: z.toJSONSchema(SynopsisOutputSchema),
       signal,
       priority: 'low'
     })
@@ -606,21 +633,10 @@ export class AnalysisRunner {
     try {
       let task = this.store.getTask(sessionId, taskId)
       if (task.state === 'completed' || task.state === 'cancelled') return
+      const scope = this.taskScope(task)
+      const snapshot = scope.promptSnapshot
 
-      let connectionId = task.connectionId
-      if (!connectionId) {
-        const routeType = task.type === 'report'
-          ? 'report'
-          : task.type === 'style_distill'
-            ? 'style_distill'
-            : task.type === 'book_summary'
-              ? 'book_summary'
-              : 'knowledge'
-        const route = this.store.read(sessionId, (database) => {
-          return database.prepare('SELECT connection_id FROM task_route WHERE task_type = ?').get(routeType) as { connection_id: string } | undefined
-        })
-        connectionId = route?.connection_id ?? null
-      }
+      const connectionId = task.connectionId
 
       if (!connectionId || !this.modelGateway || !this.connectionStore) {
         throw new ProjectError('CONNECTION_NOT_FOUND', '未配置或未解析到可用的生成模型连接')
@@ -676,60 +692,28 @@ export class AnalysisRunner {
 
           const capturedSourceHash = createHash('sha256').update(chapter.content).digest('hex')
           const capturedChapterVersion = chapter.version
-          const rollingStateLimit = this.getRollingStateLimit(connectionId)
+          const rollingStateLimit = this.getRollingStateLimit(snapshot)
           const previousRollingState = this.rollingStateBeforeStep(task, step.position, rollingStateLimit)
           const skippedChapterTitles = task.steps
             .filter((candidate) => candidate.position < step.position && candidate.state === 'skipped')
             .map((candidate) => candidate.chapterTitle ?? '未命名章节')
 
-          const systemPrompt = `你是一位严谨专业的小说分析助手。请按原文顺序分析当前章节，只输出当前章节相对于前文滚动状态的新增或变化内容；前文状态是已知上下文，不要把猜测、谎言、伪装或未验证说法写成已确认事实。保留跨章因果、角色状态变化、时间先后、伏笔回收和未解问题。
-要求：
-1. semanticChunks（可选）：若划分语义块，则所有块的 startOffset 与 endOffset 必须覆盖正文全长 [0, ${chapter.content.length}]，首尾相接，内容与原章节文本严格一致。若无特殊需要可为空。
-2. summary：100~300字的精准章节梗概。
-3. suggestions：提取本章新增或推进的设定事实（实体名规范化），并附带对应原文 excerpt 证据。
-4. consistencyIssues：检测本章内部或叙事上的一致性问题，指出 severity 和 description。
-5. rollingState：返回压缩后的连续资料；各字段保留已确认事实、后文需要追踪的变化、未解决项。每个字段都不得超过 ${rollingStateLimit} 个字符。当前章节没有变化时明确写“无新增”，不要重写整份资料。`
-
-          const userPrompt = `【前文滚动状态】\n${formatRollingState(previousRollingState)}\n\n【前置章节跳过情况】${skippedChapterTitles.length > 0 ? skippedChapterTitles.join('、') : '无'}\n\n【章节名称】${chapter.title}\n\n【章节正文】\n${chapter.content}`
+          const userPrompt = [
+            scope.instruction,
+            `【前文滚动状态】\n${formatRollingState(previousRollingState)}`,
+            `【前置章节跳过情况】${skippedChapterTitles.length > 0 ? skippedChapterTitles.join('、') : '无'}`,
+            `【章节名称】${chapter.title}`,
+            `【连续资料长度上限】每个 rollingState 字段最多 ${rollingStateLimit} 字。返回更新后的完整字段；无变化则保留已有值。`,
+            `【章节正文】\n${chapter.content}`
+          ].join('\n\n')
 
           const result = await this.modelGateway.generateStructuredJson({
             connectionId,
-            messages: [
-              { role: 'system', content: systemPrompt },
-              { role: 'user', content: userPrompt }
-            ],
+            messages: compilePromptMessages('knowledge', { instruction: userPrompt }, snapshot),
+            maxTokens: snapshot.budget?.maxOutputTokens,
+            requestBudget: snapshot.budget,
             zodSchema: SingleChapterAnalysisOutputSchema,
-            jsonSchema: {
-              type: 'object',
-              properties: {
-                semanticChunks: {
-                  type: 'array',
-                  items: {
-                    type: 'object',
-                    properties: {
-                      startOffset: { type: 'integer' },
-                      endOffset: { type: 'integer' },
-                      content: { type: 'string' }
-                    }
-                  }
-                },
-                summary: { type: 'string' },
-                suggestions: { type: 'array' },
-                consistencyIssues: { type: 'array' },
-                rollingState: {
-                  type: 'object',
-                  properties: {
-                    mainline: { type: 'string' },
-                    characters: { type: 'string' },
-                    world: { type: 'string' },
-                    relations: { type: 'string' },
-                    timeline: { type: 'string' },
-                    foreshadowing: { type: 'string' },
-                    unresolved: { type: 'string' }
-                  }
-                }
-              }
-            },
+            jsonSchema: z.toJSONSchema(SingleChapterAnalysisOutputSchema),
             signal: controller.signal,
             priority: 'low'
           })
@@ -740,6 +724,13 @@ export class AnalysisRunner {
             inputTokens: totalInputTokens,
             outputTokens: totalOutputTokens
           })
+
+          for (const item of [...result.data.suggestions, ...result.data.consistencyIssues]) {
+            const evidence = item.evidence
+            if (!evidence || evidence.startOffset >= evidence.endOffset || evidence.endOffset > chapter.content.length || chapter.content.slice(evidence.startOffset, evidence.endOffset) !== evidence.excerpt) {
+              throw new ProjectError('MODEL_OUTPUT_INVALID', '知识分析缺少准确的原文证据，未保存该章分析结果')
+            }
+          }
 
           const commitRes = this.store.commitChapterAnalysis(sessionId, {
             taskId,
@@ -785,6 +776,7 @@ export class AnalysisRunner {
                 previousRollingState,
                 rollingStateLimit,
                 controller.signal,
+                snapshot,
                 (usage) => {
                   totalInputTokens += usage.promptTokens
                   totalOutputTokens += usage.completionTokens
@@ -811,35 +803,32 @@ export class AnalysisRunner {
             continue
           }
 
-          const config = JSON.parse(task.scopeJson || '{}') as {
-            segmentSize?: number
-            presetId?: string
-            segments?: Array<{ chapterId: string; startOffset: number; endOffset: number; segmentIndex: number; segmentTotal: number }>
-          }
-          const segmentSize = Math.max(1000, config.segmentSize ?? 50000)
-          const segment = config.segments?.[step.position]
+          const segmentSize = Math.max(1000, scope.segmentSize ?? 50000)
+          const segment = scope.segments?.[step.position]
           const source = segment
             ? chapter.content.slice(segment.startOffset, segment.endOffset)
             : chapter.content.slice(0, segmentSize)
           const segmentTitle = segment
             ? `${chapter.title}（片段 ${segment.segmentIndex}/${segment.segmentTotal}）`
             : chapter.title
-          const instruction = this.presetInstruction(sessionId, task.scopeJson)
-          const pipelineStateLimit = this.getRollingStateLimit(connectionId)
+          const instruction = scope.instruction
+          const pipelineStateLimit = this.getRollingStateLimit(snapshot)
           const previousPipelineState = this.pipelineStateBeforeStep(task, step.position, pipelineStateLimit)
-          const prompt = task.type === 'style_distill'
-            ? `你是小说文风蒸馏师。只分析写作规律，不总结剧情，不复刻原文。请从本段提炼可执行、可检查的文风公式，覆盖语言、句式、段落、叙述距离、对白、情绪、动作、场景、节奏和禁用项。${instruction ? `\n\n用户预设：\n${instruction}` : ''}\n\n章节：${segmentTitle}\n\n正文：\n${source}`
-            : `你是长篇小说结构总结师。只总结当前片段相对前文的新增信息，保留时间顺序、因果、角色变化、伏笔和未解问题，不把猜测写成事实。前文连续状态如下：\n${formatRollingState(previousPipelineState)}${instruction ? `\n\n用户预设：\n${instruction}` : ''}\n\n章节：${segmentTitle}\n\n正文：\n${source}`
-
           if (task.type === 'style_distill') {
+            const userPrompt = [
+              instruction.trim() ? `【用户预设要求】\n${instruction.trim()}` : '',
+              `【章节片段】${segmentTitle}`,
+              `【正文】\n${source}`,
+              '按结构化结果返回 formula 和 observations。'
+            ].filter(Boolean).join('\n\n')
+
             const result = await this.modelGateway.generateStructuredJson({
               connectionId,
-              messages: [
-                { role: 'system', content: prompt },
-                { role: 'user', content: '按结构化结果返回 formula 和 observations。' }
-              ],
+              messages: compilePromptMessages('distill_segment', { instruction: userPrompt }, snapshot),
+              maxTokens: snapshot.budget?.maxOutputTokens,
+              requestBudget: snapshot.budget,
               zodSchema: StyleSegmentOutputSchema,
-              jsonSchema: { type: 'object', properties: { formula: { type: 'string' }, observations: { type: 'array', items: { type: 'string' } } } },
+              jsonSchema: z.toJSONSchema(StyleSegmentOutputSchema),
               signal: controller.signal,
               priority: 'low'
             })
@@ -852,14 +841,21 @@ export class AnalysisRunner {
               checkpointJson: JSON.stringify({ title: segmentTitle, charCount: source.length, formula: result.data.formula, observations: result.data.observations })
             })
           } else {
+            const userPrompt = [
+              `【前文连续状态】\n${formatRollingState(previousPipelineState)}`,
+              instruction.trim() ? `【用户预设要求】\n${instruction.trim()}` : '',
+              `【章节片段】${segmentTitle}`,
+              `【正文】\n${source}`,
+              '按结构化结果返回 summary 和 state。'
+            ].filter(Boolean).join('\n\n')
+
             const result = await this.modelGateway.generateStructuredJson({
               connectionId,
-              messages: [
-                { role: 'system', content: prompt },
-                { role: 'user', content: '按结构化结果返回 summary 和 state。' }
-              ],
+              messages: compilePromptMessages('summary_segment', { instruction: userPrompt }, snapshot),
+              maxTokens: snapshot.budget?.maxOutputTokens,
+              requestBudget: snapshot.budget,
               zodSchema: BookSummaryOutputSchema,
-              jsonSchema: { type: 'object', properties: { summary: { type: 'string' }, state: { type: 'object' } } },
+              jsonSchema: z.toJSONSchema(BookSummaryOutputSchema),
               signal: controller.signal,
               priority: 'low'
             })
@@ -872,6 +868,7 @@ export class AnalysisRunner {
               previousPipelineState,
               pipelineStateLimit,
               controller.signal,
+              snapshot,
               (usage) => {
                 totalInputTokens += usage.promptTokens
                 totalOutputTokens += usage.completionTokens
@@ -895,44 +892,22 @@ export class AnalysisRunner {
             }>
           })
 
-          const scopeParsed = JSON.parse(task.scopeJson || '{}') as { chapterIds?: string[]; all?: boolean }
-          const targetChapters = scopeParsed.all || !scopeParsed.chapterIds || scopeParsed.chapterIds.length === 0
+          const targetChapters = scope.all || !scope.chapterIds || scope.chapterIds.length === 0
             ? chapters
-            : chapters.filter((c) => scopeParsed.chapterIds!.includes(c.id))
+            : chapters.filter((c) => scope.chapterIds!.includes(c.id))
 
           const chapterVersionsRecord: Record<string, number> = {}
           targetChapters.forEach((c) => { chapterVersionsRecord[c.id] = c.version })
 
-          const combinedText = targetChapters.map((c) => `=== ${c.title} ===\n${c.content.slice(0, 3000)}`).join('\n\n')
-
-          const systemPrompt = `你是一位高水准的小说文学批评与分析专家。请根据提供的作品内容，生成固定六个维度的深度文学分析报告：
-1. theme（主题思想）
-2. narrative_perspective（叙事视角）
-3. style（语言文风）
-4. pacing_and_structure（节奏与结构）
-5. character_arc（人物成长与弧光）
-6. continuity_issues（连续性与逻辑问题）
-
-每个维度提供详细的 Markdown 分析正文 (content) 与高度概括的核心结论 (conclusion)。`
+          const combinedText = [scope.instruction, ...targetChapters.map((c) => `=== ${c.title} ===\n${c.content.slice(0, 3000)}`)].filter(Boolean).join('\n\n')
 
           const result = await this.modelGateway.generateStructuredJson({
             connectionId,
-            messages: [
-              { role: 'system', content: systemPrompt },
-              { role: 'user', content: combinedText }
-            ],
+            messages: compilePromptMessages('report', { instruction: combinedText }, snapshot),
+            maxTokens: snapshot.budget?.maxOutputTokens,
+            requestBudget: snapshot.budget,
             zodSchema: LiteraryReportOutputSchema,
-            jsonSchema: {
-              type: 'object',
-              properties: {
-                theme: { type: 'object' },
-                narrative_perspective: { type: 'object' },
-                style: { type: 'object' },
-                pacing_and_structure: { type: 'object' },
-                character_arc: { type: 'object' },
-                continuity_issues: { type: 'object' }
-              }
-            },
+            jsonSchema: z.toJSONSchema(LiteraryReportOutputSchema),
             signal: controller.signal,
             priority: 'low'
           })
@@ -960,7 +935,12 @@ export class AnalysisRunner {
               content: sec.content,
               conclusion: sec.conclusion,
               position: index,
-              evidences: []
+              evidences: sec.evidenceExcerpts.map((excerpt) => {
+                const chapter = targetChapters.find((item) => excerpt.trim() && item.content.slice(0, 3000).includes(excerpt))
+                if (!chapter) throw new ProjectError('MODEL_OUTPUT_INVALID', '文学报告引文未匹配所提供的原文，未保存报告')
+                const startOffset = chapter.content.indexOf(excerpt)
+                return { chapterId: chapter.id, chapterVersion: chapter.version, startOffset, endOffset: startOffset + excerpt.length, excerpt }
+              })
             }
           })
 
@@ -984,8 +964,10 @@ export class AnalysisRunner {
             connectionId,
             summaries,
             EMPTY_ROLLING_STATE,
-            this.getRollingStateLimit(connectionId),
-            controller.signal
+            this.getRollingStateLimit(snapshot),
+            controller.signal,
+            snapshot,
+            scope.instruction
           )
 
           totalInputTokens += result.usage?.promptTokens ?? 0
@@ -1018,13 +1000,15 @@ export class AnalysisRunner {
           try {
             const summaries = this.store.listChapterSummaries(sessionId)
             if (summaries.length > 0) {
-              const rollingStateLimit = this.getRollingStateLimit(connectionId)
+              const rollingStateLimit = this.getRollingStateLimit(snapshot)
               const synopsisRes = await this.generateRollingSynopsis(
                 connectionId,
                 summaries,
                 this.latestRollingState(refreshedTask, rollingStateLimit),
                 rollingStateLimit,
                 controller.signal,
+                snapshot,
+                scope.instruction,
                 false
               )
               totalInputTokens += synopsisRes.usage?.promptTokens ?? 0
@@ -1037,11 +1021,15 @@ export class AnalysisRunner {
               summaries.forEach((s) => { versionsRecord[s.chapterId] = s.chapterVersion })
               this.store.commitBookSynopsis(sessionId, synopsisRes.synopsis, JSON.stringify(versionsRecord), taskId)
             }
-          } catch {}
+          } catch (error) {
+            if (error instanceof ProjectError && ['MODEL_CONTEXT_EXCEEDED', 'STALE_CONTEXT_PACKAGE', 'VERSION_CONFLICT', 'CONNECTION_NOT_FOUND', 'TASK_CANCELLED'].includes(error.code)) throw error
+          }
 
           try {
-            await this.generateBookOutlineDraft(sessionId, connectionId)
-          } catch {}
+            await this.generateBookOutlineDraft(sessionId, connectionId, snapshot, controller.signal)
+          } catch (error) {
+            if (error instanceof ProjectError && ['MODEL_CONTEXT_EXCEEDED', 'STALE_CONTEXT_PACKAGE', 'VERSION_CONFLICT', 'CONNECTION_NOT_FOUND', 'TASK_CANCELLED'].includes(error.code)) throw error
+          }
         } else if (task.type === 'style_distill' || task.type === 'book_summary') {
           const checkpointText = refreshedTask.steps
             .filter((s) => s.state === 'completed' && s.checkpointJson)
@@ -1049,7 +1037,7 @@ export class AnalysisRunner {
               try { return JSON.parse(s.checkpointJson as string) } catch { return null }
             })
             .filter(Boolean)
-          const config = JSON.parse(refreshedTask.scopeJson || '{}') as { stageSize?: number }
+          const config = this.taskScope(refreshedTask)
           const stageSize = Math.max(10000, config.stageSize ?? 1000000)
           const stages: Array<Array<Record<string, unknown>>> = []
           let stage: Array<Record<string, unknown>> = []
@@ -1067,15 +1055,14 @@ export class AnalysisRunner {
           if (stage.length > 0) stages.push(stage)
           if (task.type === 'style_distill') {
             const stageFormulas: string[] = []
-            for (const [index, items] of stages.entries()) {
+            for (const items of stages) {
               const result = await this.modelGateway.generateStructuredJson({
                 connectionId,
-                messages: [
-                  { role: 'system', content: `你是文风阶段归纳师。合并第 ${index + 1} 阶段的片段报告，剔除偶然场景特征，保留反复出现且可执行的作者规律。` },
-                  { role: 'user', content: JSON.stringify(items) }
-                ],
+                messages: compilePromptMessages('distill_stage', { instruction: [scope.instruction, JSON.stringify(items)].filter(Boolean).join('\n\n') }, snapshot),
+                maxTokens: snapshot.budget?.maxOutputTokens,
+                requestBudget: snapshot.budget,
                 zodSchema: StyleFinalOutputSchema,
-                jsonSchema: { type: 'object', properties: { prompt: { type: 'string' }, formula: { type: 'string' } } },
+                jsonSchema: z.toJSONSchema(StyleFinalOutputSchema),
                 signal: controller.signal,
                 priority: 'low'
               })
@@ -1085,12 +1072,11 @@ export class AnalysisRunner {
             }
             const result = await this.modelGateway.generateStructuredJson({
               connectionId,
-              messages: [
-                { role: 'system', content: '你是文风蒸馏总师。请合并各阶段的文风公式，去除偶然特征，生成全书详细公式书和一份可直接用于写作模型的完整文风提示词。保留具体规则、适用条件和禁用项。' },
-                { role: 'user', content: stageFormulas.join('\n\n--- 阶段公式 ---\n\n') }
-              ],
+              messages: compilePromptMessages('distill_master', { instruction: [scope.instruction, stageFormulas.join('\n\n--- 阶段公式 ---\n\n')].filter(Boolean).join('\n\n') }, snapshot),
+              maxTokens: snapshot.budget?.maxOutputTokens,
+              requestBudget: snapshot.budget,
               zodSchema: StyleFinalOutputSchema,
-              jsonSchema: { type: 'object', properties: { prompt: { type: 'string' }, formula: { type: 'string' } } },
+              jsonSchema: z.toJSONSchema(StyleFinalOutputSchema),
               signal: controller.signal,
               priority: 'low'
             })
@@ -1100,15 +1086,14 @@ export class AnalysisRunner {
             this.saveStyleSample(sessionId, `# 文风提示词\n\n${result.data.prompt}\n\n# 文风公式书\n\n${result.data.formula}`, taskId)
           } else {
             const stageSummaries: string[] = []
-            for (const [index, items] of stages.entries()) {
+            for (const items of stages) {
               const result = await this.modelGateway.generateStructuredJson({
                 connectionId,
-                messages: [
-                  { role: 'system', content: `你是长篇小说阶段总结师。将第 ${index + 1} 阶段的小总结按原文顺序合并，保留主线、角色变化、伏笔、世界观、关系、时间线、地点势力、体系信息和未解问题，并区分事实与待验证项。` },
-                  { role: 'user', content: JSON.stringify(items) }
-                ],
+                messages: compilePromptMessages('summary_stage', { instruction: [scope.instruction, JSON.stringify(items)].filter(Boolean).join('\n\n') }, snapshot),
+                maxTokens: snapshot.budget?.maxOutputTokens,
+                requestBudget: snapshot.budget,
                 zodSchema: BookSummaryOutputSchema,
-                jsonSchema: { type: 'object', properties: { summary: { type: 'string' }, state: { type: 'object' } } },
+                jsonSchema: z.toJSONSchema(BookSummaryOutputSchema),
                 signal: controller.signal,
                 priority: 'low'
               })
@@ -1118,12 +1103,11 @@ export class AnalysisRunner {
             }
             const result = await this.modelGateway.generateStructuredJson({
               connectionId,
-              messages: [
-                { role: 'system', content: '你是长篇小说总结构师。请把章节总结按原文顺序合并为全书总结，清晰列出主线、角色变化、世界观与体系、关系、时间线、伏笔和未解问题。' },
-                { role: 'user', content: stageSummaries.join('\n\n--- 阶段总结 ---\n\n') }
-              ],
+              messages: compilePromptMessages('summary_master', { instruction: [scope.instruction, stageSummaries.join('\n\n--- 阶段总结 ---\n\n')].filter(Boolean).join('\n\n') }, snapshot),
+              maxTokens: snapshot.budget?.maxOutputTokens,
+              requestBudget: snapshot.budget,
               zodSchema: SynopsisOutputSchema,
-              jsonSchema: { type: 'object', properties: { synopsis: { type: 'string' } } },
+              jsonSchema: z.toJSONSchema(SynopsisOutputSchema),
               signal: controller.signal,
               priority: 'low'
             })
@@ -1175,7 +1159,7 @@ export class AnalysisRunner {
     }
   }
 
-  async generateBookOutlineDraft(sessionId: string, connectionIdInput?: string): Promise<BookOutline> {
+  async generateBookOutlineDraft(sessionId: string, connectionIdInput?: string, frozenSnapshot?: PromptSnapshot, signal?: AbortSignal): Promise<BookOutline> {
     const chapters = this.store.read(sessionId, (database) => {
       return database.prepare('SELECT id, title, content, version FROM chapter WHERE deleted_at IS NULL ORDER BY position ASC').all() as Array<{
         id: string
@@ -1210,31 +1194,30 @@ export class AnalysisRunner {
 
     let outlineMarkdown = ''
     if (this.modelGateway && connectionId) {
+      const snapshot = frozenSnapshot ?? this.promptStore.snapshot(this.connectionStore!.get(connectionId))
+      if (!snapshot.budget) throw new ProjectError('STALE_CONTEXT_PACKAGE', '分析任务缺少请求预算，请重新发起分析')
       try {
         const summaryTexts = summaries.map((s) => `【${s.chapterTitle ?? '章节'}】${s.summary}`).join('\n')
         const charSuggestions = suggestions.filter((s) => s.knowledge_kind === 'character').map((s) => `- ${s.normalized_subject}: ${s.display_text}`).slice(0, 10).join('\n')
         const worldSuggestions = suggestions.filter((s) => s.knowledge_kind === 'world').map((s) => `- ${s.normalized_subject}: ${s.display_text}`).slice(0, 10).join('\n')
 
-        const promptText = `已分析章节摘要：\n${summaryTexts || '（暂无详细摘要）'}\n\n已提取人物与世界观设定：\n${charSuggestions || '无'}\n${worldSuggestions || '无'}\n\n章节列表：\n${chapters.map((c) => `- ${c.title}`).join('\n')}`
+        const outlineInputText = `已分析章节摘要：\n${summaryTexts || '（暂无详细摘要）'}\n\n已提取人物与世界观设定：\n${charSuggestions || '无'}\n${worldSuggestions || '无'}\n\n章节列表：\n${chapters.map((c) => `- ${c.title}`).join('\n')}`
+        const outlineSchema = z.object({ outlineMarkdown: z.string() })
 
         const res = await this.modelGateway.generateStructuredJson({
           connectionId,
-          messages: [
-            { role: 'system', content: '你是一位资深小说架构师。请根据已有的章节摘要与设定，提炼并生成一份结构化的全书大纲草稿（Markdown格式，包含：# 全书大纲、## 核心主线、## 主线阶段推进、## 关键人物与势力、## 后续发展预测）。' },
-            { role: 'user', content: promptText }
-          ],
-          zodSchema: z.object({ outlineMarkdown: z.string() }),
-          jsonSchema: {
-            type: 'object',
-            properties: {
-              outlineMarkdown: { type: 'string' }
-            },
-            required: ['outlineMarkdown']
-          },
-          priority: 'low'
+          messages: compilePromptMessages('book_outline', { instruction: outlineInputText }, snapshot),
+          maxTokens: snapshot.budget?.maxOutputTokens,
+          requestBudget: snapshot.budget,
+          zodSchema: outlineSchema,
+          jsonSchema: z.toJSONSchema(outlineSchema),
+          priority: 'low',
+          signal
         })
         outlineMarkdown = res.data.outlineMarkdown
-      } catch {}
+      } catch (error) {
+        if (error instanceof ProjectError && ['MODEL_CONTEXT_EXCEEDED', 'STALE_CONTEXT_PACKAGE', 'VERSION_CONFLICT', 'CONNECTION_NOT_FOUND', 'TASK_CANCELLED'].includes(error.code)) throw error
+      }
     }
 
     if (!outlineMarkdown) {

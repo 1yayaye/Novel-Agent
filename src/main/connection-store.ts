@@ -8,6 +8,7 @@ import {
   type ModelCapabilities,
   type ModelConnectionKind,
   type ModelConnectionSummary,
+  type ReasoningEffort,
   type SuccessResult,
   type UpdateModelConnectionInput
 } from '../shared/project'
@@ -48,6 +49,7 @@ interface StoredConnectionRecord {
   recentDimensions?: number | null
   connectionFingerprint?: string | null
   capabilities: ModelCapabilities
+  reasoningEffort?: ReasoningEffort | null
   version: number
   confirmedContentTargetFingerprint: string | null
   confirmedAt: number | null
@@ -201,6 +203,7 @@ export class ConnectionStore {
       tokenEstimationRatio: input.tokenEstimationRatio ?? 1.5,
       batchSize: input.batchSize ?? 16,
       capabilities: defaultCapabilities,
+      reasoningEffort: input.reasoningEffort ?? null,
       version: 1,
       confirmedContentTargetFingerprint: null,
       confirmedAt: null,
@@ -254,6 +257,7 @@ export class ConnectionStore {
       tokenEstimationRatio: input.tokenEstimationRatio !== undefined ? input.tokenEstimationRatio : existing.tokenEstimationRatio,
       batchSize: input.batchSize !== undefined ? input.batchSize : existing.batchSize,
       capabilities: input.capabilities ? { ...existing.capabilities, ...input.capabilities } : existing.capabilities,
+      reasoningEffort: input.reasoningEffort !== undefined ? input.reasoningEffort : existing.reasoningEffort,
       version: nextVersion,
       confirmedContentTargetFingerprint: urlOrModelChanged ? null : existing.confirmedContentTargetFingerprint,
       confirmedAt: urlOrModelChanged ? null : existing.confirmedAt,
@@ -364,6 +368,7 @@ export class ConnectionStore {
       recentDimensions: record.recentDimensions,
       connectionFingerprint: record.connectionFingerprint,
       capabilities: record.capabilities,
+      reasoningEffort: record.reasoningEffort ?? null,
       hasSecret,
       version: record.version,
       confirmedContentTargetFingerprint: record.confirmedContentTargetFingerprint,

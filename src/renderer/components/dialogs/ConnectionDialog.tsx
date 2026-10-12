@@ -296,7 +296,11 @@ export function ConnectionDialog({
                                   已配秘钥
                                 </Badge>
                               )}
-                              {c.isLocalService && <Badge variant="secondary">本地</Badge>}
+                              {c.kind === 'generation' && c.reasoningEffort && (
+                                <Badge variant="outline">
+                                  推理: {c.reasoningEffort}
+                                </Badge>
+                              )}
                               <Badge variant={isConfirmed ? 'primary' : 'secondary'}>
                                 {isConfirmed ? '✓ 目标已确认' : '⚠ 目标未确认'}
                               </Badge>

@@ -1,3 +1,4 @@
+import { PromptSettingsStore } from '../src/main/prompt-store'
 import { createServer, type IncomingMessage, type ServerResponse } from 'node:http'
 import { mkdirSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
@@ -24,6 +25,7 @@ describe('CreationRunner - Streaming Typewriter Pipeline (SPEC 6.9, 6.10, 8.2, 8
   let diagnostics: DiagnosticsService
   let gateway: ModelGateway
   let store: ProjectStore
+  let promptStore: PromptSettingsStore
   let searchIndex: SearchIndex
   let chapters: ChapterRepository
   let contextAssembler: ContextAssembler
@@ -64,9 +66,10 @@ describe('CreationRunner - Streaming Typewriter Pipeline (SPEC 6.9, 6.10, 8.2, 8
     diagnostics = new DiagnosticsService(dataDir)
     gateway = new ModelGateway(connectionStore, diagnostics)
     store = new ProjectStore(dataDir, connectionStore)
+    promptStore = new PromptSettingsStore(store.dataDirectory)
     searchIndex = new SearchIndex(store)
     chapters = new ChapterRepository(store, searchIndex)
-    contextAssembler = new ContextAssembler(store, searchIndex, connectionStore)
+    contextAssembler = new ContextAssembler(store, promptStore, searchIndex, connectionStore)
     candidateService = new CandidateService(store, searchIndex)
     runner = new CreationRunner(store, gateway, connectionStore, contextAssembler, candidateService)
 

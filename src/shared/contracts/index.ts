@@ -1,4 +1,8 @@
 import { z } from 'zod'
+import type {
+  PresetConversionInput, PresetConversionInspection, PresetConversionTaskInput,
+  PresetConversionStatus, PresetConversionResult
+} from '../preset-conversion'
 import {
   Chapter,
   ChapterHeader,
@@ -149,6 +153,7 @@ import {
   GetModelConnectionInputSchema,
   GetStyleSampleInputSchema,
   ListInstructionPresetsInputSchema,
+  ResetInstructionPresetsInputSchema,
   ListModelConnectionsInputSchema,
   ListRemoteModelsInputSchema,
   ListStyleSamplesInputSchema,
@@ -157,7 +162,14 @@ import {
   UpdateCreativeRuleInputSchema,
   UpdateInstructionPresetInputSchema,
   UpdateModelConnectionInputSchema,
-  UpdateStyleSampleInputSchema
+  UpdateStyleSampleInputSchema,
+  GetPromptBundleInputSchema,
+  PromptBundleSchema,
+  PromptBundle,
+  PresetStoreData,
+  NovelPromptPreset,
+  PresetBlock,
+  PromptSettingsState
 } from './ai'
 import {
   BackupInfo,
@@ -196,6 +208,7 @@ export * from './outline'
 export * from './knowledge'
 export * from './ai'
 export * from './system'
+export * from '../preset-conversion'
 
 export type NovelAgentApi = {
   project: {
@@ -208,6 +221,7 @@ export type NovelAgentApi = {
     previewImport(input?: ImportPreviewInput): Promise<ImportPreviewResult>
     import(input: ImportProjectInput): Promise<ProjectSummary | null>
     export(input: ExportProjectInput): Promise<ExportProjectResult | null>
+    onOpenProjectRequested?(callback: (path: string) => void): () => void
   }
   chapter: {
     list(input: z.infer<typeof ListChaptersInputSchema>): Promise<ChapterHeader[]>
@@ -256,6 +270,21 @@ export type NovelAgentApi = {
     create(input: z.infer<typeof CreateInstructionPresetInputSchema>): Promise<InstructionPreset>
     update(input: z.infer<typeof UpdateInstructionPresetInputSchema>): Promise<InstructionPreset>
     delete(input: z.infer<typeof DeleteInstructionPresetInputSchema>): Promise<SuccessResult>
+    resetDefaults(input: z.infer<typeof ResetInstructionPresetsInputSchema>): Promise<InstructionPreset[]>
+  }
+  prompt: {
+    /** 小说项目级创作资料（全书准则、指令预设、文风样本）。 */
+    getBundle(input: z.infer<typeof GetPromptBundleInputSchema>): Promise<PromptBundle>
+    /** 应用级预设库管理与酒馆预设导入。 */
+    getPresetStore(): Promise<PromptSettingsState>
+    savePresetStore(input: PresetStoreData): Promise<PromptSettingsState>
+    parseTavernFile(jsonContent: string): Promise<NovelPromptPreset>
+    inspectPresetConversion(input: PresetConversionInput): Promise<PresetConversionInspection>
+    startPresetConversion(input: PresetConversionInput): Promise<{ taskId: string }>
+    getPresetConversionStatus(input: PresetConversionTaskInput): Promise<PresetConversionStatus>
+    getPresetConversionResult(input: PresetConversionTaskInput): Promise<PresetConversionResult>
+    cancelPresetConversion(input: PresetConversionTaskInput): Promise<SuccessResult>
+    onPresetConversionProgress(callback: (status: PresetConversionStatus) => void): () => void
   }
   knowledge: {
     list(input: z.infer<typeof ListKnowledgeEntriesInputSchema>): Promise<KnowledgeEntry[]>

@@ -152,10 +152,10 @@ export function NavRail({
         },
         {
           id: 'creative',
-          label: '创作规则与文风',
-          miniLabel: '规则',
+          label: '提示词与文风中心',
+          miniLabel: '提示词',
           icon: Sliders,
-          title: '文风样本、提示词预设与创作控制规则',
+          title: '提示词与创作设置（全局模块、作品规则、指令预设与文风样本）',
           isActive: (d) => d === 'creative'
         },
         {

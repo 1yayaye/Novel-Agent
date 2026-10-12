@@ -3,6 +3,7 @@ import { AlertCircle, AlertTriangle, Check, Clock, History, Pencil, RotateCcw, R
 import { CandidateApplyResult, CandidateDetail, CandidateHunk, CandidateSummary, ChapterHeader, CandidateState } from '../../../shared/project'
 import { IconButton } from '../common/IconButton'
 import { errorText, formatDate } from '../../utils/formatters'
+import { useEditorStore } from '../../stores/useEditorStore'
 import { taskTypeLabel } from '../../utils/constants'
 import { Dialog, DialogContent } from '@appica/ui-react/dialog'
 import { Button } from '@appica/ui-react/button'
@@ -101,7 +102,7 @@ export function CandidateReviewDialog({
     try {
       const detail = await window.novelAgent.candidate.get({ sessionId, candidateId })
       setCandidateDetail(detail)
-      setEditingText(detail.editedContent !== null && detail.editedContent !== undefined ? detail.editedContent : detail.rawOutput)
+      setEditingText(detail.editedContent ?? detail.hunks.map((hunk) => hunk.candidateContent).join(''))
       if (detail.state === 'streaming') {
         setIsStreaming(true)
         streaming.update(detail.rawOutput)
@@ -139,7 +140,7 @@ export function CandidateReviewDialog({
         setIsStreaming(false)
         if (event.candidate) {
           setCandidateDetail(event.candidate)
-          setEditingText(event.candidate.editedContent !== null && event.candidate.editedContent !== undefined ? event.candidate.editedContent : event.candidate.rawOutput)
+          setEditingText(event.candidate.editedContent ?? event.candidate.hunks.map((hunk) => hunk.candidateContent).join(''))
         } else {
           void loadCandidateDetail(event.candidateId)
         }
@@ -225,6 +226,11 @@ export function CandidateReviewDialog({
 
   const handleApply = async () => {
     if (!candidateDetail || isReadOnly) return
+    const editor = useEditorStore.getState()
+    if (editor.activeChapter?.id === candidateDetail.chapterId && editor.saveState !== 'saved') {
+      setError('目标章节仍有未保存的编辑，请先保存正文，再重新生成并审阅候选。')
+      return
+    }
     const targetChap = chapters.find((c) => c.id === candidateDetail.chapterId)
     if (!targetChap) {
       setError('目标章节不存在')
@@ -463,7 +469,7 @@ export function CandidateReviewDialog({
                   {/* Right: AI Candidate with green highlights and interactive toggling */}
                   <div className="split-panel" ref={rightPanelRef} onScroll={handleRightScroll}>
                     {candidateDetail.hunks.length === 0 ? (
-                      <span>{candidateDetail.rawOutput}</span>
+                      <span>{candidateDetail.editedContent ?? '尚未形成可供审阅的正文差异。'}</span>
                     ) : (
                       candidateDetail.hunks.map((h) => {
                         if (h.hunkType === 'equal') {

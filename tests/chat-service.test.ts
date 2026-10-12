@@ -13,6 +13,7 @@ import { ChapterRepository } from '../src/main/chapter-repository'
 import { KnowledgeRepository } from '../src/main/knowledge-repository'
 import { ContextAssembler } from '../src/main/context-assembler'
 import { ChatService } from '../src/main/chat-service'
+import { PromptSettingsStore } from '../src/main/prompt-store'
 import type { ChatDeltaEvent, ChatDoneEvent } from '../src/shared/project'
 
 describe('ChatService - Q&A, Multi-turn History, Citations & Rolling Summary (SPEC 6.8, 7.2, 8.2)', () => {
@@ -25,6 +26,7 @@ describe('ChatService - Q&A, Multi-turn History, Citations & Rolling Summary (SP
   let diagnostics: DiagnosticsService
   let gateway: ModelGateway
   let store: ProjectStore
+  let promptStore: PromptSettingsStore
   let searchIndex: SearchIndex
   let chapters: ChapterRepository
   let knowledges: KnowledgeRepository
@@ -59,6 +61,7 @@ describe('ChatService - Q&A, Multi-turn History, Citations & Rolling Summary (SP
     mkdirSync(tempDir, { recursive: true })
     const dataDir = join(tempDir, 'data')
     mkdirSync(dataDir, { recursive: true })
+    promptStore = new PromptSettingsStore(dataDir)
 
     connectionStore = new ConnectionStore(dataDir)
     diagnostics = new DiagnosticsService(dataDir)
@@ -67,8 +70,8 @@ describe('ChatService - Q&A, Multi-turn History, Citations & Rolling Summary (SP
     searchIndex = new SearchIndex(store)
     chapters = new ChapterRepository(store, searchIndex)
     knowledges = new KnowledgeRepository(store, searchIndex)
-    contextAssembler = new ContextAssembler(store, searchIndex, connectionStore, gateway)
-    chatService = new ChatService(store, gateway, connectionStore, contextAssembler, searchIndex)
+    contextAssembler = new ContextAssembler(store, promptStore, searchIndex, connectionStore, gateway)
+    chatService = new ChatService(store, promptStore, gateway, connectionStore, contextAssembler, searchIndex)
 
     const conn = connectionStore.create({
       name: 'Local Q&A Model',
@@ -398,4 +401,34 @@ describe('ChatService - Q&A, Multi-turn History, Citations & Rolling Summary (SP
       process.off('unhandledRejection', rejectionHandler)
     }
   })
+  it('uses a frozen summary output budget and leaves oversized history intact without HTTP', async () => {
+    const session = chatService.createSession({ sessionId, title: '预算摘要', connectionId: connId })
+    store.transaction(sessionId, (db) => {
+      for (let i = 0; i < 14; i++) db.prepare("INSERT INTO chat_message(id, chat_session_id, role, content, state, created_at) VALUES (?, ?, ?, ?, 'completed', ?)").run(randomUUID(), session.id, i % 2 ? 'assistant' : 'user', `旧消息${i}`, Date.now() + i)
+    })
+    const snapshot = promptStore.snapshot(connectionStore.get(connId))
+    snapshot.budget!.maxOutputTokens = 333
+    const payloads: Record<string, any>[] = []
+    requestHandler = (req, res) => {
+      let body = ''
+      req.on('data', (chunk) => { body += chunk })
+      req.on('end', () => {
+        payloads.push(JSON.parse(body))
+        res.writeHead(200, { 'Content-Type': 'text/event-stream' })
+        res.end('data: {"choices":[{"delta":{"content":"原有事实摘要"}}]}\n\ndata: [DONE]\n\n')
+      })
+    }
+    const summary = await chatService.compactSession(sessionId, session.id, connId, snapshot)
+    expect(summary.content).toBe('原有事实摘要')
+    expect(payloads[0].max_tokens).toBe(333)
+    expect(payloads[0]).not.toHaveProperty('temperature')
+    const before = chatService.listMessages({ sessionId, chatSessionId: session.id })
+    const tiny = structuredClone(snapshot)
+    tiny.budget!.contextWindow = 500
+    await expect(chatService.compactSession(sessionId, session.id, connId, tiny)).rejects.toMatchObject({ code: 'MODEL_CONTEXT_EXCEEDED' })
+    expect(payloads).toHaveLength(1)
+    expect(chatService.listMessages({ sessionId, chatSessionId: session.id })).toEqual(before)
+    expect(chatService.getSummary({ sessionId, chatSessionId: session.id })).toEqual(summary)
+  })
+
 })

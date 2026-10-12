@@ -1,3 +1,4 @@
+import { PromptSettingsStore } from '../src/main/prompt-store'
 import { mkdirSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -32,6 +33,7 @@ describe('T03: Analysis Results to Outline Draft & Stale Invalidation', () => {
   it('generates book outline draft from chapter summaries and marks stale on text edit', async () => {
     const { data, project } = fixture()
     const store = new ProjectStore(data)
+    const promptStore = new PromptSettingsStore(store.dataDirectory)
     activeStore = store
 
     store.create({ destination: project, title: '大纲草稿分析测试', description: '' }, [
@@ -41,7 +43,7 @@ describe('T03: Analysis Results to Outline Draft & Stale Invalidation', () => {
 
     const searchIndex = new SearchIndex(store)
     const chapters = new ChapterRepository(store, searchIndex)
-    const analysisRunner = new AnalysisRunner(store)
+    const analysisRunner = new AnalysisRunner(store, promptStore)
 
     const opened = await store.open(project)
     const { sessionId } = opened

@@ -3,6 +3,7 @@ import {
   type CandidateDeltaEvent,
   type CandidateDoneEvent,
   type TaskProgressEvent,
+  type PromptSnapshot,
   type TaskType
 } from '../shared/project'
 import { ProjectError, type ProjectStore } from './project-store'
@@ -40,6 +41,9 @@ export class CreationRunner {
   async startCreation(sessionId: string, contextPackageId: string): Promise<{ taskId: string; candidateId: string }> {
     // 1. Verify Context Package (SPEC 6.9, 7.2)
     const pkg = await this.contextAssembler.verifyContextPackage(sessionId, contextPackageId)
+    if (!pkg.promptSnapshot.budget) {
+      throw new ProjectError('STALE_CONTEXT_PACKAGE', '上下文包缺少请求预算，请重新生成预览')
+    }
     if (!pkg.connectionId) {
       throw new ProjectError('CONNECTION_NOT_FOUND', '上下文包未记录有效的生成模型连接，请重新预览')
     }
@@ -95,8 +99,8 @@ export class CreationRunner {
 
         if (pkg.taskType === 'continue') {
           originalContent = ''
-          startOffset = chap.content.length
-          endOffset = chap.content.length
+          startOffset = pkg.target?.startOffset ?? chap.content.length
+          endOffset = startOffset
         } else {
           originalContent = targetItem?.content || chap.content
         }
@@ -254,7 +258,7 @@ export class CreationRunner {
       systemMessage: string
       userMessage: string
       connectionId?: string | null
-      creativity?: { temperature?: number } | null
+      promptSnapshot: PromptSnapshot
       configurationFingerprint: string
     }
     signal: AbortSignal
@@ -292,17 +296,16 @@ export class CreationRunner {
     }
 
     try {
-      const messagesToSend = pkg.messages && pkg.messages.length > 0 ? pkg.messages : [
-        { role: 'system' as const, content: pkg.systemMessage },
-        { role: 'user' as const, content: pkg.userMessage }
-      ]
+      if (!pkg.messages?.length) throw new ProjectError('STALE_CONTEXT_PACKAGE', '上下文包缺少实际消息，请重新生成预览')
+      const messagesToSend = pkg.messages
 
       const stream = this.modelGateway.chatCompletionStream({
         connectionId,
         taskType: pkg.taskType,
         priority: 'high',
         messages: messagesToSend,
-        temperature: pkg.creativity?.temperature,
+        maxTokens: pkg.promptSnapshot.budget?.maxOutputTokens,
+        requestBudget: pkg.promptSnapshot.budget,
         signal,
         isContentRequest: true,
         taskId
@@ -371,6 +374,9 @@ export class CreationRunner {
       this.store.transaction(sessionId, (db) => {
         const parsed = parseCreationOutput(bufferedText)
         const cleanContent = parsed.content
+        if (!cleanContent.trim()) {
+          throw new ProjectError('VALIDATION_ERROR', '模型未返回可供审阅的小说正文，请调整要求后重新生成')
+        }
 
         db.prepare(`
           UPDATE candidate
