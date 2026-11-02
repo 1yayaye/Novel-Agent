@@ -1,5 +1,9 @@
 import { createHash } from 'node:crypto'
-import type { AssembledMessage, PromptTask } from '../shared/project.js'
+import { BOOK_SUMMARY_PROMPTS } from './book-summary-prompts'
+import type { AssembledMessage, ChatWorkflowStage, PromptTask } from '../shared/project.js'
+import type { ToolChoice, ToolDefinition } from './model-gateway.js'
+import type { NovelPromptPreset } from '../shared/prompt-settings.js'
+import { SOLIUMBRA_TOOL_NAME } from '../shared/prompt-settings.js'
 
 export const PROMPT_MARKERS = [
   'project_rules', 'outlines', 'knowledge', 'synopsis', 'style_samples',
@@ -40,9 +44,6 @@ export const ANALYSIS_PROTOCOLS: Record<string, string> = {
   distill_segment: '只分析当前正文的写作规律，不总结剧情，不复刻人物或事件。覆盖句式、段落、对白、叙述距离、情绪、动作和节奏，只返回指定 JSON。',
   distill_stage: '合并本阶段文风报告，剔除偶然场景和剧情特征，保留反复出现且可执行的表达规律。只返回指定 JSON。',
   distill_master: '合并阶段文风资料，生成完整文风公式和可用于写作的提示词，保留具体规则、适用条件和例外，不复制故事设定。只返回指定 JSON。',
-  summary_segment: 'summary 只总结当前片段相对前文的新增信息，保留顺序、因果、人物变化、伏笔和未解问题，不把猜测写成事实。state 返回保留前文并合入当前变化的完整连续资料，不能把“无新增”写成原有资料的替代值。只返回指定 JSON。',
-  summary_stage: '按原文顺序合并阶段总结，保留主线、人物、关系、体系、时间线和未解问题，区分事实与待验证项。只返回指定 JSON。',
-  summary_master: '按原文顺序合并阶段资料为全书总结，清晰整理主线、人物变化、世界观、关系、时间线、伏笔和未解问题。只返回指定 JSON。',
   book_outline: '依据摘要与设定生成全书大纲草稿，包含全书大纲、核心主线、主线阶段推进、关键人物与势力、后续发展预测。预测明确标为待确认，不混入已有事实。只返回指定 JSON。',
   chat_summary: '提炼会话核心事实、作者决定、设定改动、人物关系与待办问题。明确区分未采纳建议和已确认决定，只返回精炼中文摘要。'
 }
@@ -69,4 +70,132 @@ export const PROMPT_ORDER = [
 
 const PROMPT_RUNTIME_VERSION = 2
 export const PROMPT_DEFINITION_FINGERPRINT = createHash('sha256')
-  .update(JSON.stringify({ version: PROMPT_RUNTIME_VERSION, definitions: PROMPT_DEFINITIONS, order: PROMPT_ORDER })).digest('hex')
+  .update(JSON.stringify({ version: PROMPT_RUNTIME_VERSION, definitions: PROMPT_DEFINITIONS, order: PROMPT_ORDER, bookSummary: BOOK_SUMMARY_PROMPTS })).digest('hex')
+
+// 旧预设没有 toolCalling 声明，靠块内容特征识别小猫之神系预设；工具名取自唯一事实来源
+const SOLIUMBRA_REPLY_HINTS = new RegExp(`${SOLIUMBRA_TOOL_NAME}|<run_tool_replacement>|小猫之神会使用reply工具`, 'i')
+
+export const SOLIUMBRA_REPLY_TOOL: ToolDefinition = {
+  type: 'function',
+  function: {
+    name: SOLIUMBRA_TOOL_NAME,
+    description: '小猫之神专属长篇小说回复工具。输出包含深入构思推演、纯小说正文、后续分支选项、本章摘要与留言。',
+    parameters: {
+      type: 'object',
+      properties: {
+        think_nya: {
+          type: 'string',
+          description: '小猫之神的深入构思推演与思维链。'
+        },
+        game_content: {
+          type: 'string',
+          description: '小说的纯正文剧情内容，不得包含构思推演或选项标签。'
+        },
+        options: {
+          type: 'array',
+          items: { type: 'string' },
+          description: '后续剧情走向分支选项列表。'
+        },
+        summary: {
+          type: 'string',
+          description: '本章/本段的核心剧情梗概与关键事件推进。'
+        },
+        comment: {
+          type: 'string',
+          description: '小猫之神给作者的留言或创作探讨。'
+        }
+      },
+      required: ['game_content']
+    }
+  }
+}
+
+export const GENERIC_NOVEL_REPLY_TOOL: ToolDefinition = {
+  type: 'function',
+  function: {
+    name: 'novel_reply',
+    description: '小说正文创作与结构化信息输出工具。',
+    parameters: {
+      type: 'object',
+      properties: {
+        thinking: {
+          type: 'string',
+          description: '写前构思推演与思维链。'
+        },
+        content: {
+          type: 'string',
+          description: '纯正文内容。'
+        },
+        options: {
+          type: 'array',
+          items: { type: 'string' },
+          description: '剧情走向分支选项。'
+        },
+        summary: {
+          type: 'string',
+          description: '本章核心剧情摘要。'
+        },
+        comment: {
+          type: 'string',
+          description: '附言或说明。'
+        }
+      },
+      required: ['content']
+    }
+  }
+}
+
+export function resolvePresetTools(
+  preset?: NovelPromptPreset | null,
+  stage?: ChatWorkflowStage | null
+): {
+  tools: ToolDefinition[]
+  toolChoice?: ToolChoice
+} | undefined {
+  if (!preset) return undefined
+  if (stage === 'direction' || stage === 'chapter_outline') return undefined
+
+  if (preset.toolCalling && preset.toolCalling.enabled !== false) {
+    const name = preset.toolCalling.name || SOLIUMBRA_TOOL_NAME
+    let toolDef: ToolDefinition
+    if (preset.toolCalling.parameters) {
+      // 导入器从预设声明（ToolBindings/registerPart）生成的 schema 优先，硬编码工具仅作兜底
+      toolDef = {
+        type: 'function',
+        function: {
+          name,
+          description:
+            preset.toolCalling.description ??
+            (name === SOLIUMBRA_TOOL_NAME
+              ? SOLIUMBRA_REPLY_TOOL.function.description
+              : GENERIC_NOVEL_REPLY_TOOL.function.description),
+          parameters: preset.toolCalling.parameters
+        }
+      }
+    } else if (name === SOLIUMBRA_TOOL_NAME) {
+      toolDef = SOLIUMBRA_REPLY_TOOL
+    } else {
+      toolDef = GENERIC_NOVEL_REPLY_TOOL
+    }
+    const toolChoice: ToolChoice = preset.toolCalling.toolChoice ?? {
+      type: 'function',
+      function: { name: toolDef.function.name }
+    }
+    return { tools: [toolDef], toolChoice }
+  }
+
+  // 旧预设没有 toolCalling 声明，靠名字/内容特征识别小猫之神系预设
+  const isMeowssiah =
+    /meowssiah|猫之神|soliumbra/i.test(preset.name) ||
+    preset.blocks.some((b) => b.enabled && SOLIUMBRA_REPLY_HINTS.test(b.content))
+
+  if (isMeowssiah) {
+    return {
+      tools: [SOLIUMBRA_REPLY_TOOL],
+      toolChoice: { type: 'function', function: { name: SOLIUMBRA_TOOL_NAME } }
+    }
+  }
+
+  return undefined
+}
+

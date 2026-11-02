@@ -8,6 +8,8 @@ import { PRESET_ROLE_OPTIONS, PRESET_MARKER_OPTIONS, PRESET_POSITION_OPTIONS } f
 import { ProseEditor, type ProseEditorHandle } from '../editor/ProseEditor.js'
 import { useToast } from '../common/Toast.js'
 import { ConfirmActionDialog } from './ConfirmActionDialog.js'
+import { PresetConversionDialog } from './PresetConversionDialog.js'
+import { PresetConversionReportDialog } from './PresetConversionReportDialog.js'
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from '@appica/ui-react/dialog'
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@appica/ui-react/tabs'
 import { Button } from '@appica/ui-react/button'
@@ -63,8 +65,8 @@ export function CreativeSettingsDialog({ sessionId, isReadOnly = false, onClose,
   const [loadingPresets, setLoadingPresets] = useState(true)
   const [savingPresets, setSavingPresets] = useState(false)
   const [expandedBlocks, setExpandedBlocks] = useState<Record<string, boolean>>({})
-  const [importingModalPreset, setImportingModalPreset] = useState<NovelPromptPreset | null>(null)
-  const [importSelectedBlocks, setImportSelectedBlocks] = useState<Record<string, boolean>>({})
+  const [importFile, setImportFile] = useState<File | null>(null)
+  const [viewingReportPreset, setViewingReportPreset] = useState<NovelPromptPreset | null>(null)
   const fileInputRef = useRef<HTMLInputElement | null>(null)
 
   const presetsDirty = JSON.stringify(presetStoreDraft) !== JSON.stringify(savedPresetStore)
@@ -193,46 +195,12 @@ export function CreativeSettingsDialog({ sessionId, isReadOnly = false, onClose,
     showToast(`已导出「${activePreset.name}」`, 'success')
   }
 
-  const handleFileSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]
-    if (!file) return
-    try {
-      const text = await file.text()
-      const parsedPreset = await window.novelAgent.prompt.parseTavernFile(text)
-      if (parsedPreset.name === '酒馆导入预设' && file.name) {
-        parsedPreset.name = file.name.replace(/\.[^/.]+$/, '')
-      }
-      const initialSelection: Record<string, boolean> = {}
-      parsedPreset.blocks.forEach((b) => {
-        initialSelection[b.id] = b.enabled
-      })
-      setImportSelectedBlocks(initialSelection)
-      setImportingModalPreset(parsedPreset)
-    } catch (err) {
-      showToast(errorText(err, '解析酒馆预设文件失败'), 'error')
-    } finally {
-      e.target.value = ''
+    if (file) {
+      setImportFile(file)
     }
-  }
-
-  const handleConfirmImport = () => {
-    if (!importingModalPreset) return
-    const finalizedPreset: NovelPromptPreset = {
-      ...importingModalPreset,
-      blocks: importingModalPreset.blocks.map((b) => ({
-        ...b,
-        enabled: importSelectedBlocks[b.id] ?? b.enabled
-      }))
-    }
-    setPresetStoreDraft((current) => {
-      const existing = current?.presets ?? []
-      return {
-        activePresetId: finalizedPreset.id,
-        presets: [...existing, finalizedPreset]
-      }
-    })
-    setImportingModalPreset(null)
-    showToast(`已成功导入预设「${finalizedPreset.name}」并设为活跃预设`, 'success')
+    e.target.value = ''
   }
 
   const updateActivePreset = (updater: (preset: NovelPromptPreset) => NovelPromptPreset) => {
@@ -582,76 +550,32 @@ export function CreativeSettingsDialog({ sessionId, isReadOnly = false, onClose,
         type="file"
         ref={fileInputRef}
         accept=".json"
-        onChange={(e) => void handleFileSelect(e)}
+        onChange={(e) => handleFileSelect(e)}
         className="hidden"
       />
 
-      {importingModalPreset && (
-        <Dialog open onOpenChange={(open) => { if (!open) setImportingModalPreset(null) }}>
-          <DialogContent frame={false} className="flex flex-col w-[85vw] max-w-3xl h-[80vh] overflow-hidden bg-[#faf8f5] text-[#2c2523] border border-[#dacdbe] rounded-2xl shadow-2xl" closeLabel="取消导入">
-            <DialogHeader className="px-5 py-3 border-b border-[#e5ddd3] bg-[#f7f2ea]">
-              <DialogTitle className="text-base font-bold text-[#2c2523]">导入酒馆预设预览与微调</DialogTitle>
-              <DialogDescription className="text-xs text-[#7d6b59] mt-0.5">
-                已自动将酒馆宏（如 &#123;&#123;user&#125;&#125; -&gt; 作者）与角色扮演提示转换为小说语境。请核对 Block 并勾选所需内容：
-              </DialogDescription>
-            </DialogHeader>
+      {importFile && (
+        <PresetConversionDialog
+          open={Boolean(importFile)}
+          file={importFile}
+          sessionId={sessionId}
+          onClose={() => setImportFile(null)}
+          onImportSuccess={(savedStore) => {
+            setPresetStoreDraft(savedStore)
+            setSavedPresetStore(savedStore)
+            setImportFile(null)
+            showToast('预设已成功导入并保存至预设库', 'success')
+          }}
+        />
+      )}
 
-            <div className="flex-1 min-h-0 p-5 space-y-4 overflow-hidden flex flex-col">
-              <div className="space-y-1">
-                <label className="text-xs font-semibold text-[#2c2523]">导入后的预设名称</label>
-                <Input
-                  value={importingModalPreset.name}
-                  onChange={(e) => setImportingModalPreset({ ...importingModalPreset, name: e.target.value })}
-                  className="text-xs border-[#dacdbe]"
-                />
-              </div>
-
-              <div className="flex-1 min-h-0 flex flex-col">
-                <span className="text-xs font-semibold text-[#2c2523] mb-1.5">包含的 Block 列表 ({importingModalPreset.blocks.length})：</span>
-                <ScrollArea className="flex-1 min-h-0 pr-2">
-                  <div className="space-y-2 pb-2">
-                    {importingModalPreset.blocks.map((block) => (
-                      <Card key={block.id} className="p-3 rounded-lg border-[#dacdbe] bg-white space-y-1.5">
-                        <div className="flex items-center justify-between gap-2">
-                          <label className="flex items-center gap-2 cursor-pointer">
-                            <input
-                              type="checkbox"
-                              checked={importSelectedBlocks[block.id] ?? block.enabled}
-                              onChange={(e) => setImportSelectedBlocks((prev) => ({ ...prev, [block.id]: e.target.checked }))}
-                              className="h-4 w-4 accent-[#2d6a4f]"
-                            />
-                            <span className="text-xs font-semibold text-[#2c2523]">{block.name}</span>
-                          </label>
-                          <div className="flex items-center gap-1.5">
-                            <Badge variant="outline" className="text-[10px]">{block.role}</Badge>
-                            {block.position === 'in_chat' ? (
-                              <Badge variant="outline" className="text-[10px] bg-amber-50 text-amber-800">In-Chat (Depth {block.depth})</Badge>
-                            ) : (
-                              <Badge variant="outline" className="text-[10px]">相对顺序</Badge>
-                            )}
-                            {block.marker && (
-                              <Badge variant="outline" className="text-[10px] border-[#2d6a4f]/30 text-[#2d6a4f] bg-emerald-50">{block.marker}</Badge>
-                            )}
-                          </div>
-                        </div>
-                        {block.content && (
-                          <div className="text-[11px] font-mono text-[#7d6b59] bg-[#faf8f5] p-2 rounded border border-[#e5ddd3] max-h-20 overflow-y-auto whitespace-pre-wrap">
-                            {block.content}
-                          </div>
-                        )}
-                      </Card>
-                    ))}
-                  </div>
-                </ScrollArea>
-              </div>
-            </div>
-
-            <DialogFooter className="px-5 py-3 border-t border-[#e5ddd3] bg-[#f7f2ea] flex items-center justify-end gap-2">
-              <Button variant="ghost" size="sm" onClick={() => setImportingModalPreset(null)} className="text-xs">取消</Button>
-              <Button size="sm" onClick={handleConfirmImport} className="bg-[#2d6a4f] text-white hover:bg-[#23533e] text-xs">确认导入并设为当前活跃预设</Button>
-            </DialogFooter>
-          </DialogContent>
-        </Dialog>
+      {viewingReportPreset && viewingReportPreset.conversionReport && (
+        <PresetConversionReportDialog
+          open={Boolean(viewingReportPreset)}
+          onClose={() => setViewingReportPreset(null)}
+          presetName={viewingReportPreset.name}
+          report={viewingReportPreset.conversionReport}
+        />
       )}
 
       <Dialog open onOpenChange={(open) => { if (!open) requestClose() }}>
@@ -827,6 +751,38 @@ export function CreativeSettingsDialog({ sessionId, isReadOnly = false, onClose,
                             />
                           </div>
                         </div>
+
+                        {activePreset.conversionReport && (
+                          <div className="flex flex-wrap items-center justify-between gap-2 pt-2 border-t border-[#f0eae1]">
+                            <div className="flex items-center gap-1.5 flex-wrap">
+                              <Badge variant="outline" className="text-[10px] bg-emerald-50 text-emerald-800 border-emerald-200">
+                                AI 转换预设
+                              </Badge>
+                              {activePreset.conversionReport.modified ? (
+                                <Badge variant="outline" className="text-[10px] bg-amber-50 text-amber-800 border-amber-200" title="预设内容在转换后经过修改，当前设置与初始转换结果存在差异">
+                                  已偏离转换初始
+                                </Badge>
+                              ) : (
+                                <Badge variant="outline" className="text-[10px] bg-stone-100 text-stone-700 border-stone-200">
+                                  初始转换未修改
+                                </Badge>
+                              )}
+                              <span className="text-[10px] text-[#7d6b59] font-mono">
+                                模型：{activePreset.conversionReport.model.name}
+                              </span>
+                            </div>
+
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              onClick={() => setViewingReportPreset(activePreset)}
+                              className="text-xs border-[#dacdbe] hover:bg-[#efe6da] h-7"
+                              title="查看 AI 转换兼容性处置报告"
+                            >
+                              <Sparkles size={12} className="mr-1 text-[#2d6a4f]" />查看兼容报告
+                            </Button>
+                          </div>
+                        )}
                       </Card>
 
                       <div className="flex items-center justify-between text-xs text-[#7d6b59] px-1">

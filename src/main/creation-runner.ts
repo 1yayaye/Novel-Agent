@@ -1,4 +1,5 @@
 import { randomUUID } from 'node:crypto'
+import type { Database } from 'better-sqlite3'
 import {
   type CandidateDeltaEvent,
   type CandidateDoneEvent,
@@ -20,7 +21,22 @@ export interface CreationCallbacks {
 }
 
 import { parseCreationOutput, type ParsedCreationOutput } from './output-parser'
+import { resolvePresetTools } from './prompt-preset'
+import type { ToolCall } from './model-gateway'
 export { parseCreationOutput, type ParsedCreationOutput }
+
+// 生成结束（成功或取消）后，把候选正文与原稿的差异切片持久化；调用方负责各自的前置条件判断。
+function persistCandidateHunks(db: Database, candidateId: string, originalContent: string, candidateContent: string): void {
+  const hunks = computeDiffHunks(originalContent, candidateContent)
+  db.prepare('DELETE FROM candidate_hunk WHERE candidate_id = ?').run(candidateId)
+  const insertHunk = db.prepare(`
+    INSERT INTO candidate_hunk(id, candidate_id, position, hunk_type, original_content, candidate_content, selected)
+    VALUES (?, ?, ?, ?, ?, ?, ?)
+  `)
+  for (const h of hunks) {
+    insertHunk.run(randomUUID(), candidateId, h.position, h.hunkType, h.originalContent, h.candidateContent, h.selected ? 1 : 0)
+  }
+}
 
 export class CreationRunner {
   private readonly activeControllers = new Map<string, AbortController>()
@@ -271,6 +287,19 @@ export class CreationRunner {
     let checkpointTimer: NodeJS.Timeout | undefined
     const throttler = createStreamThrottler<CandidateDeltaEvent>(60, (event) => this.callbacks.onDelta?.(event))
 
+    // 声明在 try 之外：成功路径与取消路径都要把已累计的工具调用交给结构化解析，
+    // 否则中途取消的流会丢失工具参数里的正文/梗概，退化为纯文本解析。
+    const accumulatedToolCalls: Map<number, { id?: string; index?: number; name: string; arguments: string }> = new Map()
+    const buildFinishedToolCalls = (): ToolCall[] => Array.from(accumulatedToolCalls.values()).map((t) => ({
+      id: t.id,
+      index: t.index,
+      type: 'function',
+      function: {
+        name: t.name,
+        arguments: t.arguments
+      }
+    }))
+
     const checkpoint = () => {
       if (bufferedText === checkpointedText) return
       try {
@@ -299,6 +328,8 @@ export class CreationRunner {
       if (!pkg.messages?.length) throw new ProjectError('STALE_CONTEXT_PACKAGE', '上下文包缺少实际消息，请重新生成预览')
       const messagesToSend = pkg.messages
 
+      const resolvedTools = resolvePresetTools(pkg.promptSnapshot.activePreset)
+
       const stream = this.modelGateway.chatCompletionStream({
         connectionId,
         taskType: pkg.taskType,
@@ -306,14 +337,33 @@ export class CreationRunner {
         messages: messagesToSend,
         maxTokens: pkg.promptSnapshot.budget?.maxOutputTokens,
         requestBudget: pkg.promptSnapshot.budget,
+        tools: resolvedTools?.tools,
+        toolChoice: resolvedTools?.toolChoice,
         signal,
         isContentRequest: true,
         taskId
       })
 
       for await (const chunk of stream) {
-        if (chunk.text) {
-          bufferedText += chunk.text
+        let argDelta = ''
+        if (chunk.toolCalls && chunk.toolCalls.length > 0) {
+          for (let i = 0; i < chunk.toolCalls.length; i++) {
+            const tc = chunk.toolCalls[i]
+            const idx = tc.index ?? i
+            const existing = accumulatedToolCalls.get(idx) || { id: tc.id, index: idx, name: tc.function?.name || '', arguments: '' }
+            if (tc.id) existing.id = tc.id
+            if (tc.function?.name) existing.name = tc.function.name
+            if (tc.function?.arguments) {
+              existing.arguments += tc.function.arguments
+              argDelta += tc.function.arguments
+            }
+            accumulatedToolCalls.set(idx, existing)
+          }
+        }
+
+        const deltaText = (chunk.text || '') + (argDelta || '')
+        if (deltaText) {
+          bufferedText += deltaText
           startCheckpointing()
         }
         if (chunk.usage) {
@@ -323,7 +373,7 @@ export class CreationRunner {
         throttler.push({
           candidateId,
           taskId,
-          delta: chunk.text || '',
+          delta: deltaText || '',
           fullText: bufferedText,
           state: 'streaming'
         })
@@ -371,8 +421,10 @@ export class CreationRunner {
 
       const finalState = isStale ? 'stale' : 'ready'
 
+      const finishedToolCalls = buildFinishedToolCalls()
+
       this.store.transaction(sessionId, (db) => {
-        const parsed = parseCreationOutput(bufferedText)
+        const parsed = parseCreationOutput(bufferedText, finishedToolCalls.length > 0 ? finishedToolCalls : undefined)
         const cleanContent = parsed.content
         if (!cleanContent.trim()) {
           throw new ProjectError('VALIDATION_ERROR', '模型未返回可供审阅的小说正文，请调整要求后重新生成')
@@ -385,15 +437,7 @@ export class CreationRunner {
         `).run(bufferedText, finalState, now, candidateId)
 
         if (finalState === 'ready') {
-          const hunks = computeDiffHunks(originalContent, cleanContent)
-          db.prepare('DELETE FROM candidate_hunk WHERE candidate_id = ?').run(candidateId)
-          const insertHunk = db.prepare(`
-            INSERT INTO candidate_hunk(id, candidate_id, position, hunk_type, original_content, candidate_content, selected)
-            VALUES (?, ?, ?, ?, ?, ?, ?)
-          `)
-          for (const h of hunks) {
-            insertHunk.run(randomUUID(), candidateId, h.position, h.hunkType, h.originalContent, h.candidateContent, h.selected ? 1 : 0)
-          }
+          persistCandidateHunks(db, candidateId, originalContent, cleanContent)
         }
 
         db.prepare(`
@@ -427,6 +471,13 @@ export class CreationRunner {
               SET raw_output = ?, state = 'cancelled', updated_at = ?
               WHERE id = ?
             `).run(bufferedText, now, candidateId)
+
+            const finishedToolCalls = buildFinishedToolCalls()
+            const parsed = parseCreationOutput(bufferedText, finishedToolCalls.length > 0 ? finishedToolCalls : undefined)
+            const cleanContent = parsed.content || bufferedText
+            if (cleanContent.trim()) {
+              persistCandidateHunks(db, candidateId, originalContent, cleanContent)
+            }
 
             db.prepare(`
               UPDATE task

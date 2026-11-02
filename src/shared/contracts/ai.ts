@@ -1,4 +1,5 @@
 import { z } from 'zod'
+import { BookSummaryResultSchema, BookSummaryStepKindSchema } from './book-summary'
 import { ChapterSchema, ChapterSnapshotSchema } from './chapter'
 import { PromptSnapshotSchema } from '../prompt-settings'
 
@@ -328,7 +329,8 @@ export const TaskSummarySchema = z.object({
 export type TaskSummary = z.infer<typeof TaskSummarySchema>
 
 export const TaskDetailSchema = TaskSummarySchema.extend({
-  steps: z.array(TaskStepSchema)
+  steps: z.array(TaskStepSchema),
+  bookSummary: BookSummaryResultSchema.optional()
 })
 export type TaskDetail = z.infer<typeof TaskDetailSchema>
 
@@ -339,6 +341,8 @@ export const TaskProgressEventSchema = z.object({
   completedSteps: z.number().int().nonnegative(),
   failedSteps: z.number().int().nonnegative(),
   currentStepPosition: z.number().int().nonnegative().optional(),
+  currentStepKind: BookSummaryStepKindSchema.optional(),
+  currentStepTitle: z.string().optional(),
   currentChapterId: z.string().uuid().optional(),
   currentChapterTitle: z.string().optional(),
   inputTokens: z.number().int().nonnegative().optional(),
@@ -626,7 +630,10 @@ export const CandidateDetailSchema = z.object({
   createdAt: z.number().int().nonnegative(),
   updatedAt: z.number().int().nonnegative(),
   hunks: z.array(CandidateHunkSchema),
-  finalSynthesizedText: z.string().optional()
+  finalSynthesizedText: z.string().optional(),
+  summary: z.string().optional(),
+  plotOptions: z.array(z.string()).optional(),
+  comment: z.string().optional()
 })
 export type CandidateDetail = z.infer<typeof CandidateDetailSchema>
 
@@ -641,6 +648,7 @@ export const ParsedCreationOutputSchema = z.object({
   content: z.string(),
   summary: z.string().optional(),
   plotOptions: z.array(z.string()).optional(),
+  comment: z.string().optional(),
   outline: z.string().optional(),
   direction: z.string().optional(),
   warnings: z.array(z.string()).default([]),

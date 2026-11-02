@@ -5,12 +5,16 @@ import type {
   ParsedCreationOutput,
   ParsedDirectionOutput
 } from '../shared/project'
+import type { ToolCall } from './model-gateway.js'
+import { parseToolCallArguments } from './tool-call-args.js'
+import { SOLIUMBRA_TOOL_NAME } from '../shared/prompt-settings.js'
 
 export type {
   ParsedChapterOutlineModules,
   ParsedChapterOutlineOutput,
   ParsedCreationOutput,
-  ParsedDirectionOutput
+  ParsedDirectionOutput,
+  ToolCall
 }
 
 interface TagToken {
@@ -29,6 +33,8 @@ const KNOWN_TAGS = [
   'interleaved_thinking',
   'interleaving',
   'chain_of_thought',
+  'think_nya',
+  'report_nya',
   'summary',
   'options',
   'plot_options',
@@ -40,7 +46,11 @@ const KNOWN_TAGS = [
   'fox_hugou',
   'direction',
   'questions',
-  'content'
+  'content',
+  'game',
+  'game_content',
+  'comment',
+  'option'
 ]
 
 function isReasoningTag(tag: string): boolean {
@@ -53,6 +63,10 @@ function isReasoningTag(tag: string): boolean {
     t === 'reasoning' ||
     t === 'interleaved_thinking' ||
     t === 'chain_of_thought' ||
+    t === 'think_nya' ||
+    t === 'report_nya' ||
+    t.startsWith('think_nya') ||
+    t.startsWith('report_nya') ||
     t.startsWith('thinking_') ||
     t.startsWith('think_') ||
     t.endsWith('_planning') ||
@@ -117,6 +131,10 @@ function scanXmlSections(rawText: string): {
         isClosedProperly = true
         break
       } else if (!next.isClosing) {
+        // Child tags like <option> inside <options>/<choices>/<plot_options> do not prematurely terminate parent
+        if ((tagName === 'options' || tagName === 'choices' || tagName === 'plot_options') && next.tag === 'option') {
+          continue
+        }
         // Next opening tag started before closing current tag
         contentEnd = next.start
         break
@@ -138,24 +156,51 @@ function scanXmlSections(rawText: string): {
   return { sections, warnings, hasTags: true }
 }
 
+const OPTION_PREFIX_REGEX = /^(?:(?:(?:选项|分支)\s*[0-9一二三四五六七八九十]+|[A-Za-z0-9]+)\s*[:：.、)）】\-\]]\s*|[【（(\[]?\s*\d+\s*[)）】\]:：.、\-]\s*|[-*•>+、:：\s]+)/
+
+function cleanSingleOption(text: string): string {
+  const clean = text.replace(/<\/?[^>]+>/g, '').trim()
+  return clean.replace(OPTION_PREFIX_REGEX, '').trim()
+}
+
 /**
  * Extracts plot options from text.
  */
 function extractOptionsList(text: string): string[] {
+  if (/<option\b[^>]*>/i.test(text)) {
+    const matches: string[] = []
+    const optionRegex = /<option\b[^>]*>([\s\S]*?)(?:<\/option>|(?=<option\b|<\/options>|<\/choices>|<\/plot_options>)|$)/gi
+    let m: RegExpExecArray | null
+    while ((m = optionRegex.exec(text)) !== null) {
+      const clean = m[1].replace(/<\/?[^>]+>/g, '').trim()
+      const stripped = clean.replace(OPTION_PREFIX_REGEX, '').trim()
+      if (stripped.length > 0 && !/^###?\s+/.test(stripped)) {
+        matches.push(stripped)
+      }
+    }
+    if (matches.length > 0) return matches
+  }
+
   return text
     .split(/\n+/)
-    .map((line) => line.replace(/^[\d+.\-*\s>【（(]+(?:\d+[)）】]?)?\s*/, '').trim())
+    .map((line) => line.replace(/<\/?option\b[^>]*>/gi, '').replace(OPTION_PREFIX_REGEX, '').trim())
     .filter((opt) => opt.length > 0 && !/^###?\s+/.test(opt))
 }
 
 function stripReasoning(text: string): string {
+  // First, strip all properly closed reasoning blocks directly so that internal tag mentions (e.g. `<game>` inside thinking) are cleanly removed
+  const working = text.replace(/<([a-zA-Z0-9_\-~]+)(?:\s+[^>]*)?>[\s\S]*?<\/\1>/gi, (match, tag) => {
+    if (isReasoningTag(tag.toLowerCase())) return ''
+    return match
+  })
+
   const tags = /<(\/)?([a-zA-Z0-9_\-~]+)(?:\s+[^>]*)?>/g
   const reasoning: string[] = []
   const parts: string[] = []
   let offset = 0
   let match: RegExpExecArray | null
-  while ((match = tags.exec(text)) !== null) {
-    if (!reasoning.length) parts.push(text.slice(offset, match.index))
+  while ((match = tags.exec(working)) !== null) {
+    if (!reasoning.length) parts.push(working.slice(offset, match.index))
     const name = match[2].toLowerCase()
     if (isReasoningTag(name)) {
       if (match[1]) {
@@ -174,7 +219,7 @@ function stripReasoning(text: string): string {
     offset = tags.lastIndex
   }
   // An unfinished reasoning section cannot safely be treated as prose.
-  if (!reasoning.length) parts.push(text.slice(offset))
+  if (!reasoning.length) parts.push(working.slice(offset))
   return parts.join('')
     .replace(/(?:^|\n)#{1,6}\s*【?(?:思考过程|写前推演|构思推演|思维链|分析过程)】?[^\n]*\n[\s\S]*?(?=\n#{1,6}\s*【?(?:正文|方向|核心事件|本章目标|待确认问题)|$)/g, '')
     .trim()
@@ -184,9 +229,78 @@ function stripReasoning(text: string): string {
  * Robust creation output parser.
  * Guarantees that candidate content only contains story prose,
  * cleanly separating thinking, summary, plot options, outlines, etc.
+ * Supports native Tool Calling arguments (e.g. soliumbra_reply) as well as XML/Markdown.
  * Preserves raw output and records warnings.
  */
-export function parseCreationOutput(rawText: string): ParsedCreationOutput {
+export function parseCreationOutput(rawText: string, toolCalls?: ToolCall[]): ParsedCreationOutput {
+  if (toolCalls && toolCalls.length > 0) {
+    const effectiveTool = toolCalls.find((tc) => tc.function?.name === SOLIUMBRA_TOOL_NAME) || toolCalls[0]
+    if (effectiveTool?.function) {
+      const args = parseToolCallArguments(effectiveTool.function.arguments)
+      const rawContent = String(
+        args.game_content ?? args.content ?? args.story ?? args.story_body ?? args.text ?? args.prose ?? args.chapter_content ?? ''
+      )
+
+      const summary = args.summary ?? args.chapter_summary
+        ? String(args.summary ?? args.chapter_summary).trim()
+        : undefined
+      const commentBase = args.comment ?? args.cat_comment ?? args.author_comment ?? args.note ?? args.notes
+        ? String(args.comment ?? args.cat_comment ?? args.author_comment ?? args.note ?? args.notes).trim()
+        : undefined
+      // registerPart 部件 extra（世界规则补充等）不作为正文，并入留言展示
+      const extra = args.extra ? String(args.extra).trim() : undefined
+      const comment = [commentBase, extra].filter(Boolean).join('\n\n') || undefined
+      const outline = args.outline ?? args.chapter_outline ?? args.fox_hugou
+        ? String(args.outline ?? args.chapter_outline ?? args.fox_hugou).trim()
+        : undefined
+      const direction = args.direction ? String(args.direction).trim() : undefined
+
+      let plotOptions: string[] | undefined
+      const rawOpts = args.options ?? args.plot_options ?? args.plotOptions ?? args.choices ?? args.fox_selc
+      if (Array.isArray(rawOpts)) {
+        const list = rawOpts
+          .map((item) => {
+            if (typeof item === 'object' && item !== null) {
+              const obj = item as Record<string, unknown>
+              const textVal = obj.text ?? obj.content ?? obj.option ?? obj.title ?? obj.desc ?? obj.value
+              return cleanSingleOption(String(textVal ?? ''))
+            }
+            return cleanSingleOption(String(item))
+          })
+          .filter((item) => item.length > 0 && !/^###?\s+/.test(item))
+        if (list.length > 0) plotOptions = list
+      } else if (typeof rawOpts === 'string' && rawOpts.trim()) {
+        const list = extractOptionsList(rawOpts)
+        if (list.length > 0) plotOptions = list
+      }
+
+      let cleanContent = stripReasoning(rawContent)
+      cleanContent = cleanContent
+        .replace(/<comment\b[^>]*>[\s\S]*?(?:<\/comment>|$)/gi, '')
+        .replace(/<summary\b[^>]*>[\s\S]*?(?:<\/summary>|$)/gi, '')
+        .replace(/<(?:plot_options|options|choice|choices|fox_selc)\b[^>]*>[\s\S]*?(?:<\/(?:plot_options|options|choice|choices|fox_selc)>|$)/gi, '')
+        .replace(/<option\b[^>]*>[\s\S]*?(?:<\/option>|$)/gi, '')
+        .replace(/<\/?(?:game|game_content|content)(?:\s+[^>]*)?>/gi, '')
+        .trim()
+
+      const warnings: string[] = []
+      if (!cleanContent.trim()) {
+        warnings.push('输出未包含可供审阅的小说正文')
+      }
+
+      return {
+        content: cleanContent,
+        summary,
+        plotOptions,
+        comment,
+        outline,
+        direction,
+        warnings,
+        rawOutput: rawText
+      }
+    }
+  }
+
   if (!rawText || typeof rawText !== 'string') {
     return {
       content: '',
@@ -195,16 +309,63 @@ export function parseCreationOutput(rawText: string): ParsedCreationOutput {
     }
   }
 
+  const trimmed = rawText.trim()
+  if (trimmed.startsWith('{') || trimmed.startsWith('[')) {
+    let jsonParsed: unknown = null
+    try {
+      jsonParsed = JSON.parse(trimmed)
+    } catch {
+      let clean = trimmed
+      if (clean.startsWith('```json')) clean = clean.slice(7)
+      else if (clean.startsWith('```')) clean = clean.slice(3)
+      if (clean.endsWith('```')) clean = clean.slice(0, -3)
+      clean = clean.trim()
+      try {
+        jsonParsed = JSON.parse(clean)
+      } catch {}
+    }
+
+    if (jsonParsed && typeof jsonParsed === 'object') {
+      if (Array.isArray(jsonParsed) && jsonParsed.length > 0 && (jsonParsed[0] as any)?.type === 'function') {
+        return parseCreationOutput(rawText, jsonParsed as ToolCall[])
+      }
+      if ('type' in jsonParsed && (jsonParsed as any).type === 'function' && 'function' in jsonParsed) {
+        return parseCreationOutput(rawText, [jsonParsed as ToolCall])
+      }
+      if ('name' in jsonParsed && 'arguments' in jsonParsed) {
+        const obj = jsonParsed as { name: string; arguments: unknown }
+        const argsStr = typeof obj.arguments === 'string' ? obj.arguments : JSON.stringify(obj.arguments)
+        return parseCreationOutput(rawText, [{ type: 'function', function: { name: obj.name, arguments: argsStr } }])
+      }
+      const keys = Object.keys(jsonParsed)
+      const hasCreationKeys = keys.some((k) =>
+        ['game_content', 'content', 'story', 'text', 'think_nya', 'summary', 'options', 'comment'].includes(k)
+      )
+      if (hasCreationKeys) {
+        return parseCreationOutput(rawText, [
+          { type: 'function', function: { name: SOLIUMBRA_TOOL_NAME, arguments: JSON.stringify(jsonParsed) } }
+        ])
+      }
+    } else {
+      const args = parseToolCallArguments(trimmed)
+      const hasCreationKeys = Object.keys(args).some((k) =>
+        ['game_content', 'content', 'story', 'text', 'summary', 'options', 'comment'].includes(k)
+      )
+      if (hasCreationKeys) {
+        return parseCreationOutput(rawText, [
+          { type: 'function', function: { name: SOLIUMBRA_TOOL_NAME, arguments: trimmed } }
+        ])
+      }
+    }
+  }
+
   const cleanText = stripReasoning(rawText)
   const { sections, warnings, hasTags } = scanXmlSections(cleanText)
-  const { warnings: rawWarnings } = scanXmlSections(rawText)
-  for (const w of rawWarnings) {
-    if (!warnings.includes(w)) warnings.push(w)
-  }
 
   let thinking: string | undefined
   let summary: string | undefined
   let plotOptions: string[] | undefined
+  let comment: string | undefined
   let outline: string | undefined
   let direction: string | undefined
   let content: string | undefined
@@ -217,11 +378,21 @@ export function parseCreationOutput(rawText: string): ParsedCreationOutput {
   if (sections.has('summary')) {
     summary = sections.get('summary')!.join('\n\n').trim()
   }
+  if (sections.has('comment')) {
+    comment = sections.get('comment')!.join('\n\n').trim()
+  }
   for (const optTag of ['options', 'plot_options', 'choice', 'choices', 'fox_selc']) {
     if (sections.has(optTag)) {
       plotOptions = extractOptionsList(sections.get(optTag)!.join('\n'))
       break
     }
+  }
+  if (!plotOptions && sections.has('option')) {
+    const rawOpts = sections.get('option')!
+    const cleaned = rawOpts
+      .map((chunk) => cleanSingleOption(chunk))
+      .filter((opt) => opt.length > 0 && !/^###?\s+/.test(opt))
+    if (cleaned.length > 0) plotOptions = cleaned
   }
   for (const outlineTag of ['chapter_outline', 'outline', 'fox_hugou']) {
     if (sections.has(outlineTag)) {
@@ -233,10 +404,15 @@ export function parseCreationOutput(rawText: string): ParsedCreationOutput {
     direction = sections.get('direction')!.join('\n\n').trim()
   }
 
-  if (sections.has('content')) {
-    content = sections.get('content')!.join('\n\n').trim()
-  } else if (hasTags) {
-    // If other tags exist but <content> was not explicitly tagged,
+  for (const contentTag of ['content', 'game_content', 'game']) {
+    if (sections.has(contentTag)) {
+      content = sections.get(contentTag)!.join('\n\n').trim()
+      break
+    }
+  }
+
+  if (content === undefined && hasTags) {
+    // If other tags exist but neither <content> nor <game>/<game_content> was explicitly isolated,
     // strip out all non-content tag blocks from the raw text to extract pure content.
     let stripped = cleanText
     stripped = stripped.replace(/<([a-zA-Z0-9_\-~]+)>[\s\S]*?(?:<\/\1>|$)/gi, (m, tag) => {
@@ -244,16 +420,25 @@ export function parseCreationOutput(rawText: string): ParsedCreationOutput {
       return m
     })
     stripped = stripped.replace(/<\/?(interleaving|interleaved_thinking)(?:\s+[^>]*)?>/gi, '')
-    stripped = stripped.replace(/<summary>[\s\S]*?(?:<\/summary>|$)/gi, '')
-    stripped = stripped.replace(/<(?:plot_options|options|choice|choices|fox_selc)>[\s\S]*?(?:<\/(?:plot_options|options|choice|choices|fox_selc)>|$)/gi, '')
-    stripped = stripped.replace(/<(?:chapter_outline|outline|fox_hugou)>[\s\S]*?(?:<\/(?:chapter_outline|outline|fox_hugou)>|$)/gi, '')
-    stripped = stripped.replace(/<direction>[\s\S]*?(?:<\/direction>|$)/gi, '')
-    stripped = stripped.replace(/<questions>[\s\S]*?(?:<\/questions>|$)/gi, '')
+    stripped = stripped.replace(/<comment\b[^>]*>[\s\S]*?(?:<\/comment>|$)/gi, '')
+    stripped = stripped.replace(/<summary\b[^>]*>[\s\S]*?(?:<\/summary>|$)/gi, '')
+    stripped = stripped.replace(/<(?:plot_options|options|choice|choices|fox_selc|option)\b[^>]*>[\s\S]*?(?:<\/(?:plot_options|options|choice|choices|fox_selc|option)>|$)/gi, '')
+    stripped = stripped.replace(/<(?:chapter_outline|outline|fox_hugou)\b[^>]*>[\s\S]*?(?:<\/(?:chapter_outline|outline|fox_hugou)>|$)/gi, '')
+    stripped = stripped.replace(/<direction\b[^>]*>[\s\S]*?(?:<\/direction>|$)/gi, '')
+    stripped = stripped.replace(/<questions\b[^>]*>[\s\S]*?(?:<\/questions>|$)/gi, '')
+    stripped = stripped.replace(/<\/?(?:game|game_content)(?:\s+[^>]*)?>/gi, '')
     stripped = stripped.trim()
     content = stripped
-  } else {
+  } else if (content === undefined) {
     // Completely untagged plain text -> check for Markdown header blocks
     let workingText = cleanText
+
+    // 0. Check for comment section in markdown: ### 【猫猫留言】
+    const mdCommentMatch = workingText.match(/(?:###?\s*【?(?:猫猫留言|小猫留言|留言|创作者寄语|作者留言|助手留言)】?)([\s\S]*?)(?=(?:###?\s*【?(?:正文|正文内容|续写正文|剧情选项|大纲|思考过程)】?)|$)/i)
+    if (mdCommentMatch) {
+      comment = mdCommentMatch[1].trim()
+      workingText = workingText.replace(mdCommentMatch[0], '').trim()
+    }
 
     // 1. Check for thinking section in markdown: ### 【思考过程】 or ### 【推演】
     const mdThinkMatch = workingText.match(/(?:###?\s*【?(?:思考过程|写前推演|构思推演|思维链)】?)([\s\S]*?)(?=(?:###?\s*【?(?:正文|正文内容|续写正文|剧情选项|大纲)】?)|$)/i)
@@ -285,6 +470,17 @@ export function parseCreationOutput(rawText: string): ParsedCreationOutput {
     content = workingText
   }
 
+  if (content) {
+    // Strip residual metadata tags that might have been nested or unclosed inside content
+    content = content
+      .replace(/<comment\b[^>]*>[\s\S]*?(?:<\/comment>|$)/gi, '')
+      .replace(/<summary\b[^>]*>[\s\S]*?(?:<\/summary>|$)/gi, '')
+      .replace(/<(?:plot_options|options|choice|choices|fox_selc)\b[^>]*>[\s\S]*?(?:<\/(?:plot_options|options|choice|choices|fox_selc)>|$)/gi, '')
+      .replace(/<option\b[^>]*>[\s\S]*?(?:<\/option>|$)/gi, '')
+      .replace(/<\/?(?:game|game_content)(?:\s+[^>]*)?>/gi, '')
+      .trim()
+  }
+
   // Ensure content falls back safely to rawText if empty and no other sections extracted
   const finalContent = content?.trim() || ''
   if (!finalContent && rawText.trim()) warnings.push('输出未包含可供审阅的小说正文')
@@ -293,6 +489,7 @@ export function parseCreationOutput(rawText: string): ParsedCreationOutput {
     content: finalContent,
     summary,
     plotOptions: plotOptions && plotOptions.length > 0 ? plotOptions : undefined,
+    comment,
     outline,
     direction,
     warnings,

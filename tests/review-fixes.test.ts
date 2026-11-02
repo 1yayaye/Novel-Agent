@@ -105,7 +105,7 @@ describe('review fixes', () => {
     const chapterTree = read('src/renderer/features/workbench/ChapterTree.tsx')
     const projectStore = read('src/renderer/stores/useProjectStore.ts')
 
-    expect(workbench).toContain("openDialog('analysis', { initialType: 'knowledge' })")
+    expect(workbench).toContain("openDialog('analysis', { initialType: 'book_summary' })")
     expect(workbench).toContain("openDialog('analysis', { initialType: 'report' })")
     expect(dialogHost).toContain("initialType={analysisInitialType ?? 'knowledge'}")
     expect(dialogHost).toContain('isReadOnly={isReadOnly}')

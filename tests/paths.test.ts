@@ -1,3 +1,4 @@
+import { rmSync } from 'node:fs'
 import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
 import { dataDirectory, novelsDirectory } from '../src/main/paths'
@@ -34,7 +35,11 @@ describe('dataDirectory', () => {
 
   it('creates and returns the novels subdirectory under dataDirectory', () => {
     const tempDir = join(process.cwd(), 'test-results', 'temp-data-dir')
-    const novelsDir = novelsDirectory(tempDir)
-    expect(novelsDir).toBe(join(tempDir, 'novels'))
+    try {
+      const novelsDir = novelsDirectory(tempDir)
+      expect(novelsDir).toBe(join(tempDir, 'novels'))
+    } finally {
+      rmSync(tempDir, { recursive: true, force: true })
+    }
   })
 })

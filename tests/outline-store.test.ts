@@ -57,7 +57,7 @@ describe('T01: Outline Database, CRUD, Optimistic Locks & Stale Invalidation', (
     expect(v2.content).toContain('偶得神器')
 
     // Optimistic lock conflict
-    expect(() => store.saveBookOutline(sessionId, { content: '冲突', expectedVersion: 1 })).toThrowError(/覆盖/)
+    expect(() => store.saveBookOutline(sessionId, { content: '冲突', expectedVersion: 1 })).toThrowError(/全书大纲已变化/)
 
     // Confirm book outline
     const confirmed = store.confirmBookOutline(sessionId, 2)

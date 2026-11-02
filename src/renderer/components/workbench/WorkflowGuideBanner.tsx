@@ -4,7 +4,7 @@ import { Button } from '@appica/ui-react/button'
 
 interface WorkflowGuideBannerProps {
   totalChapters: number
-  summaryCount: number
+  hasValidSummary: boolean
   reportCount: number
   isReadOnly?: boolean
   onStartKnowledgeAnalysis: () => void
@@ -13,7 +13,7 @@ interface WorkflowGuideBannerProps {
 
 export function WorkflowGuideBanner({
   totalChapters,
-  summaryCount,
+  hasValidSummary,
   reportCount,
   isReadOnly = false,
   onStartKnowledgeAnalysis,
@@ -22,11 +22,11 @@ export function WorkflowGuideBanner({
   const [dismissed, setDismissed] = useState(false)
 
   // Only show when there are chapters but lack initial analysis
-  if (dismissed || totalChapters === 0 || (summaryCount > 0 && reportCount > 0)) {
+  if (dismissed || totalChapters === 0 || (hasValidSummary && reportCount > 0)) {
     return null
   }
 
-  const needsKnowledge = summaryCount === 0
+  const needsKnowledge = !hasValidSummary
   const needsReport = reportCount === 0
 
   return (

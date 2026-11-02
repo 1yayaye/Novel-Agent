@@ -1,4 +1,5 @@
 import { createHash, randomUUID } from 'node:crypto'
+import { invalidateBookSummary } from './book-summary'
 import { existsSync } from 'node:fs'
 import { join, resolve } from 'node:path'
 import { Worker, MessageChannel, receiveMessageOnPort, type MessagePort } from 'node:worker_threads'
@@ -473,6 +474,7 @@ export class CandidateService {
       }))
 
       const finalSynthesizedText = synthesizeText(hunks)
+      const parsed = parseCreationOutput(row.raw_output)
 
       return {
         id: row.id,
@@ -490,7 +492,10 @@ export class CandidateService {
         createdAt: row.created_at,
         updatedAt: row.updated_at,
         hunks,
-        finalSynthesizedText
+        finalSynthesizedText,
+        summary: parsed.summary,
+        plotOptions: parsed.plotOptions,
+        comment: parsed.comment
       }
     })
   }
@@ -734,6 +739,7 @@ export class CandidateService {
       `).run(newChapterContent, nextChapterVersion, now, chap.id)
 
       // 3. Invalidate derived data (SPEC 11.4, ADR 0001)
+      invalidateBookSummary(db, now)
       db.prepare("UPDATE content_chunk SET state = 'stale' WHERE chapter_id = ? AND state = 'current'").run(chap.id)
       db.prepare("UPDATE chapter_summary SET state = 'stale' WHERE chapter_id = ? AND state = 'current'").run(chap.id)
       db.prepare("UPDATE source_evidence SET state = 'stale' WHERE chapter_id = ? AND state = 'valid'").run(chap.id)

@@ -44,3 +44,17 @@ Working code, small pieces, familiar patterns, flags, wrappers, and extra docume
 - Are important decisions localized, dependencies visible, caller-needed constraints documented, and mutable internals protected?
 - Did common cases become automatic while rare controls, special cases, performance tricks, and exception details stayed out of the common path?
 - Are names precise and consistent, comments current and non-duplicative, and conventions followed unless new information justified changing them?
+
+## Agent skills
+
+### Issue tracker
+
+GitHub Issues via `gh` CLI. See `docs/agents/issue-tracker.md`.
+
+### Triage labels
+
+Default five canonical triage roles (`needs-triage`, `needs-info`, `ready-for-agent`, `ready-for-human`, `wontfix`). See `docs/agents/triage-labels.md`.
+
+### Domain docs
+
+Single-context (`GLOSSARY.md` and `docs/adr/` at repo root). See `docs/agents/domain.md`.

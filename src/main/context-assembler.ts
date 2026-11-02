@@ -5,6 +5,7 @@ import type { ModelGateway } from './model-gateway'
 import type { SearchIndex } from './search-index'
 import type { PromptSettingsStore } from './prompt-store'
 import { assertPromptSnapshotFresh, compilePromptMessages, promptTask, resolvePromptDefinitions, type PromptMarker } from './prompt-runtime'
+import { resolvePresetTools } from './prompt-preset'
 import { PromptSnapshotSchema } from '../shared/prompt-settings'
 import type {
   AssembledMessage,
@@ -113,8 +114,12 @@ export class ContextAssembler {
     const safetyMarginRatio = promptSnapshot.budget.safetyMarginRatio
     const tokenEstimationRatio = promptSnapshot.budget.tokenEstimationRatio
 
+    const resolvedTools = resolvePresetTools(promptSnapshot.activePreset, stage)
+    const toolsText = resolvedTools ? JSON.stringify(resolvedTools.tools) : ''
+    const toolsOverhead = toolsText ? Math.ceil(toolsText.length * tokenEstimationRatio) : 0
+
     const safetyMargin = Math.floor(contextWindow * safetyMarginRatio)
-    const availableInputTokens = Math.max(0, contextWindow - maxOutputTokens - safetyMargin)
+    const availableInputTokens = Math.max(0, contextWindow - maxOutputTokens - safetyMargin - toolsOverhead)
 
     // 2. Read project & target chapter version
     let targetChapter: { id: string; title: string; content: string; version: number; position: number } | undefined
@@ -849,7 +854,8 @@ export class ContextAssembler {
       promptSnapshot
     )
 
-    const estimateMessages = () => messages.reduce((total, message) => total + estimateTokens(message.content, tokenEstimationRatio) + 4, 2)
+    const estimateMessages = () =>
+      messages.reduce((total, message) => total + estimateTokens(message.content, tokenEstimationRatio) + 4, 2)
     currentEstimatedTokens = estimateMessages()
     while (currentEstimatedTokens > availableInputTokens) {
       const trimIndex = items.reduce((selected, item, index) => {

@@ -3,6 +3,7 @@ import type Database from 'better-sqlite3'
 import type { Chapter, ChapterHeader, ChapterSnapshot, ChapterSnapshotDetail } from '../shared/project'
 import { count } from '../shared/text-counter'
 import { ProjectError, ProjectStore } from './project-store'
+import { invalidateBookSummary } from './book-summary'
 
 type ChapterRow = { id: string; title: string; position: number; content: string; version: number; created_at: number; updated_at: number }
 type SnapshotRow = {
@@ -61,6 +62,7 @@ function invalidateContent(database: Database.Database, chapterId: string, now: 
 
 function markSearchDirty(database: Database.Database, now: number): void {
   database.prepare('UPDATE project_meta SET search_revision = search_revision + 1, updated_at = ?').run(now)
+  invalidateBookSummary(database, now)
 }
 
 function requireCurrent(database: Database.Database, chapterId: string, expectedVersion: number): ChapterRow {
@@ -161,6 +163,7 @@ export class ChapterRepository {
       database.prepare('UPDATE chapter SET position = -position - 1 WHERE deleted_at IS NULL').run()
       const setPosition = database.prepare('UPDATE chapter SET position = ?, version = version + 1, updated_at = ? WHERE id = ?')
       chapters.forEach(({ id }, position) => setPosition.run(position, now, id))
+      invalidateBookSummary(database, now)
       return active(database)
     })
     return result

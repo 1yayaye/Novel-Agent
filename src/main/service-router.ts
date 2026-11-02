@@ -1,6 +1,8 @@
 import { copyFileSync, existsSync, mkdirSync } from 'node:fs'
 import { basename, extname, isAbsolute, join, normalize, relative, resolve } from 'node:path'
 import { z } from 'zod'
+import { ApplySummaryOutlineInputSchema, ExportSummaryInputSchema } from '../shared/contracts/book-summary'
+import { applySummaryOutline, bookSummaryResult, exportBookSummary } from './book-summary'
 import {
   AcceptSuggestionInputSchema,
   AddReportAnnotationInputSchema,
@@ -614,6 +616,19 @@ export function createServiceRouter(deps: ServiceRouterDependencies): ServiceRou
   })
 
   // Analysis namespace
+  register('analysis.applyOutline', ApplySummaryOutlineInputSchema, BookOutlineSchema, (input) => {
+    store.assertAnalysisPipelines(input.sessionId)
+    return applySummaryOutline(store, input.sessionId, input.taskId, input.expectedVersion)
+  })
+  register('analysis.exportSummary', ExportSummaryInputSchema, ExportProjectResultSchema.nullable(), async (input) => {
+    store.assertAnalysisExport(input.sessionId)
+    let destination = input.destination
+    if (!destination && windowDelegate?.showSaveDialog) {
+      destination = (await windowDelegate.showSaveDialog({ title: '导出全书剧情资料', filters: [{ name: 'Markdown 文档 (*.md)', extensions: ['md'] }] })).filePath
+    }
+    if (!destination) return null
+    return exportBookSummary(store, input.sessionId, input.taskId, destination)
+  })
   register('analysis.start', StartAnalysisInputSchema, StartAnalysisResultSchema, async (input) => {
     if (!analysisRunner) throw new ProjectError('DATABASE_ERROR', '分析运行器未初始化')
     store.assertAnalysisPipelines(input.sessionId)
@@ -642,7 +657,8 @@ export function createServiceRouter(deps: ServiceRouterDependencies): ServiceRou
     return store.listTasks(input.sessionId, input.type, input.state)
   })
   register('task.get', GetTaskInputSchema, TaskDetailSchema, (input) => {
-    return store.getTask(input.sessionId, input.taskId)
+    const task = store.getTask(input.sessionId, input.taskId)
+    return { ...task, bookSummary: bookSummaryResult(store, input.sessionId, task) }
   })
   register('task.retryStep', RetryStepInputSchema, TaskSummarySchema, async (input) => {
     if (!analysisRunner) throw new ProjectError('DATABASE_ERROR', '分析运行器未初始化')

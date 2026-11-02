@@ -65,6 +65,7 @@ pnpm verify             # 发布前全量检查
 - [0004 前端重构架构与状态流解耦 (React 19 + Tailwind v4 + Zustand)](docs/adr/0004-frontend-refactor-stack-and-state-architecture.md)
 - [0005 渲染层组件体系与工作台交互分层 (Appica UI + drawers)](docs/adr/0005-renderer-component-and-workspace-interaction-hierarchy.md)
 - [0006 视觉设计语言与领域切片重塑 (温润拿铁与故事节拍流)](docs/adr/0006-visual-direction-and-renderer-reconstruction.md)
+- [0007 以完整明月流程实现全书剧情提取](docs/adr/0007-mingyue-book-summary.md)
 
 
 ## 许可证

@@ -437,4 +437,66 @@ describe('CandidateService (SPEC 8.2, 8.3, 9.1-9.4)', () => {
     const detail = candidateService.getCandidate(sessionId, candId)
     expect(detail.state).toBe('stale')
   })
+
+  it('dynamically derives summary, plotOptions, and comment from raw_output without db migration', () => {
+    const candId = 'cand-derived-test'
+    const now = Date.now()
+    const rawOutput = `
+<think_nya>
+思考中喵...
+</think_nya>
+<game>
+暴风雪呼啸着掠过山巅，韩立稳稳踏出一步。
+</game>
+<summary>
+韩立在风雪中穿行。
+</summary>
+<options>
+<option>避入山洞避寒</option>
+<option>运转长春功顶雪前进</option>
+</options>
+<comment>
+喵呼呼，主人觉得这段描写怎么样喵？
+</comment>
+`
+
+    store.transaction(sessionId, (db) => {
+      db.prepare(`
+        INSERT INTO candidate (
+          id, task_id, chapter_id, chapter_version, start_offset, end_offset,
+          original_content, raw_output, edited_content, version, state,
+          created_at, updated_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      `).run(
+        candId,
+        null,
+        chapterId,
+        1,
+        null,
+        null,
+        '暴风雪呼啸着掠过山巅。',
+        rawOutput,
+        null,
+        1,
+        'ready',
+        now,
+        now
+      )
+
+      db.prepare(`
+        INSERT INTO candidate_hunk (
+          id, candidate_id, position, hunk_type,
+          original_content, candidate_content, selected
+        ) VALUES (?, ?, ?, ?, ?, ?, ?)
+      `).run('hunk-derived-1', candId, 0, 'equal', '暴风雪', '暴风雪', 1)
+    })
+
+    const detail = candidateService.getCandidate(sessionId, candId)
+    expect(detail.summary).toBe('韩立在风雪中穿行。')
+    expect(detail.plotOptions).toEqual([
+      '避入山洞避寒',
+      '运转长春功顶雪前进'
+    ])
+    expect(detail.comment).toBe('喵呼呼，主人觉得这段描写怎么样喵？')
+  })
 })

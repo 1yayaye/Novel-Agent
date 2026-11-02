@@ -52,6 +52,17 @@ describe('ModelGateway with mock HTTP/SSE server', () => {
     } catch {}
   })
 
+  it('rejects truncated structured output even when the JSON is syntactically complete', async () => {
+    const connection = store.create({ name: 'Truncated model', kind: 'generation', baseUrl: serverUrl, model: 'test', isLocalService: true })
+    store.confirmContentTarget(connection.id, calculateContentTargetFingerprint(connection.baseUrl, connection.model))
+    requestHandler = (_req, res) => {
+      res.writeHead(200, { 'Content-Type': 'application/json' })
+      res.end(JSON.stringify({ choices: [{ message: { content: '{"content":"部分资料"}' }, finish_reason: 'length' }] }))
+    }
+    const schema = z.object({ content: z.string() })
+    await expect(gateway.generateStructuredJson({ connectionId: connection.id, messages: [{ role: 'user', content: '总结' }], zodSchema: schema, jsonSchema: z.toJSONSchema(schema) })).rejects.toMatchObject({ code: 'MODEL_OUTPUT_INVALID' })
+  })
+
   it('tests connection with ping without requiring target confirmation', async () => {
     requestHandler = (_req, res) => {
       res.writeHead(200, { 'Content-Type': 'application/json' })
@@ -118,6 +129,102 @@ describe('ModelGateway with mock HTTP/SSE server', () => {
       completionTokens: 2,
       totalTokens: 12
     })
+  })
+
+  it('streams Chat Completions with finish_reason length without throwing', async () => {
+    const conn = store.create({
+      name: 'Length Stream Model',
+      kind: 'generation',
+      baseUrl: serverUrl,
+      model: 'test-length-model',
+      isLocalService: true
+    })
+    store.confirmContentTarget(conn.id, calculateContentTargetFingerprint(conn.baseUrl, conn.model))
+
+    requestHandler = (_req, res) => {
+      res.writeHead(200, {
+        'Content-Type': 'text/event-stream',
+        'Cache-Control': 'no-cache',
+        Connection: 'keep-alive'
+      })
+      res.write('data: {"choices":[{"delta":{"content":"小说长篇"},"finish_reason":null}]}\n\n')
+      setTimeout(() => {
+        res.write('data: {"choices":[{"delta":{"content":"正文..."},"finish_reason":"length"}]}\n\n')
+        res.write('data: [DONE]\n\n')
+        res.end()
+      }, 10)
+    }
+
+    const chunks: string[] = []
+    for await (const chunk of gateway.chatCompletionStream({
+      connectionId: conn.id,
+      messages: [{ role: 'user', content: '继续写' }]
+    })) {
+      if (chunk.text) chunks.push(chunk.text)
+    }
+    expect(chunks.join('')).toBe('小说长篇正文...')
+  })
+
+  it('streams Chat Completions with finish_reason tool_calls without throwing', async () => {
+    const conn = store.create({
+      name: 'Tool Calls Stream Model',
+      kind: 'generation',
+      baseUrl: serverUrl,
+      model: 'test-tool-calls-model',
+      isLocalService: true
+    })
+    store.confirmContentTarget(conn.id, calculateContentTargetFingerprint(conn.baseUrl, conn.model))
+
+    requestHandler = (_req, res) => {
+      res.writeHead(200, {
+        'Content-Type': 'text/event-stream',
+        'Cache-Control': 'no-cache',
+        Connection: 'keep-alive'
+      })
+      res.write('data: {"choices":[{"delta":{"content":"<game>正文</game>"},"finish_reason":"tool_calls"}]}\n\n')
+      res.write('data: [DONE]\n\n')
+      res.end()
+    }
+
+    const chunks: string[] = []
+    for await (const chunk of gateway.chatCompletionStream({
+      connectionId: conn.id,
+      messages: [{ role: 'user', content: '写正文' }]
+    })) {
+      if (chunk.text) chunks.push(chunk.text)
+    }
+    expect(chunks.join('')).toBe('<game>正文</game>')
+  })
+
+  it('rejects streaming Chat Completions with abnormal finish_reason (e.g. content_filter)', async () => {
+    const conn = store.create({
+      name: 'Filter Stream Model',
+      kind: 'generation',
+      baseUrl: serverUrl,
+      model: 'test-filter-model',
+      isLocalService: true
+    })
+    store.confirmContentTarget(conn.id, calculateContentTargetFingerprint(conn.baseUrl, conn.model))
+
+    requestHandler = (_req, res) => {
+      res.writeHead(200, {
+        'Content-Type': 'text/event-stream',
+        'Cache-Control': 'no-cache',
+        Connection: 'keep-alive'
+      })
+      res.write('data: {"choices":[{"delta":{"content":"敏感内容"},"finish_reason":"content_filter"}]}\n\n')
+      res.write('data: [DONE]\n\n')
+      res.end()
+    }
+
+    await expect(async () => {
+      for await (const chunk of gateway.chatCompletionStream({
+        connectionId: conn.id,
+        messages: [{ role: 'user', content: '写内容' }]
+      })) {
+        void chunk
+      }
+    }).rejects.toMatchObject({ code: 'MODEL_OUTPUT_INVALID' })
   })
 
   it('holds a connection queue slot until streaming ends and releases it on cancellation', async () => {

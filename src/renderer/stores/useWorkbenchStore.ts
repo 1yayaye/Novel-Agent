@@ -20,6 +20,7 @@ export type DialogType =
   | 'confirm'
   | 'outline'
   | 'knowledge'
+  | 'book_summary'
 
 export interface WorkbenchState {
   isNavExpanded: boolean

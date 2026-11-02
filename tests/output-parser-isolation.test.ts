@@ -5,6 +5,7 @@ import {
   parseChapterOutlineOutput,
   parseStageOutput
 } from '../src/main/output-parser'
+import { SOLIUMBRA_TOOL_NAME } from '../src/shared/prompt-settings'
 
 describe('T09: Output Parser & Derived Information Isolation', () => {
   describe('parseCreationOutput', () => {
@@ -220,6 +221,154 @@ describe('T09: Output Parser & Derived Information Isolation', () => {
       expect(parsed.content).toBe('寒雨连江，夜色如铁。\n\n破庙内的残烛摇曳不定，将两人的影子拉得极长。')
       expect(parsed.content).not.toContain('konatan_planning')
       expect(parsed.content).not.toContain('回顾当前情况')
+    })
+
+    it('handles Category 9: Meowssiah style outputs with game, summary, options with option, and comment', () => {
+      const rawText = `<think_nya>
+喵呼呼，韩立在雪夜里前行，需要重点描写冰寒感与长春功法运转的微温对比喵！
+</think_nya>
+<game>
+雪夜，寒风呼啸。
+
+韩立缩了缩脖子，踩着咯吱作响的积雪，快步穿过神手谷的石阶。体内微弱的长春功真气悄然流转，驱散了透骨的严寒。
+</game>
+<summary>
+韩立在风雪之夜穿过神手谷，凭借初具火候的长春功御寒。
+</summary>
+<options>
+<option>😏 敲响墨大夫的房门，主动报告练功进展</option>
+<option>😈 绕过主屋，潜入后山药园查看草药生长</option>
+<option>🥵 回到自己草屋，加紧打坐修炼长春功</option>
+</options>
+<comment>
+喵呜~ 这一段长春功的暖意和外面的大雪形成鲜明对比喵，主人觉得写得怎么样喵？
+</comment>`
+
+      const parsed = parseCreationOutput(rawText)
+
+      expect(parsed.rawOutput).toBe(rawText)
+      expect(parsed).not.toHaveProperty('thinking')
+      expect(parsed.content).toBe('雪夜，寒风呼啸。\n\n韩立缩了缩脖子，踩着咯吱作响的积雪，快步穿过神手谷的石阶。体内微弱的长春功真气悄然流转，驱散了透骨的严寒。')
+      expect(parsed.content).not.toContain('<game>')
+      expect(parsed.content).not.toContain('</game>')
+      expect(parsed.content).not.toContain('喵呼呼')
+      expect(parsed.content).not.toContain('<comment>')
+      expect(parsed.content).not.toContain('喵呜')
+      expect(parsed.summary).toBe('韩立在风雪之夜穿过神手谷，凭借初具火候的长春功御寒。')
+      expect(parsed.comment).toBe('喵呜~ 这一段长春功的暖意和外面的大雪形成鲜明对比喵，主人觉得写得怎么样喵？')
+      expect(parsed.plotOptions).toEqual([
+        '😏 敲响墨大夫的房门，主动报告练功进展',
+        '😈 绕过主屋，潜入后山药园查看草药生长',
+        '🥵 回到自己草屋，加紧打坐修炼长春功'
+      ])
+    })
+
+    it('unpacks tool-call arguments with story_body prose and merges extra into comment', () => {
+      const toolCall = {
+        id: 'call_story_body',
+        type: 'function' as const,
+        function: {
+          name: SOLIUMBRA_TOOL_NAME,
+          arguments: JSON.stringify({
+            think_nya: '喵呼呼，先推演剧情喵。',
+            story_body: '雪夜，寒风呼啸。韩立缩了缩脖子，快步穿过神手谷的石阶。',
+            summary: '韩立雪夜穿行神手谷。',
+            extra: '世界规则：长春功运转时掌心微温。'
+          })
+        }
+      }
+
+      const parsed = parseCreationOutput('', [toolCall])
+
+      expect(parsed.content).toBe('雪夜，寒风呼啸。韩立缩了缩脖子，快步穿过神手谷的石阶。')
+      expect(parsed.summary).toBe('韩立雪夜穿行神手谷。')
+      expect(parsed.comment).toBe('世界规则：长春功运转时掌心微温。')
+    })
+
+    it('appends extra after comment in tool-call arguments when both exist', () => {
+      const toolCall = {
+        id: 'call_extra',
+        type: 'function' as const,
+        function: {
+          name: SOLIUMBRA_TOOL_NAME,
+          arguments: JSON.stringify({
+            game_content: '正文内容。',
+            comment: '喵呜~ 主人觉得怎么样喵？',
+            extra: '世界规则补充。'
+          })
+        }
+      }
+
+      const parsed = parseCreationOutput('', [toolCall])
+
+      expect(parsed.content).toBe('正文内容。')
+      expect(parsed.comment).toBe('喵呜~ 主人觉得怎么样喵？\n\n世界规则补充。')
+    })
+
+    it('handles Category 10: <game_content> tags and unclosed comment isolation', () => {
+      const rawText = `<game_content>
+夜深人静，药炉余温尚存。
+</game_content>
+<comment>
+喵~ 这里稍微留了个悬念喵！`
+
+      const parsed = parseCreationOutput(rawText)
+      expect(parsed.content).toBe('夜深人静，药炉余温尚存。')
+      expect(parsed.comment).toBe('喵~ 这里稍微留了个悬念喵！')
+      expect(parsed.content).not.toContain('喵~')
+    })
+
+    it('handles Category 11: attribute-bearing metadata tags and prevents cat comment leaking into prose', () => {
+      const rawText = `<game>
+风卷黄沙，荒漠古道上只留下一道孤寂的身影。
+</game>
+<comment author="cat_god" type="interactive">
+喵呜~ 这一段荒漠描写很有苍凉感喵！
+</comment>
+<summary ver="1.0" lang="zh">
+主角独自穿行于大漠风沙之中。
+</summary>`
+
+      const parsed = parseCreationOutput(rawText)
+      expect(parsed.content).toBe('风卷黄沙，荒漠古道上只留下一道孤寂的身影。')
+      expect(parsed.content).not.toContain('cat_god')
+      expect(parsed.content).not.toContain('喵呜')
+      expect(parsed.comment).toBe('喵呜~ 这一段荒漠描写很有苍凉感喵！')
+      expect(parsed.summary).toBe('主角独自穿行于大漠风沙之中。')
+    })
+
+    it('handles Category 12: unclosed option lookahead, enumeration prefixes (1:, 1、, A., 选项1:), and standalone option tags', () => {
+      const rawWithUnclosed = `<game>天色已暗。</game>
+<options>
+<option>1: 拔出背后生锈的长剑
+<option>2、悄然翻身上了屋檐
+<option>A. 点燃怀里的火把
+<option>选项四：待在原地以静制动
+</options>`
+
+      const parsedUnclosed = parseCreationOutput(rawWithUnclosed)
+      expect(parsedUnclosed.plotOptions).toEqual([
+        '拔出背后生锈的长剑',
+        '悄然翻身上了屋檐',
+        '点燃怀里的火把',
+        '待在原地以静制动'
+      ])
+
+      // Standalone multi-line <option> tags without <options> container
+      const rawStandalone = `<game>韩立驻足不前。</game>
+<option>
+趁着夜色
+潜入七玄门后山
+</option>
+<option>
+【2】返回草屋闭门打坐
+</option>`
+
+      const parsedStandalone = parseCreationOutput(rawStandalone)
+      expect(parsedStandalone.plotOptions).toEqual([
+        '趁着夜色\n潜入七玄门后山',
+        '返回草屋闭门打坐'
+      ])
     })
 
     it('handles malformed / empty input gracefully without throwing', () => {

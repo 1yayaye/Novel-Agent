@@ -17,6 +17,23 @@ import { ProjectError } from './project-store'
 const CONTENT_REQUEST_TIMEOUT_MS = 10 * 60 * 1000
 const EMBEDDING_REQUEST_TIMEOUT_MS = 60 * 1000
 const STREAM_IDLE_TIMEOUT_MS = 60 * 1000
+const ALLOWED_FINISH_REASONS = new Set(['stop', 'length', 'tool_calls'])
+
+// finish_reason=length 意味着输出在 max_tokens 处被切断：结构化 JSON 和工具调用参数都会是半截。
+// 这类截断不能靠下游的 JSON 修复兜底"静默成功"，必须在此拒绝（ADR-0008：强制工具选择只保证调用发生，不保证调用完整）。
+function isTruncatedOutput(finishReason: string, options: ChatCompletionOptions): boolean {
+  return finishReason === 'length' && (Boolean(options.responseFormat) || Boolean(options.tools?.length))
+}
+
+// tools/tool_choice 是 OpenAI 兼容请求体的 wire 格式字段；流式与非流式两条路径共用此装配逻辑。
+function applyToolsToPayload(payload: Record<string, unknown>, options: ChatCompletionOptions): void {
+  if (options.tools && options.tools.length > 0) {
+    payload.tools = options.tools
+    if (options.toolChoice !== undefined) {
+      payload.tool_choice = options.toolChoice
+    }
+  }
+}
 
 interface RequestBudget {
   signal: AbortSignal
@@ -106,10 +123,39 @@ export interface ChatMessage {
   content: string
 }
 
+export interface ToolFunctionDefinition {
+  name: string
+  description?: string
+  parameters?: Record<string, unknown>
+  strict?: boolean
+}
+
+export interface ToolDefinition {
+  type: 'function'
+  function: ToolFunctionDefinition
+}
+
+export type ToolChoice =
+  | 'auto'
+  | 'none'
+  | 'required'
+  | { type: 'function'; function: { name: string } }
+
+export interface ToolCall {
+  id?: string
+  index?: number
+  type: 'function'
+  function: {
+    name: string
+    arguments: string
+  }
+}
+
 export interface ChatStreamChunk {
   text: string
   done: boolean
   usage?: TokenUsage
+  toolCalls?: ToolCall[]
 }
 
 export interface ChatCompletionOptions {
@@ -129,6 +175,8 @@ export interface ChatCompletionOptions {
       schema: Record<string, unknown>
     }
   }
+  tools?: ToolDefinition[]
+  toolChoice?: ToolChoice
   signal?: AbortSignal
   isContentRequest?: boolean
   taskId?: string
@@ -490,6 +538,25 @@ export class ModelGateway {
   }
 
 
+  async chatCompletion(options: ChatCompletionOptions): Promise<{ text: string; usage?: TokenUsage; toolCalls?: ToolCall[] }> {
+    const { connectionId, priority = 'high', isContentRequest = true } = options
+
+    if (isContentRequest) {
+      this.connectionStore.assertContentTargetConfirmed(connectionId)
+    }
+
+    const { connection, secret } = this.connectionStore.getInternal(connectionId)
+    const queue = this.getQueue(connectionId)
+    const budget = createRequestBudget(options.signal, CONTENT_REQUEST_TIMEOUT_MS, '模型请求超过10分钟截止时间')
+    const requestOptions = { ...options, signal: budget.signal }
+
+    return queue.enqueue(priority, async () => {
+      return this.executeNonStreamingRequestWithRetry(connection, secret, requestOptions)
+    }, budget.signal).catch((error) => {
+      throw this.normalizeRequestError(error, budget, options.signal)
+    }).finally(() => budget.dispose())
+  }
+
   async *chatCompletionStream(options: ChatCompletionOptions): AsyncIterable<ChatStreamChunk> {
     const { connectionId, priority = 'high', isContentRequest = true } = options
 
@@ -509,12 +576,12 @@ export class ModelGateway {
         signal: budget.signal
       })
 
-      let hasYieldedAnyText = false
+      let hasYieldedAnyContent = false
       let finalUsage: TokenUsage | undefined
 
       for await (const chunk of streamProducer) {
-        if (chunk.text) {
-          hasYieldedAnyText = true
+        if (chunk.text || (chunk.toolCalls && chunk.toolCalls.length > 0)) {
+          hasYieldedAnyContent = true
         }
         if (chunk.usage) {
           finalUsage = chunk.usage
@@ -522,7 +589,7 @@ export class ModelGateway {
         yield chunk
       }
 
-      if (!hasYieldedAnyText) {
+      if (!hasYieldedAnyContent) {
         throw new ProjectError('MODEL_OUTPUT_INVALID', '模型返回空输出')
       }
     } catch (error) {
@@ -872,8 +939,10 @@ export class ModelGateway {
     const { contextWindow, safetyMarginRatio, tokenEstimationRatio, maxOutputTokens } = options.requestBudget
     const inputLimit = contextWindow - (options.maxTokens ?? maxOutputTokens) - Math.floor(contextWindow * safetyMarginRatio)
     const schemaText = options.responseFormat ? JSON.stringify(options.responseFormat.json_schema.schema) : ''
+    const toolsText = options.tools ? JSON.stringify(options.tools) : ''
     const estimated = options.messages.reduce((total, message) => total + 4 + Math.ceil(message.content.length * tokenEstimationRatio), 2)
       + Math.ceil(schemaText.length * tokenEstimationRatio)
+      + Math.ceil(toolsText.length * tokenEstimationRatio)
     if (estimated > inputLimit) throw new ProjectError('MODEL_CONTEXT_EXCEEDED', '完整请求（含结构约束）超过冻结输入预算，请缩小任务范围')
   }
 
@@ -881,7 +950,7 @@ export class ModelGateway {
     connection: ModelConnectionSummary,
     secret: { apiKey?: string; customHeaders?: Record<string, string> },
     options: ChatCompletionOptions
-  ): Promise<{ text: string; usage?: TokenUsage }> {
+  ): Promise<{ text: string; usage?: TokenUsage; toolCalls?: ToolCall[] }> {
     let attempts = 0
     const maxRetries = 2
     const startTime = Date.now()
@@ -918,6 +987,7 @@ export class ModelGateway {
         if (options.responseFormat) {
           payload.response_format = options.responseFormat
         }
+        applyToolsToPayload(payload, options)
 
         const activityBudget = createRequestBudget(options.signal, STREAM_IDLE_TIMEOUT_MS, '结构化模型请求超过60秒无数据')
         try {
@@ -953,11 +1023,28 @@ export class ModelGateway {
 
           const responseText = await readResponseTextWithActivity(response, activityBudget)
           const json = JSON.parse(responseText) as {
-            choices?: Array<{ message?: { content?: string } }>
+            choices?: Array<{ message?: { content?: string; tool_calls?: any[] }; finish_reason?: string | null }>
             usage?: { prompt_tokens?: number; completion_tokens?: number; total_tokens?: number }
           }
 
           const text = json.choices?.[0]?.message?.content || ''
+          const finishReason = json.choices?.[0]?.finish_reason
+          if (finishReason && (!ALLOWED_FINISH_REASONS.has(finishReason) || isTruncatedOutput(finishReason, options))) {
+            throw new ProjectError('MODEL_OUTPUT_INVALID', `模型输出未正常结束（finish_reason: ${finishReason}）`)
+          }
+          const rawToolCalls = json.choices?.[0]?.message?.tool_calls
+          const toolCalls: ToolCall[] | undefined = Array.isArray(rawToolCalls) && rawToolCalls.length > 0
+            ? rawToolCalls.map((tc: any, idx: number) => ({
+                id: tc.id,
+                index: typeof tc.index === 'number' ? tc.index : idx,
+                type: 'function',
+                function: {
+                  name: tc.function?.name || '',
+                  arguments: typeof tc.function?.arguments === 'string' ? tc.function.arguments : JSON.stringify(tc.function?.arguments || {})
+                }
+              }))
+            : undefined
+
           const usage: TokenUsage | undefined = json.usage
             ? {
                 promptTokens: json.usage.prompt_tokens ?? 0,
@@ -977,7 +1064,7 @@ export class ModelGateway {
             outputTokens: usage?.completionTokens
           })
 
-          return { text, usage }
+          return { text, usage, toolCalls }
         } catch (error) {
           if (activityBudget.timedOut()) {
             throw new ProjectError('CONNECTION_FAILED', activityBudget.timeoutMessage)
@@ -1053,6 +1140,7 @@ export class ModelGateway {
     if (options.responseFormat) {
       payload.response_format = options.responseFormat
     }
+    applyToolsToPayload(payload, options)
 
     const activityBudget = createRequestBudget(options.signal, STREAM_IDLE_TIMEOUT_MS, '模型流式请求超过60秒无数据')
     let response: Response
@@ -1116,7 +1204,7 @@ export class ModelGateway {
 
         const dataStr = trimmed.slice(5).trim()
         if (dataStr === '[DONE]') {
-          if (finishReason && finishReason !== 'stop') {
+          if (finishReason && (!ALLOWED_FINISH_REASONS.has(finishReason) || isTruncatedOutput(finishReason, options))) {
             throw new ProjectError('MODEL_OUTPUT_INVALID', `流式输出未正常结束（finish_reason: ${finishReason}）`)
           }
           normalCompletion = true
@@ -1124,7 +1212,7 @@ export class ModelGateway {
         }
 
         let parsed: {
-          choices?: Array<{ delta?: { content?: string }; finish_reason?: string | null }>
+          choices?: Array<{ delta?: { content?: string; tool_calls?: any[] }; finish_reason?: string | null }>
           usage?: { prompt_tokens?: number; completion_tokens?: number; total_tokens?: number }
           error?: unknown
         }
@@ -1143,13 +1231,26 @@ export class ModelGateway {
 
         const reason = parsed.choices?.[0]?.finish_reason
         if (reason) {
-          if (reason !== 'stop') {
+          if (!ALLOWED_FINISH_REASONS.has(reason) || isTruncatedOutput(reason, options)) {
             throw new ProjectError('MODEL_OUTPUT_INVALID', `流式输出未正常结束（finish_reason: ${reason}）`)
           }
           finishReason = reason
         }
 
         const deltaText = parsed.choices?.[0]?.delta?.content || ''
+        const rawToolCalls = parsed.choices?.[0]?.delta?.tool_calls
+        const toolCalls: ToolCall[] | undefined = Array.isArray(rawToolCalls) && rawToolCalls.length > 0
+          ? rawToolCalls.map((tc: any, i: number) => ({
+              id: tc.id,
+              index: typeof tc.index === 'number' ? tc.index : i,
+              type: 'function',
+              function: {
+                name: tc.function?.name || '',
+                arguments: typeof tc.function?.arguments === 'string' ? tc.function.arguments : ''
+              }
+            }))
+          : undefined
+
         const usage: TokenUsage | undefined = parsed.usage
           ? {
               promptTokens: parsed.usage.prompt_tokens ?? 0,
@@ -1158,11 +1259,12 @@ export class ModelGateway {
             }
           : undefined
 
-        if (deltaText || usage) {
+        if (deltaText || toolCalls || usage) {
           return {
             text: deltaText,
             done: false,
-            usage
+            usage,
+            toolCalls
           }
         }
       }
@@ -1205,7 +1307,7 @@ export class ModelGateway {
           }
         }
 
-        if (!normalCompletion && finishReason !== 'stop') {
+        if (!normalCompletion && (!finishReason || !ALLOWED_FINISH_REASONS.has(finishReason) || isTruncatedOutput(finishReason, options))) {
           throw new ProjectError('MODEL_OUTPUT_INVALID', '流式响应在正常结束信号前中断')
         }
 

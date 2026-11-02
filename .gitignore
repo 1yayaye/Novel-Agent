@@ -23,6 +23,10 @@ blob-report/
 playwright/.cache/
 docs/**/screenshots/
 
+# Real-API tests with personal keys/paths — keep local only, never push
+tests/real-execution.test.ts
+tests/dual-project-real-comparison.test.ts
+
 # Local agent / editor working files
 .agents/
 .claude/

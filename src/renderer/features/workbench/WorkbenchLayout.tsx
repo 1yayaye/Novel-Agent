@@ -76,8 +76,30 @@ export function WorkbenchLayout({
     confirmedContentTargetFingerprint?: string
   } | null>(null)
 
-  const [summaryCount, setSummaryCount] = useState(0)
+  const [hasValidSummary, setHasValidSummary] = useState(false)
   const [reportCount, setReportCount] = useState(0)
+
+  const checkSummaryStatus = useCallback(async () => {
+    try {
+      const syn = await window.novelAgent.synopsis?.get({ sessionId: project.sessionId })
+      if (syn && syn.state === 'current') {
+        setHasValidSummary(true)
+        return
+      }
+      const tasks = await window.novelAgent.task?.list({ sessionId: project.sessionId, type: 'book_summary' })
+      const completedTask = tasks?.find((t: any) => t.state === 'completed')
+      if (completedTask) {
+        const detail = await window.novelAgent.task.get({ sessionId: project.sessionId, taskId: completedTask.id })
+        if (detail?.bookSummary?.resultState === 'current') {
+          setHasValidSummary(true)
+          return
+        }
+      }
+      setHasValidSummary(false)
+    } catch {
+      setHasValidSummary(false)
+    }
+  }, [project.sessionId])
 
   // Reset shared chapter state whenever the opened project changes, including empty projects.
   useEffect(() => {
@@ -129,12 +151,7 @@ export function WorkbenchLayout({
       })
       .catch(() => {})
 
-    window.novelAgent.chapterSummary
-      ?.list({ sessionId: project.sessionId })
-      .then((list: any[]) => {
-        if (Array.isArray(list)) setSummaryCount(list.length)
-      })
-      .catch(() => {})
+    void checkSummaryStatus()
 
     window.novelAgent.report
       ?.list({ sessionId: project.sessionId })
@@ -142,7 +159,7 @@ export function WorkbenchLayout({
         if (Array.isArray(list)) setReportCount(list.length)
       })
       .catch(() => {})
-  }, [project.sessionId])
+  }, [project.sessionId, checkSummaryStatus])
 
   // Subscribe to background tasks
   useEffect(() => {
@@ -318,13 +335,13 @@ export function WorkbenchLayout({
         {/* Central Writing Canvas Area */}
         <main className="flex-1 flex flex-col min-w-0 h-full relative overflow-hidden bg-[#faf8f5]">
           {/* Optional Pre-analysis onboarding guide banner */}
-          {!isZenMode && chapters.length > 0 && summaryCount === 0 && (
+          {!isZenMode && chapters.length > 0 && !hasValidSummary && (
             <WorkflowGuideBanner
               totalChapters={chapters.length}
-              summaryCount={summaryCount}
+              hasValidSummary={hasValidSummary}
               reportCount={reportCount}
               isReadOnly={projectReadOnly}
-              onStartKnowledgeAnalysis={() => openDialog('analysis', { initialType: 'knowledge' })}
+              onStartKnowledgeAnalysis={() => openDialog('analysis', { initialType: 'book_summary' })}
               onStartReportAnalysis={() => openDialog('analysis', { initialType: 'report' })}
             />
           )}

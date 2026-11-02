@@ -16,6 +16,7 @@ export function presetContentFingerprint(preset: NovelPromptPreset): string {
   return createHash('sha256').update(JSON.stringify({
     name: preset.name,
     description: preset.description,
+    toolCalling: preset.toolCalling,
     blocks: preset.blocks.map((block) => ({
       name: block.name, role: block.role, content: block.content, enabled: block.enabled,
       position: block.position, depth: block.depth, order: block.order, marker: block.marker

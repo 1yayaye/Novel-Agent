@@ -137,7 +137,8 @@ public sealed class IpcBridge
             if (channel.StartsWith("dialog.", StringComparison.OrdinalIgnoreCase) ||
                 channel.Equals("project.chooseAndOpen", StringComparison.OrdinalIgnoreCase) ||
                 channel.Equals("project.previewImport", StringComparison.OrdinalIgnoreCase) ||
-                channel.Equals("project.export", StringComparison.OrdinalIgnoreCase))
+                channel.Equals("project.export", StringComparison.OrdinalIgnoreCase) ||
+                channel.Equals("analysis.exportSummary", StringComparison.OrdinalIgnoreCase))
             {
                 await HandleDialogChannelAsync(id, channel, payload);
                 return;
@@ -365,7 +366,8 @@ public sealed class IpcBridge
                     SendRpcErrorResponse(id, "SIDECAR_NOT_RUNNING", "Sidecar is not running.");
                 }
             }
-            else if (channel.Equals("project.export", StringComparison.OrdinalIgnoreCase))
+            else if (channel.Equals("project.export", StringComparison.OrdinalIgnoreCase) ||
+                     channel.Equals("analysis.exportSummary", StringComparison.OrdinalIgnoreCase))
             {
                 string? existingDest = payload?["destination"]?.ToString();
                 if (string.IsNullOrEmpty(existingDest))
@@ -373,7 +375,8 @@ public sealed class IpcBridge
                     var savePicker = new FileSavePicker();
                     WinRT.Interop.InitializeWithWindow.Initialize(savePicker, _hwnd);
                     savePicker.SuggestedStartLocation = PickerLocationId.DocumentsLibrary;
-                    string format = payload?["format"]?.ToString()?.ToLowerInvariant() ?? "txt";
+                    string format = channel.Equals("analysis.exportSummary", StringComparison.OrdinalIgnoreCase)
+                        ? "md" : payload?["format"]?.ToString()?.ToLowerInvariant() ?? "txt";
                     if (format == "txt")
                     {
                         savePicker.FileTypeChoices.Add("文本文档 (*.txt)", new List<string> { ".txt" });
@@ -402,7 +405,7 @@ public sealed class IpcBridge
                     {
                         ["jsonrpc"] = "2.0",
                         ["id"] = id,
-                        ["method"] = "project.export",
+                        ["method"] = channel,
                         ["params"] = forwardedPayload
                     };
                     await _sidecar.SendMessageAsync(rpcReq.ToJsonString());

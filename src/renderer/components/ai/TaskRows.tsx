@@ -1,5 +1,5 @@
 import React from 'react'
-import { CheckCircle2, Loader2, Pause, Play, RotateCw, StopCircle, XCircle } from 'lucide-react'
+import { CheckCircle2, Eye, Loader2, Pause, Play, RotateCw, StopCircle, XCircle } from 'lucide-react'
 import { Button } from '@appica/ui-react/button'
 
 export interface TaskItem {
@@ -13,6 +13,7 @@ export interface TaskItem {
   onPause?: () => void
   onResume?: () => void
   onRetry?: () => void
+  onViewDetails?: () => void
 }
 
 export function TaskRows({ items }: { items: TaskItem[] }) {
@@ -71,11 +72,28 @@ export function TaskRows({ items }: { items: TaskItem[] }) {
           className="p-3.5 border border-[#e5ddd3] dark:border-slate-800 bg-white dark:bg-slate-900 rounded-xl space-y-2 shadow-sm"
         >
           <div className="flex items-center justify-between">
-            <span className="text-xs font-bold text-[#2c2523] dark:text-slate-100 truncate font-serif">
+            <span
+              className={`text-xs font-bold text-[#2c2523] dark:text-slate-100 truncate font-serif ${item.onViewDetails ? 'cursor-pointer hover:text-[#2d6a4f]' : ''}`}
+              onClick={item.onViewDetails}
+              title={item.onViewDetails ? '点击查看成果与步骤' : item.title}
+            >
               {item.title}
             </span>
             <div className="flex items-center gap-1.5">
               {getBadge(item.state)}
+              {item.onViewDetails && (
+                <Button
+                  variant="ghost"
+                  size="icon-sm"
+                  onClick={item.onViewDetails}
+                  className="p-1 text-[#2d6a4f] hover:bg-[#e8f3ee] rounded transition-colors h-6 px-1.5 text-[11px] font-medium flex items-center gap-1 w-auto"
+                  title="查看任务详情与成果"
+                  aria-label="查看任务详情与成果"
+                >
+                  <Eye size={12} />
+                  <span>成果</span>
+                </Button>
+              )}
               {item.state === 'running' && item.onCancel && (
                 <Button
                   variant="ghost"

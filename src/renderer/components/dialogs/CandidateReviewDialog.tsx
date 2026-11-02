@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
-import { AlertCircle, AlertTriangle, Check, Clock, History, Pencil, RotateCcw, RotateCw, Save, Square, X } from 'lucide-react'
+import { AlertCircle, AlertTriangle, Check, Clock, Compass, FileText, History, MessageSquare, Pencil, RotateCcw, RotateCw, Save, Square, X } from 'lucide-react'
 import { CandidateApplyResult, CandidateDetail, CandidateHunk, CandidateSummary, ChapterHeader, CandidateState } from '../../../shared/project'
 import { IconButton } from '../common/IconButton'
 import { errorText, formatDate } from '../../utils/formatters'
@@ -512,6 +512,55 @@ export function CandidateReviewDialog({
                     )}
                   </div>
                 </div>
+
+                {/* Derived Cards: Commentary, Summary, Plot Options */}
+                {(Boolean(candidateDetail.comment) || Boolean(candidateDetail.summary) || (Boolean(candidateDetail.plotOptions) && candidateDetail.plotOptions!.length > 0)) && (
+                  <div className="candidate-derived-cards border-t border-[#e5ddd3] p-4 bg-[#fdfbf7] flex flex-col gap-3">
+                    {candidateDetail.comment && (
+                      <div className="p-3.5 rounded-lg border border-[#f3d9da] bg-[#fff5f5] text-[#4a3b32]">
+                        <div className="flex items-center gap-2 mb-1.5 font-semibold text-xs text-[#b91c1c]">
+                          <MessageSquare size={14} />
+                          <span>创作留言 / 批注</span>
+                        </div>
+                        <div className="text-xs whitespace-pre-wrap leading-relaxed text-[#5c3a21]">
+                          {candidateDetail.comment}
+                        </div>
+                      </div>
+                    )}
+
+                    {candidateDetail.summary && (
+                      <div className="p-3.5 rounded-lg border border-[#e2e8f0] bg-[#f8fafc] text-slate-700">
+                        <div className="flex items-center gap-2 mb-1.5 font-semibold text-xs text-sky-600">
+                          <FileText size={14} />
+                          <span>剧情小结</span>
+                        </div>
+                        <div className="text-xs whitespace-pre-wrap leading-relaxed text-[#475569]">
+                          {candidateDetail.summary}
+                        </div>
+                      </div>
+                    )}
+
+                    {candidateDetail.plotOptions && candidateDetail.plotOptions.length > 0 && (
+                      <div className="p-3.5 rounded-lg border border-[#e5ddd3] bg-white text-slate-700">
+                        <div className="flex items-center gap-2 mb-2 font-semibold text-xs text-violet-600">
+                          <Compass size={14} />
+                          <span>后续走向选项</span>
+                        </div>
+                        <div className="flex flex-col gap-1.5">
+                          {candidateDetail.plotOptions.map((opt, idx) => (
+                            <div
+                              key={idx}
+                              className="text-xs px-2.5 py-1.5 rounded bg-[#f8f6f0] border border-[#eee7dc] text-[#443831] flex items-start gap-2"
+                            >
+                              <span className="font-mono text-[#a89984] text-[11px] select-none">{idx + 1}.</span>
+                              <span className="leading-relaxed">{opt}</span>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                )}
               </>
             )}
           </main>

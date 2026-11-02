@@ -9,10 +9,10 @@ import { PromptSettingsStore } from '../src/main/prompt-store'
 import { NovelPromptPresetSchema } from '../src/shared/prompt-settings'
 
 const fixtures = fileURLToPath(new URL('./fixtures/tavern-presets/', import.meta.url))
-const output = fileURLToPath(new URL('../test-results/tavern-import/', import.meta.url))
+const output = fileURLToPath(new URL('../test-results/preset-conversion/eval-outputs/', import.meta.url))
 const cases = [
-  { file: 'Izumi 1002.json', sourceBlocks: 231, enabledBlocks: 28, scripts: 1, promptRegexes: 9 },
-  { file: '[主预设] V19.7.3 狐神抚 · 毓忻.json', sourceBlocks: 220, enabledBlocks: 16, scripts: 2, promptRegexes: 6 },
+  { file: 'Izumi 1002.json', sourceBlocks: 231, enabledBlocks: 27, scripts: 1, promptRegexes: 9 },
+  { file: '[主预设] V19.7.3 狐神抚 · 毓忻.json', sourceBlocks: 220, enabledBlocks: 15, scripts: 2, promptRegexes: 6 },
   { file: '智脑-Z（10.1）-2.json', sourceBlocks: 92, enabledBlocks: 53, scripts: 0, promptRegexes: 3 },
   { file: 'Kemini_Dramatron_v3.1.json', sourceBlocks: 55, enabledBlocks: 18, scripts: 1, promptRegexes: 5 }
 ].map((sample) => {
@@ -92,11 +92,11 @@ describe('四个真实酒馆预设的静态导入转换评估', () => {
     expect(NovelPromptPresetSchema.parse(preset)).toEqual(preset)
     expect(preset.name).toBe(source.name || file.replace(/\.json$/, ''))
     expect(source.prompts).toHaveLength(sourceBlocks)
-    expect(preset.blocks).toHaveLength(sourceBlocks + (source.prompts.some((prompt: { identifier: string }) => prompt.identifier === 'agentTask') ? 0 : 1))
+    expect(preset.blocks).toHaveLength(sourceBlocks)
     expect(enabled).toHaveLength(enabledBlocks)
     expect(new Set(preset.blocks.map((block) => block.id)).size).toBe(preset.blocks.length)
     expect(preset.blocks.map((block) => block.order)).toEqual(preset.blocks.map((_, index) => index))
-    for (const marker of ['marker.knowledge', 'marker.history', 'marker.task']) {
+    for (const marker of ['marker.knowledge', 'marker.history']) {
       expect(enabled.some((block) => block.marker === marker)).toBe(true)
     }
     // Kemini 的中文双花括号是输出格式示例，不是酒馆可执行宏。

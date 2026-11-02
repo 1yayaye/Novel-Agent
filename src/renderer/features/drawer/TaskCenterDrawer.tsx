@@ -4,10 +4,12 @@ import { Button } from '@appica/ui-react/button'
 import { TaskRows } from '../../components/ai/TaskRows'
 import { useTaskStore } from '../../stores/useTaskStore'
 import { useProjectStore } from '../../stores/useProjectStore'
+import { useWorkbenchStore } from '../../stores/useWorkbenchStore'
 import { taskTypeLabel } from '../../utils/constants'
 
 export function TaskCenterDrawer() {
   const { project } = useProjectStore()
+  const { openDialog } = useWorkbenchStore()
   const { tasks, setTasks, updateTask, clearCompleted } = useTaskStore()
   const canTaskControls = Boolean(project?.capabilities?.taskControls)
   const [isEmptyStateRevealed, setIsEmptyStateRevealed] = useState(false)
@@ -125,7 +127,8 @@ export function TaskCenterDrawer() {
               onCancel: () => void handleCancelTask(task.id),
               onPause: canTaskControls ? () => void handlePauseTask(task.id) : undefined,
               onResume: canTaskControls ? () => void handleResumeTask(task.id) : undefined,
-              onRetry: canTaskControls ? () => void handleRetryTask(task.id) : undefined
+              onRetry: canTaskControls ? () => void handleRetryTask(task.id) : undefined,
+              onViewDetails: task.type === 'book_summary' ? () => openDialog('book_summary', { taskId: task.id }) : undefined
             }))}
           />
         )}

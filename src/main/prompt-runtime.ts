@@ -14,7 +14,7 @@ export type { PromptMarker } from './prompt-preset.js'
 export const ANALYSIS_TASKS: ReadonlySet<PromptTask> = new Set([
   'knowledge', 'report', 'style_distill', 'book_summary', 'synopsis_compress',
   'synopsis_step', 'synopsis_final', 'distill_segment', 'distill_stage', 'distill_master',
-  'summary_segment', 'summary_stage', 'summary_master', 'book_outline', 'chat_summary'
+  'book_outline', 'chat_summary'
 ])
 
 export function promptTask(taskType: TaskType, stage?: ChatWorkflowStage | null): PromptTask {
@@ -40,56 +40,26 @@ export function resolvePromptDefinitions(task: PromptTask, snapshot: PromptSnaps
   ]
 
   if (activeBlocks.length > 0) {
-    const definitions: PromptDefinition[] = [
+    return [
       ...required,
       ...activeBlocks
-      .slice()
-      .sort((a, b) => a.order - b.order)
-      .filter((b) => b.id !== 'core' && b.id !== `task.${task}`)
-      .map((b) => {
-        const markerKey = b.marker ? (b.marker.startsWith('marker.') ? b.marker.slice(7) : b.marker) as PromptMarker : undefined
-        const structuralMarker = markerKey === 'history' || markerKey === 'task'
-        return {
-          id: b.id,
-          name: b.name,
-          role: b.role,
-          content: b.content,
-          position: structuralMarker ? 'relative' : b.position,
-          depth: structuralMarker ? 0 : b.depth,
-          order: b.order,
-          marker: markerKey
-        }
-      })
-    ]
-
-    // 确保所有材料插槽在 history 和 task 之前
-    for (const marker of PROMPT_MARKERS) {
-      if (marker !== 'history' && marker !== 'task' && !definitions.some((d) => d.marker === marker)) {
-        const historyIndex = definitions.findIndex((d) => d.marker === 'history')
-        if (historyIndex >= 0) {
-          definitions.splice(historyIndex, 0, { id: `marker.${marker}`, name: marker, role: 'user', marker })
-        } else {
-          const taskIndex = definitions.findIndex((d) => d.marker === 'task')
-          if (taskIndex >= 0) {
-            definitions.splice(taskIndex, 0, { id: `marker.${marker}`, name: marker, role: 'user', marker })
-          } else {
-            definitions.push({ id: `marker.${marker}`, name: marker, role: 'user', marker })
+        .slice()
+        .sort((a, b) => a.order - b.order)
+        .filter((b) => b.id !== 'core' && b.id !== `task.${task}`)
+        .map((b) => {
+          const markerKey = b.marker ? (b.marker.startsWith('marker.') ? b.marker.slice(7) : b.marker) as PromptMarker : undefined
+          return {
+            id: b.id,
+            name: b.name,
+            role: b.role,
+            content: b.content,
+            position: b.position,
+            depth: b.depth,
+            order: b.order,
+            marker: markerKey
           }
-        }
-      }
-    }
-    if (!definitions.some((d) => d.marker === 'history')) {
-      const taskIndex = definitions.findIndex((d) => d.marker === 'task')
-      if (taskIndex >= 0) {
-        definitions.splice(taskIndex, 0, { id: 'marker.history', name: 'history', role: 'user', marker: 'history' })
-      } else {
-        definitions.push({ id: 'marker.history', name: 'history', role: 'user', marker: 'history' })
-      }
-    }
-    if (!definitions.some((d) => d.marker === 'task')) {
-      definitions.push({ id: 'marker.task', name: 'task', role: 'user', marker: 'task' })
-    }
-    return definitions
+        })
+    ]
   }
 
   // 3. 回退状态：未配置预设或全部关闭时使用内置协议
@@ -119,10 +89,11 @@ export function compilePromptMessages(
   const history = input.materials?.history ?? []
   const inChatDefinitions = definitions.filter((entry) => entry.position === 'in_chat')
   const emittedMarkers = new Set<string>()
+  const declaredMarkers = new Set(definitions.map((d) => d.marker).filter(Boolean) as string[])
 
-  const emitPendingMaterials = () => {
+  const emitUndeclaredMaterials = () => {
     for (const marker of PROMPT_MARKERS) {
-      if (marker !== 'history' && marker !== 'task' && !emittedMarkers.has(marker)) {
+      if (marker !== 'history' && marker !== 'task' && !declaredMarkers.has(marker) && !emittedMarkers.has(marker)) {
         const mat = input.materials?.[marker]
         if (mat && mat.length > 0) {
           messages.push(...mat)
@@ -132,43 +103,57 @@ export function compilePromptMessages(
     }
   }
 
+  const emitHistoryAndInChat = () => {
+    emitUndeclaredMaterials()
+    emittedMarkers.add('history')
+    for (let index = 0; index <= history.length; index++) {
+      const atPosition = inChatDefinitions
+        .filter((entry) => Math.max(0, history.length - (entry.depth ?? 0)) === index)
+        .sort((a, b) => (a.order ?? 0) - (b.order ?? 0))
+      for (const entry of atPosition) {
+        if (entry.content && entry.content.trim()) messages.push({ role: entry.role, content: entry.content })
+        if (entry.marker && !emittedMarkers.has(entry.marker)) {
+          const mat = input.materials?.[entry.marker]
+          if (mat && mat.length > 0) {
+            messages.push(...mat)
+            emittedMarkers.add(entry.marker)
+          }
+        }
+      }
+      if (history[index]) messages.push(history[index])
+    }
+  }
+
   for (const definition of definitions) {
     if (definition.position === 'in_chat') continue
 
     if (definition.marker === 'history') {
-      emitPendingMaterials()
-      emittedMarkers.add('history')
-      if (definition.content && definition.content.trim()) messages.push({ role: definition.role, content: definition.content })
-      for (let index = 0; index <= history.length; index++) {
-        const atPosition = inChatDefinitions
-          .filter((entry) => Math.max(0, history.length - (entry.depth ?? 0)) === index)
-          .sort((a, b) => (a.order ?? 0) - (b.order ?? 0))
-        for (const entry of atPosition) {
-          if (entry.content && entry.content.trim()) messages.push({ role: entry.role, content: entry.content })
-          if (entry.marker && !emittedMarkers.has(entry.marker)) {
-            const mat = input.materials?.[entry.marker]
-            if (mat) {
-              messages.push(...mat)
-              emittedMarkers.add(entry.marker)
-            }
-          }
-        }
-        if (history[index]) messages.push(history[index])
-      }
-    } else if (definition.marker === 'task') {
-      emitPendingMaterials()
-      emittedMarkers.add('task')
+      emitUndeclaredMaterials()
       if (definition.content && definition.content.trim()) {
         messages.push({ role: definition.role, content: definition.content })
       }
-      messages.push({ role: 'user', content: authorTaskMessage(input) })
+      emitHistoryAndInChat()
+    } else if (definition.marker === 'task') {
+      // 若预设未声明 history 插槽但传入了历史正文，在任务前保底补发历史与未声明材料
+      if (!declaredMarkers.has('history') && history.length > 0 && !emittedMarkers.has('history')) {
+        emitHistoryAndInChat()
+      } else {
+        emitUndeclaredMaterials()
+      }
+      if (definition.content && definition.content.trim()) {
+        messages.push({ role: definition.role, content: definition.content })
+      }
+      if (!emittedMarkers.has('task')) {
+        messages.push({ role: 'user', content: authorTaskMessage(input) })
+        emittedMarkers.add('task')
+      }
     } else {
       if (definition.content && definition.content.trim()) {
         messages.push({ role: definition.role, content: definition.content })
       }
       if (definition.marker && !emittedMarkers.has(definition.marker)) {
         const mat = input.materials?.[definition.marker]
-        if (mat) {
+        if (mat && mat.length > 0) {
           messages.push(...mat)
           emittedMarkers.add(definition.marker)
         }
@@ -176,11 +161,15 @@ export function compilePromptMessages(
     }
   }
 
-  emitPendingMaterials()
-  if (!emittedMarkers.has('history') && history.length > 0) {
-    messages.push(...history)
-    emittedMarkers.add('history')
+  // 保底：若预设未声明 history 且历史正文尚未发射
+  if (!emittedMarkers.has('history')) {
+    if (history.length > 0 || inChatDefinitions.length > 0) {
+      emitHistoryAndInChat()
+    } else {
+      emitUndeclaredMaterials()
+    }
   }
+  // 保底：若预设完全未声明 task 插槽，在最后补发任务指令
   if (!emittedMarkers.has('task')) {
     messages.push({ role: 'user', content: authorTaskMessage(input) })
   }

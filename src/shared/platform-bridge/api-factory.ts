@@ -1,3 +1,4 @@
+import { ApplySummaryOutlineInputSchema, ExportSummaryInputSchema } from '../contracts/book-summary'
 /**
  * src/shared/platform-bridge/api-factory.ts
  *
@@ -424,6 +425,8 @@ export function createNovelAgentApi(transport: IpcTransport): NovelAgentApi {
       clearDetailedLogs: () => invokeApi(transport, 'diagnostics.clearDetailedLogs', undefined, z.undefined(), SuccessResultSchema)
     },
     analysis: {
+      exportSummary: (input) => invokeApi(transport, 'analysis.exportSummary', input, ExportSummaryInputSchema, ExportProjectResultSchema.nullable()),
+      applyOutline: (input) => invokeApi(transport, 'analysis.applyOutline', input, ApplySummaryOutlineInputSchema, BookOutlineSchema),
       start: (input) => invokeApi(transport, 'analysis.start', input, StartAnalysisInputSchema, StartAnalysisResultSchema),
       cancel: (input) => invokeApi(transport, 'analysis.cancel', input, CancelTaskInputSchema, SuccessResultSchema),
       pause: (input) => invokeApi(transport, 'analysis.pause', input, CancelTaskInputSchema, SuccessResultSchema),

@@ -27,6 +27,7 @@ import type { ContextAssembler } from './context-assembler'
 import { compilePromptMessages } from './prompt-runtime.js'
 import type { PromptSettingsStore } from './prompt-store.js'
 import { parseChapterOutlineOutput, parseCreationOutput, parseDirectionOutput } from './output-parser.js'
+import { resolvePresetTools } from './prompt-preset.js'
 import type { SearchIndex } from './search-index'
 import { createStreamThrottler } from './stream-throttle'
 
@@ -666,6 +667,9 @@ export class ChatService {
       if (!contextPackage.messages?.length) throw new ProjectError('STALE_CONTEXT_PACKAGE', '会话上下文缺少实际消息，请重新发起任务')
       const messages = contextPackage.messages
 
+      const preset = contextPackage.promptSnapshot.activePreset
+      const resolvedTools = resolvePresetTools(preset, contextPackage.stage)
+
       const stream = this.modelGateway.chatCompletionStream({
         connectionId,
         taskType: 'chat',
@@ -673,6 +677,8 @@ export class ChatService {
         messages,
         maxTokens: contextPackage.promptSnapshot.budget?.maxOutputTokens,
         requestBudget: contextPackage.promptSnapshot.budget,
+        tools: resolvedTools?.tools,
+        toolChoice: resolvedTools?.toolChoice,
         signal: controller.signal,
         isContentRequest: true
       })
@@ -682,8 +688,17 @@ export class ChatService {
           throttler.flush()
           return
         }
-        if (chunk.text) {
-          fullText += chunk.text
+        let argDelta = ''
+        if (chunk.toolCalls && chunk.toolCalls.length > 0) {
+          for (const tc of chunk.toolCalls) {
+            if (tc.function?.arguments) {
+              argDelta += tc.function.arguments
+            }
+          }
+        }
+        const deltaText = (chunk.text || '') + (argDelta || '')
+        if (deltaText) {
+          fullText += deltaText
           startCheckpointing()
         }
         if (chunk.usage?.totalTokens) {
@@ -693,7 +708,7 @@ export class ChatService {
         throttler.push({
           chatSessionId,
           messageId,
-          delta: chunk.text || '',
+          delta: deltaText || '',
           fullText,
           state: 'streaming'
         })
@@ -755,6 +770,13 @@ export class ChatService {
     } else if (state === 'completed' && contextPackage.stage === 'content') {
       fullText = parseCreationOutput(fullText).content
       if (!fullText.trim()) state = 'failed'
+    } else if (state === 'completed') {
+      const parsed = parseCreationOutput(fullText)
+      if (parsed.content) {
+        fullText = parsed.comment ? `${parsed.content}\n\n${parsed.comment}` : parsed.content
+      } else if (parsed.comment) {
+        fullText = parsed.comment
+      }
     }
 
     try {

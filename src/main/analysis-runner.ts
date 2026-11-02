@@ -27,6 +27,7 @@ import type { ConnectionStore } from './connection-store'
 import type { SearchIndex } from './search-index'
 import { assertPromptSnapshotFresh, compilePromptMessages } from './prompt-runtime.js'
 import type { PromptSettingsStore } from './prompt-store.js'
+import { assertBookSummaryCurrent, planBookSummary, runBookSummary, summaryPlanOf } from './book-summary'
 
 const AnalysisScopeSchema = StartAnalysisInputSchema.shape.scope.extend({
   instruction: z.string(),
@@ -161,11 +162,6 @@ const StyleFinalOutputSchema = z.object({
   formula: z.string().default('')
 })
 
-const BookSummaryOutputSchema = z.object({
-  summary: z.string().default(''),
-  state: RollingAnalysisStateSchema.optional()
-})
-
 const RollingSynopsisStepOutputSchema = z.object({
   mainline: z.string().optional(),
   synopsis: z.string().default('')
@@ -277,7 +273,17 @@ export class AnalysisRunner {
     const promptSnapshot = this.promptStore.snapshot(this.connectionStore.get(connectionId))
     const instruction = this.resolveInstruction(input.sessionId, input)
 
-    const isPipeline = input.type === 'style_distill' || input.type === 'book_summary'
+    if (input.type === 'book_summary') {
+      if (input.scope.all === false || input.scope.chapterIds?.length) throw new ProjectError('VALIDATION_ERROR', '全书总结只支持整本正文，请使用 scope.all=true 且不传 chapterIds')
+      const summaryPlan = planBookSummary(this.store, input.sessionId, promptSnapshot, instruction, input.scope.segmentSize, input.scope.stageSize)
+      const task = this.store.createTask(input.sessionId, input.type,
+        JSON.stringify({ ...input.scope, all: true, instruction, promptSnapshot, summaryPlan }), connectionId,
+        summaryPlan.steps.map(() => null))
+      void this.runTask(input.sessionId, task.id)
+      return { taskId: task.id }
+    }
+
+    const isPipeline = input.type === 'style_distill'
     const segments = isPipeline
       ? targetChapterRows.flatMap((chapter) => {
           const segmentSize = Math.max(1000, input.scope.segmentSize ?? 50000)
@@ -299,7 +305,7 @@ export class AnalysisRunner {
       input.type,
       JSON.stringify(taskScope),
       connectionId,
-      ['knowledge', 'style_distill', 'book_summary'].includes(input.type) ? taskChapterIds : []
+      ['knowledge', 'style_distill'].includes(input.type) ? taskChapterIds : []
     )
 
     void this.runTask(input.sessionId, task.id)
@@ -337,7 +343,8 @@ export class AnalysisRunner {
       throw new ProjectError('INVALID_STATE_TRANSITION', '只有中断或失败的任务可以恢复')
     }
 
-    this.assertTaskSnapshotFresh(task)
+    this.assertTaskSnapshotFresh(input.sessionId, task)
+    if (task.type === 'book_summary' && task.steps.some(s => s.state === 'failed')) this.store.retryFailedTask(input.sessionId, input.taskId)
 
     this.store.updateTask(input.sessionId, input.taskId, {
       state: 'queued',
@@ -351,7 +358,7 @@ export class AnalysisRunner {
 
   async retryStep(input: RetryStepInput): Promise<TaskSummary> {
     this.store.assertTaskControls(input.sessionId)
-    this.assertTaskSnapshotFresh(this.store.getTask(input.sessionId, input.taskId))
+    this.assertTaskSnapshotFresh(input.sessionId, this.store.getTask(input.sessionId, input.taskId))
     const summary = this.store.retryTaskStep(input.sessionId, input.taskId, input.stepId)
     void this.runTask(input.sessionId, input.taskId)
     return summary
@@ -359,7 +366,12 @@ export class AnalysisRunner {
 
   async retryTask(input: GetTaskInput): Promise<TaskSummary> {
     this.store.assertTaskControls(input.sessionId)
-    this.assertTaskSnapshotFresh(this.store.getTask(input.sessionId, input.taskId))
+    const task = this.store.getTask(input.sessionId, input.taskId)
+    this.assertTaskSnapshotFresh(input.sessionId, task)
+    if (task.type === 'book_summary' && task.state === 'failed') {
+      await this.resumeTask(input)
+      return this.store.getTask(input.sessionId, input.taskId)
+    }
     const summary = this.store.retryFailedTask(input.sessionId, input.taskId)
     void this.runTask(input.sessionId, input.taskId)
     return summary
@@ -367,7 +379,7 @@ export class AnalysisRunner {
 
   async skipStep(input: SkipStepInput): Promise<TaskSummary> {
     this.store.assertTaskControls(input.sessionId)
-    this.assertTaskSnapshotFresh(this.store.getTask(input.sessionId, input.taskId))
+    this.assertTaskSnapshotFresh(input.sessionId, this.store.getTask(input.sessionId, input.taskId))
     const summary = this.store.skipTaskStep(input.sessionId, input.taskId, input.stepId)
     void this.runTask(input.sessionId, input.taskId)
     return summary
@@ -383,6 +395,8 @@ export class AnalysisRunner {
     const completedSteps = task.steps.filter((s) => s.state === 'completed' || s.state === 'skipped').length
     const failedSteps = task.steps.filter((s) => s.state === 'failed').length
     const runningStep = task.steps.find((s) => s.state === 'running')
+    const planned = task.type === 'book_summary' && runningStep
+      ? summaryPlanOf(task)?.steps[runningStep.position] : undefined
     const percent = totalSteps === 0 ? 100 : Math.round((completedSteps / totalSteps) * 100)
 
     return {
@@ -392,6 +406,8 @@ export class AnalysisRunner {
       completedSteps,
       failedSteps,
       currentStepPosition: runningStep?.position,
+      currentStepKind: planned?.kind,
+      currentStepTitle: planned?.title,
       currentChapterId: runningStep?.chapterId ?? undefined,
       currentChapterTitle: runningStep?.chapterTitle ?? undefined,
       inputTokens: task.inputTokens ?? undefined,
@@ -421,11 +437,12 @@ export class AnalysisRunner {
     }
   }
 
-  private assertTaskSnapshotFresh(task: TaskDetail): void {
+  private assertTaskSnapshotFresh(sessionId: string, task: TaskDetail): void {
     if (!task.connectionId || !this.connectionStore) {
       throw new ProjectError('CONNECTION_NOT_FOUND', '分析任务未绑定模型连接，请重新发起分析')
     }
     assertPromptSnapshotFresh(this.promptStore, this.taskScope(task).promptSnapshot, this.connectionStore.get(task.connectionId))
+    if (task.type === 'book_summary') assertBookSummaryCurrent(this.store, sessionId, task)
   }
 
   private getRollingStateLimit(snapshot: PromptSnapshot): number {
@@ -439,19 +456,6 @@ export class AnalysisRunner {
     if (!checkpointJson) return { ...EMPTY_ROLLING_STATE }
     try {
       return normalizeRollingState(JSON.parse(checkpointJson), maxChars)
-    } catch {
-      return { ...EMPTY_ROLLING_STATE }
-    }
-  }
-
-  private pipelineStateBeforeStep(task: TaskDetail, position: number, maxChars: number): RollingAnalysisState {
-    const previous = task.steps
-      .filter((candidate) => candidate.position < position && candidate.state === 'completed')
-      .at(-1)
-    if (!previous?.checkpointJson) return { ...EMPTY_ROLLING_STATE }
-    try {
-      const checkpoint = JSON.parse(previous.checkpointJson) as { state?: unknown }
-      return normalizeRollingState(checkpoint.state, maxChars)
     } catch {
       return { ...EMPTY_ROLLING_STATE }
     }
@@ -654,6 +658,12 @@ export class AnalysisRunner {
       task = this.store.getTask(sessionId, taskId)
       this.emitProgress(task, true)
 
+      if (task.type === 'book_summary') {
+        await runBookSummary(this.store, this.modelGateway, sessionId, taskId, snapshot, scope.instruction, controller.signal,
+          current => this.emitProgress(current, true))
+        return
+      }
+
       let totalInputTokens = task.inputTokens ?? 0
       let totalOutputTokens = task.outputTokens ?? 0
 
@@ -789,7 +799,7 @@ export class AnalysisRunner {
             resultState: commitRes.resultState,
             checkpointJson: JSON.stringify(rollingState)
           })
-        } else if ((task.type === 'style_distill' || task.type === 'book_summary') && step.chapterId) {
+        } else if (task.type === 'style_distill' && step.chapterId) {
           const chapter = this.store.read(sessionId, (database) => {
             return database.prepare('SELECT id, title, content, version FROM chapter WHERE id = ? AND deleted_at IS NULL').get(step.chapterId) as {
               id: string
@@ -812,75 +822,31 @@ export class AnalysisRunner {
             ? `${chapter.title}（片段 ${segment.segmentIndex}/${segment.segmentTotal}）`
             : chapter.title
           const instruction = scope.instruction
-          const pipelineStateLimit = this.getRollingStateLimit(snapshot)
-          const previousPipelineState = this.pipelineStateBeforeStep(task, step.position, pipelineStateLimit)
-          if (task.type === 'style_distill') {
-            const userPrompt = [
-              instruction.trim() ? `【用户预设要求】\n${instruction.trim()}` : '',
-              `【章节片段】${segmentTitle}`,
-              `【正文】\n${source}`,
-              '按结构化结果返回 formula 和 observations。'
-            ].filter(Boolean).join('\n\n')
+          const userPrompt = [
+            instruction.trim() ? `【用户预设要求】\n${instruction.trim()}` : '',
+            `【章节片段】${segmentTitle}`,
+            `【正文】\n${source}`,
+            '按结构化结果返回 formula 和 observations。'
+          ].filter(Boolean).join('\n\n')
 
-            const result = await this.modelGateway.generateStructuredJson({
-              connectionId,
-              messages: compilePromptMessages('distill_segment', { instruction: userPrompt }, snapshot),
-              maxTokens: snapshot.budget?.maxOutputTokens,
-              requestBudget: snapshot.budget,
-              zodSchema: StyleSegmentOutputSchema,
-              jsonSchema: z.toJSONSchema(StyleSegmentOutputSchema),
-              signal: controller.signal,
-              priority: 'low'
-            })
-            totalInputTokens += result.usage?.promptTokens ?? 0
-            totalOutputTokens += result.usage?.completionTokens ?? 0
-            this.store.updateTask(sessionId, taskId, { inputTokens: totalInputTokens, outputTokens: totalOutputTokens })
-            this.store.updateTaskStep(sessionId, step.id, {
-              state: 'completed',
-              resultState: 'current',
-              checkpointJson: JSON.stringify({ title: segmentTitle, charCount: source.length, formula: result.data.formula, observations: result.data.observations })
-            })
-          } else {
-            const userPrompt = [
-              `【前文连续状态】\n${formatRollingState(previousPipelineState)}`,
-              instruction.trim() ? `【用户预设要求】\n${instruction.trim()}` : '',
-              `【章节片段】${segmentTitle}`,
-              `【正文】\n${source}`,
-              '按结构化结果返回 summary 和 state。'
-            ].filter(Boolean).join('\n\n')
-
-            const result = await this.modelGateway.generateStructuredJson({
-              connectionId,
-              messages: compilePromptMessages('summary_segment', { instruction: userPrompt }, snapshot),
-              maxTokens: snapshot.budget?.maxOutputTokens,
-              requestBudget: snapshot.budget,
-              zodSchema: BookSummaryOutputSchema,
-              jsonSchema: z.toJSONSchema(BookSummaryOutputSchema),
-              signal: controller.signal,
-              priority: 'low'
-            })
-            totalInputTokens += result.usage?.promptTokens ?? 0
-            totalOutputTokens += result.usage?.completionTokens ?? 0
-            this.store.updateTask(sessionId, taskId, { inputTokens: totalInputTokens, outputTokens: totalOutputTokens })
-            const nextState = await this.compressRollingState(
-              connectionId,
-              { ...previousPipelineState, ...(result.data.state ?? {}), mainline: result.data.state?.mainline || result.data.summary },
-              previousPipelineState,
-              pipelineStateLimit,
-              controller.signal,
-              snapshot,
-              (usage) => {
-                totalInputTokens += usage.promptTokens
-                totalOutputTokens += usage.completionTokens
-                this.store.updateTask(sessionId, taskId, { inputTokens: totalInputTokens, outputTokens: totalOutputTokens })
-              }
-            )
-            this.store.updateTaskStep(sessionId, step.id, {
-              state: 'completed',
-              resultState: 'current',
-              checkpointJson: JSON.stringify({ title: segmentTitle, charCount: source.length, summary: result.data.summary, state: nextState })
-            })
-          }
+          const result = await this.modelGateway.generateStructuredJson({
+            connectionId,
+            messages: compilePromptMessages('distill_segment', { instruction: userPrompt }, snapshot),
+            maxTokens: snapshot.budget?.maxOutputTokens,
+            requestBudget: snapshot.budget,
+            zodSchema: StyleSegmentOutputSchema,
+            jsonSchema: z.toJSONSchema(StyleSegmentOutputSchema),
+            signal: controller.signal,
+            priority: 'low'
+          })
+          totalInputTokens += result.usage?.promptTokens ?? 0
+          totalOutputTokens += result.usage?.completionTokens ?? 0
+          this.store.updateTask(sessionId, taskId, { inputTokens: totalInputTokens, outputTokens: totalOutputTokens })
+          this.store.updateTaskStep(sessionId, step.id, {
+            state: 'completed',
+            resultState: 'current',
+            checkpointJson: JSON.stringify({ title: segmentTitle, charCount: source.length, formula: result.data.formula, observations: result.data.observations })
+          })
         } else if (task.type === 'report') {
           // Literary report analysis
           const chapters = this.store.read(sessionId, (database) => {
@@ -1030,7 +996,7 @@ export class AnalysisRunner {
           } catch (error) {
             if (error instanceof ProjectError && ['MODEL_CONTEXT_EXCEEDED', 'STALE_CONTEXT_PACKAGE', 'VERSION_CONFLICT', 'CONNECTION_NOT_FOUND', 'TASK_CANCELLED'].includes(error.code)) throw error
           }
-        } else if (task.type === 'style_distill' || task.type === 'book_summary') {
+        } else if (task.type === 'style_distill') {
           const checkpointText = refreshedTask.steps
             .filter((s) => s.state === 'completed' && s.checkpointJson)
             .map((s) => {
@@ -1053,26 +1019,12 @@ export class AnalysisRunner {
             stageChars += itemChars
           }
           if (stage.length > 0) stages.push(stage)
-          if (task.type === 'style_distill') {
-            const stageFormulas: string[] = []
-            for (const items of stages) {
-              const result = await this.modelGateway.generateStructuredJson({
-                connectionId,
-                messages: compilePromptMessages('distill_stage', { instruction: [scope.instruction, JSON.stringify(items)].filter(Boolean).join('\n\n') }, snapshot),
-                maxTokens: snapshot.budget?.maxOutputTokens,
-                requestBudget: snapshot.budget,
-                zodSchema: StyleFinalOutputSchema,
-                jsonSchema: z.toJSONSchema(StyleFinalOutputSchema),
-                signal: controller.signal,
-                priority: 'low'
-              })
-              totalInputTokens += result.usage?.promptTokens ?? 0
-              totalOutputTokens += result.usage?.completionTokens ?? 0
-              stageFormulas.push(result.data.formula || result.data.prompt)
-            }
+
+          const stageFormulas: string[] = []
+          for (const items of stages) {
             const result = await this.modelGateway.generateStructuredJson({
               connectionId,
-              messages: compilePromptMessages('distill_master', { instruction: [scope.instruction, stageFormulas.join('\n\n--- 阶段公式 ---\n\n')].filter(Boolean).join('\n\n') }, snapshot),
+              messages: compilePromptMessages('distill_stage', { instruction: [scope.instruction, JSON.stringify(items)].filter(Boolean).join('\n\n') }, snapshot),
               maxTokens: snapshot.budget?.maxOutputTokens,
               requestBudget: snapshot.budget,
               zodSchema: StyleFinalOutputSchema,
@@ -1082,42 +1034,22 @@ export class AnalysisRunner {
             })
             totalInputTokens += result.usage?.promptTokens ?? 0
             totalOutputTokens += result.usage?.completionTokens ?? 0
-            this.store.updateTask(sessionId, taskId, { inputTokens: totalInputTokens, outputTokens: totalOutputTokens })
-            this.saveStyleSample(sessionId, `# 文风提示词\n\n${result.data.prompt}\n\n# 文风公式书\n\n${result.data.formula}`, taskId)
-          } else {
-            const stageSummaries: string[] = []
-            for (const items of stages) {
-              const result = await this.modelGateway.generateStructuredJson({
-                connectionId,
-                messages: compilePromptMessages('summary_stage', { instruction: [scope.instruction, JSON.stringify(items)].filter(Boolean).join('\n\n') }, snapshot),
-                maxTokens: snapshot.budget?.maxOutputTokens,
-                requestBudget: snapshot.budget,
-                zodSchema: BookSummaryOutputSchema,
-                jsonSchema: z.toJSONSchema(BookSummaryOutputSchema),
-                signal: controller.signal,
-                priority: 'low'
-              })
-              totalInputTokens += result.usage?.promptTokens ?? 0
-              totalOutputTokens += result.usage?.completionTokens ?? 0
-              stageSummaries.push(result.data.summary)
-            }
-            const result = await this.modelGateway.generateStructuredJson({
-              connectionId,
-              messages: compilePromptMessages('summary_master', { instruction: [scope.instruction, stageSummaries.join('\n\n--- 阶段总结 ---\n\n')].filter(Boolean).join('\n\n') }, snapshot),
-              maxTokens: snapshot.budget?.maxOutputTokens,
-              requestBudget: snapshot.budget,
-              zodSchema: SynopsisOutputSchema,
-              jsonSchema: z.toJSONSchema(SynopsisOutputSchema),
-              signal: controller.signal,
-              priority: 'low'
-            })
-            totalInputTokens += result.usage?.promptTokens ?? 0
-            totalOutputTokens += result.usage?.completionTokens ?? 0
-            this.store.updateTask(sessionId, taskId, { inputTokens: totalInputTokens, outputTokens: totalOutputTokens })
-            const versionsRecord: Record<string, number> = {}
-            this.store.listChapterSummaries(sessionId).forEach((s) => { versionsRecord[s.chapterId] = s.chapterVersion })
-            this.store.commitBookSynopsis(sessionId, result.data.synopsis, JSON.stringify(versionsRecord), taskId)
+            stageFormulas.push(result.data.formula || result.data.prompt)
           }
+          const result = await this.modelGateway.generateStructuredJson({
+            connectionId,
+            messages: compilePromptMessages('distill_master', { instruction: [scope.instruction, stageFormulas.join('\n\n--- 阶段公式 ---\n\n')].filter(Boolean).join('\n\n') }, snapshot),
+            maxTokens: snapshot.budget?.maxOutputTokens,
+            requestBudget: snapshot.budget,
+            zodSchema: StyleFinalOutputSchema,
+            jsonSchema: z.toJSONSchema(StyleFinalOutputSchema),
+            signal: controller.signal,
+            priority: 'low'
+          })
+          totalInputTokens += result.usage?.promptTokens ?? 0
+          totalOutputTokens += result.usage?.completionTokens ?? 0
+          this.store.updateTask(sessionId, taskId, { inputTokens: totalInputTokens, outputTokens: totalOutputTokens })
+          this.saveStyleSample(sessionId, `# 文风提示词\n\n${result.data.prompt}\n\n# 文风公式书\n\n${result.data.formula}`, taskId)
         }
 
         this.store.updateTask(sessionId, taskId, {
@@ -1140,22 +1072,26 @@ export class AnalysisRunner {
       try {
         const task = this.store.getTask(sessionId, taskId)
         const paused = task.state === 'interrupted'
+        const resumed = task.state === 'queued' && controller.signal.aborted
         const runningStep = task.steps.find((s) => s.state === 'running')
         if (runningStep) {
           this.store.updateTaskStep(sessionId, runningStep.id, {
-            state: paused ? 'pending' : isAbort ? 'skipped' : 'failed'
+            state: paused || resumed ? 'pending' : isAbort ? 'skipped' : 'failed'
           })
         }
         this.store.updateTask(sessionId, taskId, {
-          state: paused ? 'interrupted' : isAbort ? 'cancelled' : 'failed',
+          state: resumed ? 'queued' : paused ? 'interrupted' : isAbort ? 'cancelled' : 'failed',
           errorCode: paused || isAbort ? null : errorCode,
           errorMessage: paused || isAbort ? null : errorMessage,
-          completedAt: paused ? null : isAbort ? Date.now() : null
+          completedAt: paused || resumed ? null : isAbort ? Date.now() : null
         })
         this.emitProgress(this.store.getTask(sessionId, taskId), true)
       } catch {}
     } finally {
       this.activeTasks.delete(taskId)
+      try {
+        if (this.store.getTask(sessionId, taskId).state === 'queued') void this.runTask(sessionId, taskId)
+      } catch {}
     }
   }
 

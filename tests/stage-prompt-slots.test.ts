@@ -186,4 +186,99 @@ describe('酒馆预设与任务插槽编译入口', () => {
     expect(promptTask('chat', 'reviewed')).toBe('chat')
     expect(promptTask('polish', 'content')).toBe('polish')
   })
+
+  it('显式声明的资料插槽按其 order 精确注入，位于历史之后的插槽绝不被提前倾倒', () => {
+    const preset: NovelPromptPreset = {
+      id: 'preset-order-faithful',
+      name: '插槽精确拓扑预设',
+      blocks: [
+        { id: 'b0', name: '顶层设定', role: 'system', content: '顶层说明', enabled: true, position: 'relative', depth: 0, order: 0 },
+        { id: 'b-know', name: '设定插槽', role: 'user', content: '', enabled: true, position: 'relative', depth: 0, order: 5, marker: 'marker.knowledge' },
+        { id: 'b-hist', name: '历史插槽', role: 'user', content: '', enabled: true, position: 'relative', depth: 0, order: 10, marker: 'marker.history' },
+        { id: 'b-post', name: '历史后置规则', role: 'system', content: '【Post-History 强约束规则】', enabled: true, position: 'relative', depth: 0, order: 15 },
+        { id: 'b-style', name: '风格样本插槽', role: 'user', content: '', enabled: true, position: 'relative', depth: 0, order: 20, marker: 'marker.style_samples' },
+        { id: 'b-task', name: '任务插槽', role: 'user', content: '', enabled: true, position: 'relative', depth: 0, order: 25, marker: 'marker.task' }
+      ],
+      createdAt: 1,
+      updatedAt: 1
+    }
+
+    const messages = compilePromptMessages('continue', {
+      instruction: '正文任务指令',
+      materials: {
+        knowledge: [{ role: 'user', content: '设定正文:掌天瓶' }],
+        history: [{ role: 'user', content: '前文正文:修仙第一步' }],
+        style_samples: [{ role: 'user', content: '风格范文:沉稳内敛' }]
+      }
+    }, snapshotWithPreset(preset))
+
+    const contents = messages.map((m) => m.content)
+    const knowIdx = contents.indexOf('设定正文:掌天瓶')
+    const histIdx = contents.indexOf('前文正文:修仙第一步')
+    const postIdx = contents.indexOf('【Post-History 强约束规则】')
+    const styleIdx = contents.indexOf('风格范文:沉稳内敛')
+    const taskIdx = contents.findIndex((c) => c.includes('正文任务指令'))
+
+    // 严格遵循预设 order: know < hist < post < style < task
+    expect(knowIdx).toBeGreaterThan(0)
+    expect(knowIdx).toBeLessThan(histIdx)
+    expect(postIdx).toBeGreaterThan(histIdx)
+    expect(styleIdx).toBeGreaterThan(postIdx)
+    expect(taskIdx).toBeGreaterThan(styleIdx)
+  })
+
+  it('任务前置拓扑保真：Task 插槽位于 History 之前时，严格保持在 History 之前发射', () => {
+    const preset: NovelPromptPreset = {
+      id: 'preset-task-before-hist',
+      name: 'Task前置预设',
+      blocks: [
+        { id: 'b-guide', name: '引导', role: 'system', content: '写作引导', enabled: true, position: 'relative', depth: 0, order: 1 },
+        { id: 'b-task', name: '任务插槽', role: 'user', content: '', enabled: true, position: 'relative', depth: 0, order: 5, marker: 'marker.task' },
+        { id: 'b-hist', name: '历史插槽', role: 'user', content: '', enabled: true, position: 'relative', depth: 0, order: 10, marker: 'marker.history' }
+      ],
+      createdAt: 1,
+      updatedAt: 1
+    }
+
+    const messages = compilePromptMessages('continue', {
+      instruction: '前置任务指令内容',
+      materials: {
+        history: [{ role: 'user', content: '历史对话' }]
+      }
+    }, snapshotWithPreset(preset))
+
+    const contents = messages.map((m) => m.content)
+    const taskIdx = contents.findIndex((c) => c.includes('前置任务指令内容'))
+    const histIdx = contents.indexOf('历史对话')
+
+    expect(taskIdx).toBeGreaterThan(0)
+    expect(histIdx).toBeGreaterThan(taskIdx)
+  })
+
+  it('预设完全未声明 task 插槽时，在末尾保底补发一次任务指令', () => {
+    const preset: NovelPromptPreset = {
+      id: 'preset-no-task',
+      name: '无Task预设',
+      blocks: [
+        { id: 'b-main', name: '主提示', role: 'system', content: '写小说', enabled: true, position: 'relative', depth: 0, order: 1 },
+        { id: 'b-hist', name: '历史', role: 'user', content: '', enabled: true, position: 'relative', depth: 0, order: 2, marker: 'marker.history' }
+      ],
+      createdAt: 1,
+      updatedAt: 1
+    }
+
+    const messages = compilePromptMessages('continue', {
+      instruction: '保底任务指令',
+      materials: {
+        history: [{ role: 'user', content: '历史内容' }]
+      }
+    }, snapshotWithPreset(preset))
+
+    const contents = messages.map((m) => m.content)
+    const histIdx = contents.indexOf('历史内容')
+    const taskIdx = contents.findIndex((c) => c.includes('保底任务指令'))
+
+    expect(taskIdx).toBeGreaterThan(histIdx)
+    expect(taskIdx).toBe(contents.length - 1)
+  })
 })

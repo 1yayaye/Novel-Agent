@@ -11,7 +11,7 @@ describe('Workflow Guide Banner (Novel Onboarding & Pre-analysis Guidance)', () 
     const html = renderToStaticMarkup(
       React.createElement(WorkflowGuideBanner, {
         totalChapters: 10,
-        summaryCount: 0,
+        hasValidSummary: false,
         reportCount: 0,
         isReadOnly: false,
         onStartKnowledgeAnalysis: handleStartKnowledge,
@@ -32,7 +32,7 @@ describe('Workflow Guide Banner (Novel Onboarding & Pre-analysis Guidance)', () 
     const html = renderToStaticMarkup(
       React.createElement(WorkflowGuideBanner, {
         totalChapters: 5,
-        summaryCount: 5,
+        hasValidSummary: true,
         reportCount: 0,
         isReadOnly: false,
         onStartKnowledgeAnalysis: vi.fn(),
@@ -49,7 +49,7 @@ describe('Workflow Guide Banner (Novel Onboarding & Pre-analysis Guidance)', () 
     const html = renderToStaticMarkup(
       React.createElement(WorkflowGuideBanner, {
         totalChapters: 0,
-        summaryCount: 0,
+        hasValidSummary: false,
         reportCount: 0,
         isReadOnly: false,
         onStartKnowledgeAnalysis: vi.fn(),
@@ -64,7 +64,7 @@ describe('Workflow Guide Banner (Novel Onboarding & Pre-analysis Guidance)', () 
     const html = renderToStaticMarkup(
       React.createElement(WorkflowGuideBanner, {
         totalChapters: 8,
-        summaryCount: 8,
+        hasValidSummary: true,
         reportCount: 1,
         isReadOnly: false,
         onStartKnowledgeAnalysis: vi.fn(),
@@ -79,7 +79,7 @@ describe('Workflow Guide Banner (Novel Onboarding & Pre-analysis Guidance)', () 
     const html = renderToStaticMarkup(
       React.createElement(WorkflowGuideBanner, {
         totalChapters: 12,
-        summaryCount: 0,
+        hasValidSummary: false,
         reportCount: 0,
         isReadOnly: true,
         onStartKnowledgeAnalysis: vi.fn(),

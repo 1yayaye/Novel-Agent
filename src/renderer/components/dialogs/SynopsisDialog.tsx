@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from 'react'
-import { Compass, Sparkles } from 'lucide-react'
+import { Compass, Sparkles, ListTree } from 'lucide-react'
 import { BookSynopsis, ChapterHeader, ChapterSummary } from '../../../shared/project'
 import { errorText, formatDate } from '../../utils/formatters'
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from '@appica/ui-react/dialog'
@@ -14,14 +14,16 @@ export function SynopsisDialog({
   isReadOnly,
   onClose,
   onLaunchNew,
-  onLaunchAnalysis
+  onLaunchAnalysis,
+  onOpenBookSummary
 }: {
   sessionId: string
   chapters: ChapterHeader[]
   isReadOnly: boolean
   onClose: () => void
   onLaunchNew: () => void
-  onLaunchAnalysis?: (type: 'knowledge' | 'report' | 'synopsis') => void
+  onLaunchAnalysis?: (type: 'knowledge' | 'report' | 'synopsis' | 'book_summary') => void
+  onOpenBookSummary?: (taskId: string) => void
 }) {
   const [synopsis, setSynopsis] = useState<BookSynopsis | null>(null)
   const [summaries, setSummaries] = useState<ChapterSummary[]>([])
@@ -64,7 +66,7 @@ export function SynopsisDialog({
               disabled={isReadOnly}
               onClick={() => {
                 if (summaries.length === 0 && onLaunchAnalysis) {
-                  onLaunchAnalysis('knowledge')
+                  onLaunchAnalysis('book_summary')
                 } else {
                   onLaunchNew()
                 }
@@ -96,6 +98,18 @@ export function SynopsisDialog({
                     <Badge variant={synopsis.state === 'current' ? 'primary' : 'secondary'}>
                       {synopsis.state === 'current' ? '最新有效' : '已过时 (有章节变动)'}
                     </Badge>
+                    {onOpenBookSummary && synopsis.analysisTaskId && (
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        className="h-6 text-[11px] text-[#2d6a4f] p-1 gap-1"
+                        onClick={() => onOpenBookSummary(synopsis.analysisTaskId)}
+                        title="查看生成该梗概的全书总结步骤与专项资料"
+                      >
+                        <ListTree size={12} />
+                        <span>查看全书总结资料</span>
+                      </Button>
+                    )}
                     <span className="text-[11px] text-[#7d6b59]">
                       {formatDate(synopsis.createdAt)}
                     </span>

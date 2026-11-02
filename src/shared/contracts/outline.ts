@@ -22,7 +22,7 @@ export type GetBookOutlineInput = z.infer<typeof GetBookOutlineInputSchema>
 export const SaveBookOutlineInputSchema = z.object({
   sessionId: z.string().uuid(),
   content: z.string(),
-  expectedVersion: z.number().int().min(1).optional(),
+  expectedVersion: z.number().int().nonnegative().optional(),
   state: OutlineStateSchema.optional(),
   sourceVersions: z.record(z.string(), z.number().int()).optional()
 })

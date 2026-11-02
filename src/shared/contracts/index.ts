@@ -1,4 +1,6 @@
 import { z } from 'zod'
+import type { ApplySummaryOutlineInput, ExportSummaryInput } from './book-summary'
+export * from './book-summary'
 import type {
   PresetConversionInput, PresetConversionInspection, PresetConversionTaskInput,
   PresetConversionStatus, PresetConversionResult
@@ -324,6 +326,8 @@ export type NovelAgentApi = {
     clearDetailedLogs(): Promise<SuccessResult>
   }
   analysis: {
+    exportSummary(input: ExportSummaryInput): Promise<ExportProjectResult | null>
+    applyOutline(input: ApplySummaryOutlineInput): Promise<BookOutline>
     start(input: StartAnalysisInput): Promise<StartAnalysisResult>
     cancel(input: CancelTaskInput): Promise<SuccessResult>
     pause(input: CancelTaskInput): Promise<SuccessResult>

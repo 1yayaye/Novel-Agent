@@ -6,6 +6,7 @@ import { randomUUID } from 'node:crypto'
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from 'vitest'
 import { ProjectStore } from '../src/main/project-store'
 import { ConnectionStore, calculateContentTargetFingerprint } from '../src/main/connection-store'
+import { SOLIUMBRA_TOOL_NAME } from '../src/shared/prompt-settings'
 import { ModelGateway } from '../src/main/model-gateway'
 import { DiagnosticsService } from '../src/main/diagnostics'
 import { SearchIndex } from '../src/main/search-index'
@@ -431,4 +432,67 @@ describe('ChatService - Q&A, Multi-turn History, Citations & Rolling Summary (SP
     expect(chatService.getSummary({ sessionId, chatSessionId: session.id })).toEqual(summary)
   })
 
+  it('unpacks tool calling JSON response into human-readable assistant content during chat session', async () => {
+    const meowPreset = {
+      id: 'chat-tool-preset',
+      name: 'Meowssiah Chat Test',
+      blocks: [],
+      toolCalling: { enabled: true, name: SOLIUMBRA_TOOL_NAME },
+      createdAt: Date.now(),
+      updatedAt: Date.now()
+    }
+    promptStore.save({ activePresetId: meowPreset.id, presets: [meowPreset] })
+
+    const session = chatService.createSession({ sessionId, title: '工具对话', connectionId: connId })
+
+    requestHandler = (req, res) => {
+      res.writeHead(200, { 'Content-Type': 'text/event-stream' })
+      res.write(`data: ${JSON.stringify({
+        choices: [{
+          delta: {
+            tool_calls: [{
+              index: 0,
+              id: 'call_chat_1',
+              type: 'function',
+              function: {
+                name: SOLIUMBRA_TOOL_NAME,
+                arguments: JSON.stringify({
+                  think_nya: '猫猫思考作者的问题喵',
+                  game_content: '韩立确实持有一个能催熟灵药的绿瓶。',
+                  comment: '主人喵，还有什么关于小瓶的疑问吗喵？'
+                })
+              }
+            }]
+          }
+        }]
+      })}\n\n`)
+      res.write('data: [DONE]\n\n')
+      res.end()
+    }
+
+    const events: ChatDeltaEvent[] = []
+    let doneEvent: ChatDoneEvent | null = null
+    chatService.setCallbacks({
+      onDelta: (ev) => events.push(ev),
+      onDone: (ev) => { doneEvent = ev }
+    })
+
+    await chatService.sendMessage({
+      sessionId,
+      chatSessionId: session.id,
+      content: '韩立有什么宝物？'
+    })
+
+    await new Promise((r) => setTimeout(r, 80))
+
+    const messages = chatService.listMessages({ sessionId, chatSessionId: session.id })
+    const assistantMsg = messages.find((m) => m.role === 'assistant')
+
+    expect(assistantMsg).toBeDefined()
+    expect(assistantMsg?.state).toBe('completed')
+    // Unpacked content should be readable text, not raw JSON
+    expect(assistantMsg?.content).toContain('韩立确实持有一个能催熟灵药的绿瓶。')
+    expect(assistantMsg?.content).not.toContain('{"think_nya"')
+    expect(assistantMsg?.content).not.toContain('"game_content"')
+  })
 })

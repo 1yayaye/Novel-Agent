@@ -27,7 +27,7 @@ export function StartAnalysisDialog({
   initialType?: 'knowledge' | 'report' | 'synopsis' | 'style_distill' | 'book_summary'
   isReadOnly: boolean
   onClose: () => void
-  onStarted: (taskId: string) => void
+  onStarted: (taskId: string, taskType: string) => void
 }) {
   const [taskType, setTaskType] = useState<'knowledge' | 'report' | 'synopsis' | 'style_distill' | 'book_summary'>(initialType)
   const [scopeMode, setScopeMode] = useState<'all' | 'custom'>('all')
@@ -40,7 +40,16 @@ export function StartAnalysisDialog({
   const [selectedPresetId, setSelectedPresetId] = useState('')
   const [presetInstruction, setPresetInstruction] = useState('')
   const [segmentSize, setSegmentSize] = useState('50000')
-  const [stageSize, setStageSize] = useState('1000000')
+  const [stageSize, setStageSize] = useState(initialType === 'book_summary' ? '300000' : '1000000')
+
+  const selectTaskType = (type: 'knowledge' | 'report' | 'synopsis' | 'style_distill' | 'book_summary') => {
+    setTaskType(type)
+    if (type === 'book_summary' && stageSize === '1000000') {
+      setStageSize('300000')
+    } else if (type === 'style_distill' && stageSize === '300000') {
+      setStageSize('1000000')
+    }
+  }
 
   useEffect(() => {
     void (async () => {
@@ -71,7 +80,7 @@ export function StartAnalysisDialog({
   }
 
   const handleStart = async () => {
-    if (scopeMode === 'custom' && selectedChapterIds.length === 0 && taskType !== 'synopsis') {
+    if (taskType !== 'book_summary' && scopeMode === 'custom' && selectedChapterIds.length === 0 && taskType !== 'synopsis') {
       setError('请至少勾选一个章节')
       return
     }
@@ -79,10 +88,14 @@ export function StartAnalysisDialog({
     setError('')
     try {
       const scope = {
-        ...(scopeMode === 'all' ? { all: true } : { chapterIds: selectedChapterIds }),
-        ...(taskType === 'style_distill' || taskType === 'book_summary'
-          ? { segmentSize: Number(segmentSize) || 50000, stageSize: Number(stageSize) || 1000000 }
-          : {})
+        ...(taskType === 'book_summary'
+          ? { all: true, segmentSize: Number(segmentSize) || 50000, stageSize: Number(stageSize) || 300000 }
+          : {
+              ...(scopeMode === 'all' ? { all: true } : { chapterIds: selectedChapterIds }),
+              ...(taskType === 'style_distill'
+                ? { segmentSize: Number(segmentSize) || 50000, stageSize: Number(stageSize) || 1000000 }
+                : {})
+            })
       }
       const res = await window.novelAgent.analysis.start({
         sessionId,
@@ -90,9 +103,12 @@ export function StartAnalysisDialog({
         scope,
         connectionId: selectedConnectionId || undefined,
         presetId: selectedPresetId || undefined,
-        instruction: taskType === 'style_distill' || taskType === 'book_summary' ? presetInstruction : undefined
+        // 空串按契约属"显式指令"，会覆盖预设文本；这里把空串改为不传，让空指令回落到所选指令预设
+        instruction: taskType === 'style_distill' || taskType === 'book_summary'
+          ? (presetInstruction.trim() ? presetInstruction : undefined)
+          : undefined
       })
-      onStarted(res.taskId)
+      onStarted(res.taskId, taskType)
       onClose()
     } catch (err) {
       setError(errorText(err, '启动任务失败'))
@@ -126,7 +142,7 @@ export function StartAnalysisDialog({
                       ? 'border-[#2d6a4f] bg-[#e8f3ee]'
                       : 'border-[#e5ddd3] bg-white hover:border-[#dacdbe]'
                   }`}
-                  onClick={() => setTaskType('knowledge')}
+                  onClick={() => selectTaskType('knowledge')}
                 >
                   <div className="flex items-center gap-2 text-xs font-bold text-[#2c2523]">
                     <Sparkles size={16} className="text-[#2d6a4f]" />
@@ -143,7 +159,7 @@ export function StartAnalysisDialog({
                       ? 'border-[#2d6a4f] bg-[#e8f3ee]'
                       : 'border-[#e5ddd3] bg-white hover:border-[#dacdbe]'
                   }`}
-                  onClick={() => setTaskType('report')}
+                  onClick={() => selectTaskType('report')}
                 >
                   <div className="flex items-center gap-2 text-xs font-bold text-[#2c2523]">
                     <FileBarChart size={16} className="text-[#2d6a4f]" />
@@ -160,7 +176,7 @@ export function StartAnalysisDialog({
                       ? 'border-[#2d6a4f] bg-[#e8f3ee]'
                       : 'border-[#e5ddd3] bg-white hover:border-[#dacdbe]'
                   }`}
-                  onClick={() => setTaskType('synopsis')}
+                  onClick={() => selectTaskType('synopsis')}
                 >
                   <div className="flex items-center gap-2 text-xs font-bold text-[#2c2523]">
                     <Compass size={16} className="text-[#2d6a4f]" />
@@ -173,7 +189,7 @@ export function StartAnalysisDialog({
 
                 <Card
                   className={`flex flex-col gap-2 p-3 text-left transition-colors cursor-pointer border ${taskType === 'style_distill' ? 'border-[#2d6a4f] bg-[#e8f3ee]' : 'border-[#e5ddd3] bg-white hover:border-[#dacdbe]'}`}
-                  onClick={() => setTaskType('style_distill')}
+                  onClick={() => selectTaskType('style_distill')}
                 >
                   <div className="flex items-center gap-2 text-xs font-bold text-[#2c2523]"><WandSparkles size={16} className="text-[#2d6a4f]" /><span>文风蒸馏</span></div>
                   <p className="text-[11px] leading-relaxed text-[#7d6b59]">分段提炼文风公式，合并为可复用写作提示词</p>
@@ -181,7 +197,7 @@ export function StartAnalysisDialog({
 
                 <Card
                   className={`flex flex-col gap-2 p-3 text-left transition-colors cursor-pointer border ${taskType === 'book_summary' ? 'border-[#2d6a4f] bg-[#e8f3ee]' : 'border-[#e5ddd3] bg-white hover:border-[#dacdbe]'}`}
-                  onClick={() => setTaskType('book_summary')}
+                  onClick={() => selectTaskType('book_summary')}
                 >
                   <div className="flex items-center gap-2 text-xs font-bold text-[#2c2523]"><ListTree size={16} className="text-[#2d6a4f]" /><span>全书总结</span></div>
                   <p className="text-[11px] leading-relaxed text-[#7d6b59]">滚动整理主线、人物、世界观、伏笔与时间线</p>
@@ -189,7 +205,16 @@ export function StartAnalysisDialog({
               </div>
             </div>
 
-            {taskType !== 'synopsis' && (
+            {taskType === 'book_summary' && (
+              <div className="flex flex-col gap-1 rounded-xl border border-[#e5ddd3] bg-[#f5efe6] p-3 text-xs text-[#7d6b59]">
+                <span className="font-semibold text-[#2c2523]">分析章节范围：全书所有未删除章节 ({chapters.length} 章)</span>
+                <p className="leading-relaxed text-[11px]">
+                  全书总结固定按正文顺序全量分析，不抽样、不重叠、不截断，无需手动勾选单章。
+                </p>
+              </div>
+            )}
+
+            {taskType !== 'synopsis' && taskType !== 'book_summary' && (
               <div className="flex flex-col gap-2">
                 <label className="text-xs font-semibold text-[#7d6b59]">分析章节范围</label>
                 <div className="flex gap-6 rounded-xl border border-[#e5ddd3] bg-[#f5efe6] p-3 text-xs">

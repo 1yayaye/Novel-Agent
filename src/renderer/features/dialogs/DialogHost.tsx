@@ -23,6 +23,7 @@ import { SuggestionReviewDialog } from '../../components/dialogs/SuggestionRevie
 import { ContextPreviewDialog } from '../../components/dialogs/ContextPreviewDialog'
 import { StartAnalysisDialog } from '../../components/dialogs/StartAnalysisDialog'
 import { ConfirmActionDialog } from '../../components/dialogs/ConfirmActionDialog'
+import { BookSummaryDialog } from '../../components/dialogs/BookSummaryDialog'
 import type { TaskType, ContextPreviewInput } from '../../../shared/project'
 
 type CreationDialogPayload = Partial<Pick<ContextPreviewInput, 'taskType' | 'stage' | 'workflowType' | 'outlineId' | 'outlineVersion' | 'chatSessionId' | 'target' | 'instruction' | 'connectionId'>> & {
@@ -193,7 +194,8 @@ export function DialogHost({
           isReadOnly={isReadOnly}
           onClose={closeDialog}
           onLaunchNew={() => {}}
-          onLaunchAnalysis={() => openDialog('analysis')}
+          onLaunchAnalysis={(type) => openDialog('analysis', { initialType: type || 'book_summary' })}
+          onOpenBookSummary={(taskId) => openDialog('book_summary', { taskId })}
         />
       )}
 
@@ -270,7 +272,26 @@ export function DialogHost({
           initialType={analysisInitialType ?? 'knowledge'}
           isReadOnly={isReadOnly}
           onClose={closeDialog}
-          onStarted={() => closeDialog()}
+          onStarted={(taskId, taskType) => {
+            closeDialog()
+            if (taskType === 'book_summary') {
+              openDialog('book_summary', { taskId })
+            }
+          }}
+        />
+      )}
+
+      {activeDialog === 'book_summary' && (
+        <BookSummaryDialog
+          sessionId={sessionId}
+          taskId={
+            typeof dialogPayload === 'object' && dialogPayload !== null && 'taskId' in dialogPayload
+              ? (dialogPayload as { taskId?: string }).taskId
+              : undefined
+          }
+          isReadOnly={isReadOnly}
+          onClose={closeDialog}
+          onOpenOutlineEditor={() => openDialog('outline')}
         />
       )}
 

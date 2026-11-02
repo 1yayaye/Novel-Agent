@@ -4,7 +4,7 @@ export const PromptTaskSchema = z.enum([
   'continue', 'rewrite', 'polish', 'chat', 'direction', 'chapter_outline', 'content',
   'knowledge', 'report', 'style_distill', 'book_summary', 'synopsis_compress',
   'synopsis_step', 'synopsis_final', 'distill_segment', 'distill_stage', 'distill_master',
-  'summary_segment', 'summary_stage', 'summary_master', 'book_outline', 'chat_summary'
+  'book_outline', 'chat_summary'
 ])
 export type PromptTask = z.infer<typeof PromptTaskSchema>
 export const PresetBlockSchema = z.object({
@@ -51,11 +51,30 @@ export const PresetConversionReportSchema = z.object({
 })
 export type PresetConversionReport = z.infer<typeof PresetConversionReportSchema>
 
+// 预设工具调用的默认工具名。这是整个工具调用链路（schema 默认值、工具定义、导入识别、输出解析）
+// 的唯一事实来源；改名只应发生在这里。
+export const SOLIUMBRA_TOOL_NAME = 'soliumbra_reply'
+
+export const PresetToolCallingSchema = z.object({
+  enabled: z.boolean().default(true),
+  name: z.string().default(SOLIUMBRA_TOOL_NAME),
+  description: z.string().optional(),
+  parameters: z.record(z.string(), z.unknown()).optional(),
+  toolChoice: z.union([
+    z.literal('auto'),
+    z.literal('none'),
+    z.literal('required'),
+    z.object({ type: z.literal('function'), function: z.object({ name: z.string() }) })
+  ]).optional()
+})
+export type PresetToolCalling = z.infer<typeof PresetToolCallingSchema>
+
 export const NovelPromptPresetSchema = z.object({
   id: z.string(),
   name: z.string(),
   description: z.string().optional(),
   blocks: z.array(PresetBlockSchema),
+  toolCalling: PresetToolCallingSchema.optional(),
   conversionReport: PresetConversionReportSchema.optional(),
   createdAt: z.number(),
   updatedAt: z.number()

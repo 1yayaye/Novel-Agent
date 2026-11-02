@@ -1066,7 +1066,7 @@ export class ProjectStore {
     type: string,
     scopeJson: string,
     connectionId: string | null,
-    chapterIds: string[]
+    chapterIds: Array<string | null>
   ): TaskDetail {
     return this.transaction(sessionId, (database) => {
       const now = Date.now()
@@ -1085,10 +1085,10 @@ export class ProjectStore {
       if (chapterIds.length > 0) {
         chapterIds.forEach((chapterId, position) => {
           const stepId = randomUUID()
-          const chapterRow = database
+          const chapterRow = chapterId ? database
             .prepare('SELECT version, title FROM chapter WHERE id = ? AND deleted_at IS NULL')
-            .get(chapterId) as { version: number; title: string } | undefined
-          const version = chapterRow?.version ?? 1
+            .get(chapterId) as { version: number; title: string } | undefined : undefined
+          const version = chapterId ? chapterRow?.version ?? 1 : null
           insertStep.run(stepId, taskId, chapterId, version, position, 'pending', now, now)
           steps.push({
             id: stepId,
@@ -1368,6 +1368,8 @@ export class ProjectStore {
 
   skipTaskStep(sessionId: string, taskId: string, stepId: string): TaskSummary {
     return this.transaction(sessionId, (database) => {
+      const task = database.prepare('SELECT type FROM task WHERE id = ?').get(taskId) as { type: string } | undefined
+      if (task?.type === 'book_summary') throw new ProjectError('INVALID_STATE_TRANSITION', '全书总结必须完成所有步骤，不能跳过')
       const step = database.prepare('SELECT id, task_id, state FROM task_step WHERE id = ? AND task_id = ?').get(stepId, taskId) as { id: string; task_id: string; state: string } | undefined
       if (!step) throw new ProjectError('VALIDATION_ERROR', '步骤不存在')
       if (step.state !== 'failed') throw new ProjectError('INVALID_STATE_TRANSITION', '只有失败的步骤可以跳过')
@@ -2043,6 +2045,15 @@ export class ProjectStore {
     const now = Date.now()
     return this.transaction(sessionId, (db) => {
       const existing = db.prepare('SELECT id, content, source_versions_json, version, state, created_at, updated_at FROM book_outline LIMIT 1').get() as BookOutlineRow | undefined
+      if (input.expectedVersion !== undefined && (existing?.version ?? 0) !== input.expectedVersion) {
+        throw new ProjectError('VERSION_CONFLICT', '全书大纲已变化，请重新载入并比较')
+      }
+      if (input.sourceVersions) {
+        for (const [chapterId, version] of Object.entries(input.sourceVersions)) {
+          const source = db.prepare('SELECT version FROM chapter WHERE id = ? AND deleted_at IS NULL').get(chapterId) as { version: number } | undefined
+          if (source?.version !== version) throw new ProjectError('STALE_CONTEXT_PACKAGE', '大纲来源正文已变化，请重新生成')
+        }
+      }
       const state = input.state ?? (existing?.state === 'confirmed' ? 'confirmed' : 'draft')
       const sourceVersionsJson = JSON.stringify(input.sourceVersions ?? (existing ? parseSourceVersions(existing.source_versions_json) : {}))
 
@@ -2051,10 +2062,6 @@ export class ProjectStore {
         db.prepare('INSERT INTO book_outline(id, content, source_versions_json, version, state, created_at, updated_at) VALUES (?, ?, ?, 1, ?, ?, ?)').run(id, input.content, sourceVersionsJson, state, now, now)
         const row = db.prepare('SELECT id, content, source_versions_json, version, state, created_at, updated_at FROM book_outline WHERE id = ?').get(id) as BookOutlineRow
         return mapBookOutline(row)
-      }
-
-      if (input.expectedVersion !== undefined && existing.version !== input.expectedVersion) {
-        throw new ProjectError('VERSION_CONFLICT', '全书大纲已被其他修改覆盖，请重新载入')
       }
 
       const nextVersion = existing.version + 1

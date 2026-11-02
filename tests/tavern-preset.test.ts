@@ -57,7 +57,7 @@ Stay in character at all times.
     expect(detectBlockMarker({ identifier: 'custom', name: 'Main Style', content: '华丽文风' })).toBeUndefined()
   })
 
-  it('正确解析标准 SillyTavern Preset JSON 并补齐必要插槽', () => {
+  it('正确解析标准 SillyTavern Preset JSON 并忠实保留源结构，不追加虚假插槽', () => {
     const tavernJson = JSON.stringify({
       name: '狐神抚酒馆预设',
       prompts: [
@@ -85,7 +85,8 @@ Stay in character at all times.
 
     const parsed = parseTavernPreset(tavernJson)
     expect(parsed.name).toBe('狐神抚酒馆预设')
-    expect(parsed.blocks.length).toBeGreaterThanOrEqual(2)
+    // 严格保持源定义的 2 个 Block，不再被系统强行 push 虚假插槽
+    expect(parsed.blocks).toHaveLength(2)
 
     // 验证清洗结果
     const mainBlock = parsed.blocks.find((b) => b.name === 'Main Prompt')
@@ -95,16 +96,16 @@ Stay in character at all times.
     expect(mainBlock?.role).toBe('system')
     expect(mainBlock?.position).toBe('relative')
 
-    // 验证 in-chat 深度
+    // 验证 in-chat 深度忠实保留
     const dialogueBlock = parsed.blocks.find((b) => b.name === 'Dialogue Style')
     expect(dialogueBlock).toBeDefined()
     expect(dialogueBlock?.position).toBe('in_chat')
     expect(dialogueBlock?.depth).toBe(2)
 
-    // 验证自动补充缺失的设定库、历史和任务插槽
-    expect(parsed.blocks.some((b) => b.marker === 'marker.knowledge')).toBe(true)
-    expect(parsed.blocks.some((b) => b.marker === 'marker.history')).toBe(true)
-    expect(parsed.blocks.some((b) => b.marker === 'marker.task')).toBe(true)
+    // 验证不擅自增加作者未配置的虚拟插槽
+    expect(parsed.blocks.some((b) => b.name === '设定库资料插槽')).toBe(false)
+    expect(parsed.blocks.some((b) => b.name === '会话与正文历史插槽')).toBe(false)
+    expect(parsed.blocks.some((b) => b.name === '作者任务与指令插槽')).toBe(false)
   })
 
   it('正确解析包含嵌套 character_id 的标准 SillyTavern prompt_order 及其启停开关与排序', () => {
@@ -387,5 +388,169 @@ describe('多预设库管理与装配编译', () => {
     for (const msg of compiled) {
       expect(msg.content.trim().length).toBeGreaterThan(0)
     }
+  })
+
+  it('Post-History Instructions 严格排列在历史记录之后', () => {
+    const preset: NovelPromptPreset = {
+      id: 'p-post-hist',
+      name: 'Post-History 测试预设',
+      blocks: [
+        { id: 'b1', name: 'Main Prompt', role: 'system', content: '【系统主提示】', enabled: true, position: 'relative', depth: 0, order: 0 },
+        { id: 'b2', name: 'Chat History', role: 'user', content: '', enabled: true, position: 'relative', depth: 0, order: 1, marker: 'marker.history' },
+        { id: 'b3', name: 'Post-History Instructions', role: 'system', content: '【必须在历史之后生效的强约束】', enabled: true, position: 'relative', depth: 0, order: 2 },
+        { id: 'b4', name: 'Task', role: 'user', content: '', enabled: true, position: 'relative', depth: 0, order: 3, marker: 'marker.task' }
+      ],
+      createdAt: 1,
+      updatedAt: 1
+    }
+    const store = new PromptSettingsStore()
+    store.save({ activePresetId: 'p-post-hist', presets: [preset] })
+    const snapshot = store.snapshot()
+
+    const messages = compilePromptMessages('continue', {
+      instruction: '请写第2章',
+      materials: {
+        history: [{ role: 'user', content: '第1章前文正文' }]
+      }
+    }, snapshot)
+
+    const contents = messages.map((m) => m.content)
+    const historyIndex = contents.indexOf('第1章前文正文')
+    const postHistIndex = contents.indexOf('【必须在历史之后生效的强约束】')
+    const taskIndex = contents.findIndex((c) => c.includes('请写第2章'))
+
+    expect(historyIndex).toBeGreaterThan(0)
+    expect(postHistIndex).toBeGreaterThan(historyIndex)
+    expect(taskIndex).toBeGreaterThan(postHistIndex)
+  })
+
+  it('Kemini Dramatron 原生顺序保真：Agent Task (order 34) 排在 Chat History (order 35) 之前', () => {
+    const raw = readFileSync(new URL('./fixtures/tavern-presets/Kemini_Dramatron_v3.1.json', import.meta.url), 'utf8')
+    const preset = parseTavernPreset(raw)
+
+    const taskBlock = preset.blocks.find((b) => b.marker === 'marker.task')
+    const historyBlock = preset.blocks.find((b) => b.marker === 'marker.history')
+
+    expect(taskBlock).toBeDefined()
+    expect(historyBlock).toBeDefined()
+    // 验证导入后的原生顺序不被系统逆转或强制移位
+    expect(taskBlock!.order).toBeLessThan(historyBlock!.order)
+
+    // 装配编译验证：Task 消息严格出现在 History 消息之前
+    const store = new PromptSettingsStore()
+    store.save({ activePresetId: preset.id, presets: [preset] })
+    const snapshot = store.snapshot()
+
+    const messages = compilePromptMessages('continue', {
+      instruction: '执行 Kemini 风格任务',
+      materials: {
+        history: [{ role: 'user', content: '前情提要正文' }]
+      }
+    }, snapshot)
+
+    const contents = messages.map((m) => m.content)
+    const taskMsgIndex = contents.findIndex((c) => c.includes('执行 Kemini 风格任务'))
+    const histMsgIndex = contents.indexOf('前情提要正文')
+
+    expect(taskMsgIndex).toBeGreaterThan(0)
+    expect(histMsgIndex).toBeGreaterThan(taskMsgIndex)
+  })
+
+  it('in_chat 深度与位置在装配时忠实保留，不被抹平为 relative 和 depth 0', () => {
+    const preset: NovelPromptPreset = {
+      id: 'p-inchat-fidelity',
+      name: 'In-Chat 保真预设',
+      blocks: [
+        { id: 'b-hist', name: 'Chat History', role: 'user', content: '', enabled: true, position: 'relative', depth: 0, order: 1, marker: 'marker.history' },
+        { id: 'b-tail', name: 'Tail Inject', role: 'system', content: '【末尾穿插提示】', enabled: true, position: 'in_chat', depth: 1, order: 2 }
+      ],
+      createdAt: 1,
+      updatedAt: 1
+    }
+    const store = new PromptSettingsStore()
+    store.save({ activePresetId: 'p-inchat-fidelity', presets: [preset] })
+    const snapshot = store.snapshot()
+
+    const defs = resolvePromptDefinitions('continue', snapshot)
+    const tailDef = defs.find((d) => d.id === 'b-tail')
+    expect(tailDef?.position).toBe('in_chat')
+    expect(tailDef?.depth).toBe(1)
+
+    const messages = compilePromptMessages('continue', {
+      instruction: '续写',
+      materials: {
+        history: [
+          { role: 'user', content: '消息1' },
+          { role: 'assistant', content: '消息2' }
+        ]
+      }
+    }, snapshot)
+
+    const contents = messages.map((m) => m.content)
+    // depth 1 应该穿插在倒数第1条消息之前（即 消息1 之后，消息2 之前）
+    const msg1Index = contents.indexOf('消息1')
+    const tailIndex = contents.indexOf('【末尾穿插提示】')
+    const msg2Index = contents.indexOf('消息2')
+
+    expect(tailIndex).toBe(msg1Index + 1)
+    expect(msg2Index).toBe(tailIndex + 1)
+  })
+
+  it('回归验证 Meowssiah 1.9.12 预设：准确采用 character_id 100001 排序，转换长思考，识别任务插槽', () => {
+    const raw = readFileSync(new URL('./fixtures/tavern-presets/Meowssiah_1.9.12.json', import.meta.url), 'utf8')
+    const preset = parseTavernPreset(raw, 'Meowssiah 1.9.12')
+
+    // 1. 验证 Prompt #50 (【别关】) 准确被识别为 marker.task，且处于正确序号位置，占位符内容清空且 role 为 user
+    const taskBlock = preset.blocks.find((b) => b.name === '【别关】')
+    expect(taskBlock).toBeDefined()
+    expect(taskBlock?.marker).toBe('marker.task')
+    expect(taskBlock?.content).toBe('')
+    expect(taskBlock?.role).toBe('user')
+
+    // 2. 验证 Prompt #51 (长思考) 宏已转换为思考指令，且保持启用
+    const deepthinkBlock = preset.blocks.find((b) => b.name === '长思考')
+    expect(deepthinkBlock).toBeDefined()
+    expect(deepthinkBlock?.enabled).toBe(true)
+    expect(deepthinkBlock?.content).toContain('深度思考要求')
+    expect(deepthinkBlock?.content).not.toContain('<<<|catgodml|deepthink>>>')
+
+    // 3. 验证 Prompt #45 (📏<game>标签（别关）) 清除了 catgodml 宏
+    const gameBlock = preset.blocks.find((b) => b.name === '📏<game>标签（别关）')
+    expect(gameBlock).toBeDefined()
+    expect(gameBlock?.content).toContain('正文要用<game></game>标签包上')
+    expect(gameBlock?.content).not.toContain('catgodml')
+
+    // 4. 验证 Prompt #46 (📏行动选项) 正确清洗宏并保留 option 指令
+    const optBlock = preset.blocks.find((b) => b.name === '📏行动选项')
+    expect(optBlock).toBeDefined()
+    expect(optBlock?.content).toContain('<options>')
+    expect(optBlock?.content).not.toContain('catgodml')
+
+    // 5. 验证 SPreset 配置被正确置为关闭
+    const spresetBlock = preset.blocks.find((b) => b.name === 'SPreset配置')
+    if (spresetBlock) {
+      expect(spresetBlock.enabled).toBe(false)
+    }
+
+    // 6. 验证任务指令正确装配编译到 taskBlock 位置，且未产生冗余的系统级「【作者任务】」假消息
+    const store = new PromptSettingsStore()
+    store.save({ activePresetId: preset.id, presets: [preset] })
+    const snapshot = store.snapshot()
+
+    const messages = compilePromptMessages('continue', {
+      instruction: '请描写韩立突破瓶颈的瞬间',
+      materials: {
+        knowledge: [{ role: 'user', content: '世界观：长春功第六层' }],
+        history: [{ role: 'user', content: '前文正文：灵气汇聚' }]
+      }
+    }, snapshot)
+
+    const contents = messages.map((m) => m.content)
+    const taskMsgIndex = contents.findIndex((c) => c.includes('请描写韩立突破瓶颈的瞬间'))
+    const thinkMsgIndex = contents.findIndex((c) => c.includes('深度思考要求'))
+
+    expect(taskMsgIndex).toBeGreaterThan(0)
+    expect(thinkMsgIndex).toBeGreaterThan(taskMsgIndex)
+    expect(contents).not.toContain('【作者任务】')
   })
 })

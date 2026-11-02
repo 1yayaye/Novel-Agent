@@ -1,8 +1,10 @@
 import { randomUUID } from 'node:crypto'
 import {
   NovelPromptPresetSchema,
+  SOLIUMBRA_TOOL_NAME,
   type NovelPromptPreset,
-  type PresetBlock
+  type PresetBlock,
+  type PresetToolCalling
 } from '../shared/prompt-settings.js'
 import { ProjectError } from './project-store.js'
 
@@ -19,6 +21,18 @@ export function cleanTavernContent(rawText: string): string {
     .replace(/\{\{\s*trim\s*\}\}/gi, '')
     .replace(/\{\{\s*random::([\s\S]*?)\s*\}\}/gi, (_, opts) => opts.split('::')[0] || '')
     .replace(/\{\{\s*roll(?:\s+[^}]+)?\s*\}\}/gi, '')
+
+  // 0.1 猫之神 / SPreset 宏处理与转换
+  text = text
+    .replace(/<<<\|\s*catgodml\s*\|\s*deepthink\s*>>>/gi, '【深度思考要求：在输出正式内容之前，必须进行详尽充分的深入思考与剧情推演。】')
+    .replace(/<<<\|\s*catgodml\s*\|\s*setLastMessage:\s*([\s\S]*?)\s*>>>/gi, '$1')
+    .replace(/<<<\|\s*catgodml\s*\|\s*registerPart:[^:]+:([\s\S]*?)\s*>>>/gi, '')
+    .replace(/<<<\|\s*catgodml\s*\|[\s\S]*?>>>/gi, '')
+    .replace(/<<<\|\s*SPreset\s*\|[\s\S]*?>>>/gi, '')
+    .replace(/\{\{\s*SPreset::[\s\S]*?\}\}/gi, '')
+    .replace(/<run_tool_replacement>/gi, '')
+    .replace(/<\|sep\|>|<\|merge\|>/gi, '')
+    .replace(/<<<[\s\S]*?>>>/gi, '')
 
   // 1. 宏替换（支持带空格的 Mustache/Jinja 语法）
   text = text
@@ -50,6 +64,117 @@ export function cleanTavernContent(rawText: string): string {
   return text.replace(/\n{3,}/g, '\n\n').trim()
 }
 
+const REGISTER_PART_REGEX = /<<<\|\s*catgodml\s*\|\s*registerPart:([^:]+):([\s\S]*?)>>>/gi
+
+/**
+ * 收集 prompt 正文中的 registerPart 工具部件声明（部件名 → 字段描述）。
+ * 必须在 cleanTavernContent 剥离该宏之前调用；同名部件首个生效，
+ * 与酒馆 FinalRequestProcessing 脚本的组装行为一致。
+ */
+function collectRegisterPart(text: string, parts: Map<string, string>): void {
+  if (!text) return
+  for (const m of text.matchAll(REGISTER_PART_REGEX)) {
+    const name = m[1].trim()
+    if (name && !parts.has(name)) parts.set(name, m[2].trim())
+  }
+}
+
+interface ToolBindingFormParam {
+  name?: string
+  type?: string
+  description?: string
+  required?: boolean
+}
+interface ToolBindingForm {
+  name?: string
+  description?: string
+  parameters?: ToolBindingFormParam[]
+}
+
+/**
+ * 从预设的结构化声明解析工具调用配置：extensions.ToolBindings（表单定义的基础参数）
+ * 加上 prompt 正文中的 registerPart 宏（酒馆在请求期动态追加的部件），
+ * 组装成随请求发送的 parameters JSON Schema。声明缺失时回退到关键词启发式。
+ */
+function detectPresetToolCalling(
+  parsed: any,
+  presetName: string,
+  jsonContent: string,
+  registerParts: Map<string, string>
+): PresetToolCalling | undefined {
+  // SPreset 扩展把工具绑定挂在 extensions/SPreset 下，裸 extensions/ToolBindings 亦兼容
+  const bindings = parsed?.extensions?.SPreset?.ToolBindings ?? parsed?.extensions?.ToolBindings
+  if (bindings && typeof bindings === 'object') {
+    for (const binding of Object.values<any>(bindings)) {
+      if (!binding || binding.enabled !== true || binding.valid !== true) continue
+      const form = binding.form as ToolBindingForm | undefined
+      const name = String(binding.resolvedName || form?.name || '').trim()
+      if (!name) continue
+
+      const properties: Record<string, unknown> = {}
+      const required: string[] = []
+      for (const param of Array.isArray(form?.parameters) ? form!.parameters! : []) {
+        const paramName = String(param?.name || '').trim()
+        if (!paramName || properties[paramName]) continue
+        properties[paramName] = {
+          type: String(param?.type || 'string'),
+          ...(param?.description ? { description: String(param.description) } : {})
+        }
+        if (param?.required === true) required.push(paramName)
+      }
+      // registerPart 部件覆盖同名基础参数，但不强制 required——刻意比酒馆源脚本宽松，见 docs/adr/0008
+      for (const [partName, partDesc] of registerParts) {
+        properties[partName] = { type: 'string', description: partDesc || `${partName} content` }
+      }
+
+      return {
+        enabled: true,
+        name,
+        ...(form?.description ? { description: String(form.description) } : {}),
+        parameters: { type: 'object', properties, ...(required.length > 0 ? { required } : {}) }
+      }
+    }
+  }
+
+  if (registerParts.size > 0) {
+    const properties: Record<string, unknown> = {}
+    for (const [partName, partDesc] of registerParts) {
+      properties[partName] = { type: 'string', description: partDesc || `${partName} content` }
+    }
+    return {
+      enabled: true,
+      name: SOLIUMBRA_TOOL_NAME,
+      parameters: { type: 'object', properties }
+    }
+  }
+
+  const contentLower = jsonContent.toLowerCase()
+  if (
+    contentLower.includes(SOLIUMBRA_TOOL_NAME) ||
+    contentLower.includes('<run_tool_replacement>') ||
+    contentLower.includes('小猫之神会使用reply工具') ||
+    /meowssiah|猫之神|soliumbra/i.test(presetName)
+  ) {
+    return {
+      enabled: true,
+      name: SOLIUMBRA_TOOL_NAME
+    }
+  }
+
+  if (Array.isArray(parsed?.tools) && parsed.tools.length > 0) {
+    const firstTool = parsed.tools[0]
+    const toolName = firstTool?.function?.name || firstTool?.name || 'novel_reply'
+    return {
+      enabled: true,
+      name: toolName,
+      description: firstTool?.function?.description || firstTool?.description,
+      parameters: firstTool?.function?.parameters || firstTool?.parameters
+    }
+  }
+
+  return undefined
+}
+
 /**
  * 识别 Block 是否属于小说资料插槽
  */
@@ -57,6 +182,7 @@ export function detectBlockMarker(prompt: {
   identifier?: string
   name?: string
   content?: string
+  rawContent?: string
   marker?: unknown
 }): string | undefined {
   if (typeof prompt.marker === 'string' && prompt.marker.startsWith('marker.')) {
@@ -68,6 +194,7 @@ export function detectBlockMarker(prompt: {
   const name = (prompt.name ?? '').trim()
   const lowerName = name.toLowerCase()
   const content = (prompt.content ?? '').trim()
+  const rawText = String(prompt.rawContent ?? prompt.content ?? '')
 
   // 1. SillyTavern 官方系统插槽标识符精准匹配
   if (['worldinfobefore', 'worldinfoafter', 'worldinfo', 'world_info', 'lorebook'].includes(lowerId)) {
@@ -117,7 +244,8 @@ export function detectBlockMarker(prompt: {
     lowerName.includes('agent task') || lowerName.includes('agenttask') ||
     lowerName.includes('作者任务与指令插槽') || lowerName.includes('作者任务插槽') ||
     lowerName.includes('用户输入插槽') ||
-    content === '【本次写作任务】' || content === '【作者任务】'
+    content === '【本次写作任务】' || content === '【作者任务】' || content.includes('【作者任务】') ||
+    rawText.includes('setLastMessage') || rawText.includes('{{lastUserMessage}}') || rawText.includes('{{last_user_message}}')
   ) {
     return 'marker.task'
   }
@@ -147,8 +275,16 @@ export function extractPromptOrderMap(promptOrder: unknown): Map<string, { order
   if (!Array.isArray(promptOrder)) return map
 
   let list = promptOrder
-  const characterGroup = promptOrder.find(
-    (item) => item && typeof item === 'object' && Array.isArray((item as any).order)
+  const characterGroup = (
+    promptOrder.find(
+      (item) => item && typeof item === 'object' && (item as any).character_id === 100001 && Array.isArray((item as any).order) && (item as any).order.length > 0
+    ) ||
+    promptOrder.find(
+      (item) => item && typeof item === 'object' && Array.isArray((item as any).order) && (item as any).order.length > 0
+    ) ||
+    promptOrder.find(
+      (item) => item && typeof item === 'object' && Array.isArray((item as any).order)
+    )
   ) as { order: any[] } | undefined
 
   if (characterGroup && Array.isArray(characterGroup.order)) {
@@ -264,6 +400,7 @@ export function parseTavernPreset(jsonContent: string, fallbackName?: string): N
   const setvarStripRegex = /\{\{\s*(?:setvar|setglobalvar)::([^:]+)::([\s\S]*?)\}\}/gi
 
   const blocks: PresetBlock[] = []
+  const registerParts = new Map<string, string>()
 
   for (const item of normalizedPrompts) {
     const { raw, identifier, order, enabled } = item
@@ -279,21 +416,28 @@ export function parseTavernPreset(jsonContent: string, fallbackName?: string): N
       text = text.replace(getvarRegex, (_, key) => variables.get(key.trim()) ?? '')
     }
 
+    // 仅启用的 prompt 会被酒馆发送，其 registerPart 部件声明才有效；须在清洗剥离宏之前收集
+    if (enabled) collectRegisterPart(text, registerParts)
+
     const cleanedContent = cleanTavernContent(text)
-    const marker = detectBlockMarker({ ...raw, identifier, name, content: cleanedContent })
+    const marker = detectBlockMarker({ ...raw, identifier, name, content: cleanedContent, rawContent: text })
 
     const isChat = raw.injection_position === 1 || raw.injection_position === 'in_chat' || raw.injection_position === 'chat'
     const depth = Math.max(0, Number(raw.injection_depth) || 0)
 
-    // 纯变量声明/求值后内容为空且非系统插槽的 Block，保留在列表中但默认置为关闭状态
-    const isContentEmpty = cleanedContent.trim() === ''
-    const finalEnabled = isContentEmpty && !marker ? false : enabled
+    // 纯变量声明/求值后内容为空且非系统插槽的 Block，或 SPreset 扩展配置，保留在列表中但默认置为关闭状态
+    const isSPresetConfig = identifier === 'SPresetSettings' || name.toLowerCase().includes('spreset') || cleanedContent.startsWith('{"ChatSquash"')
+    const isPureTaskMacro = marker === 'marker.task' && (cleanedContent === '【作者任务】' || cleanedContent === '【本次写作任务】')
+    const finalContent = isPureTaskMacro ? '' : cleanedContent
+    const isContentEmpty = finalContent.trim() === ''
+    const finalEnabled = isSPresetConfig ? false : (isContentEmpty && !marker ? false : enabled)
+    const finalRole: 'system' | 'user' | 'assistant' = marker === 'marker.task' ? 'user' : role
 
     blocks.push({
       id: randomUUID(),
       name,
-      role,
-      content: cleanedContent,
+      role: finalRole,
+      content: finalContent,
       enabled: finalEnabled,
       position: isChat ? 'in_chat' : 'relative',
       depth,
@@ -302,66 +446,20 @@ export function parseTavernPreset(jsonContent: string, fallbackName?: string): N
     })
   }
 
-  // 排序
+  // 排序并重新归一化 order 为 0, 1, 2...
   blocks.sort((a, b) => a.order - b.order)
-
-  // 检查是否缺失核心小说资料插槽：设定库、正文历史、作者任务
-  const hasKnowledge = blocks.some((b) => b.marker === 'marker.knowledge')
-  const hasHistory = blocks.some((b) => b.marker === 'marker.history')
-  const hasTask = blocks.some((b) => b.marker === 'marker.task')
-
-  if (!hasKnowledge) {
-    blocks.push({
-      id: randomUUID(),
-      name: '设定库资料插槽',
-      role: 'user',
-      content: '',
-      enabled: true,
-      position: 'relative',
-      depth: 0,
-      order: blocks.length + 1,
-      marker: 'marker.knowledge'
-    })
-  }
-
-  if (!hasHistory) {
-    blocks.push({
-      id: randomUUID(),
-      name: '会话与正文历史插槽',
-      role: 'user',
-      content: '',
-      enabled: true,
-      position: 'relative',
-      depth: 0,
-      order: blocks.length + 2,
-      marker: 'marker.history'
-    })
-  }
-
-  if (!hasTask) {
-    blocks.push({
-      id: randomUUID(),
-      name: '作者任务与指令插槽',
-      role: 'user',
-      content: '',
-      enabled: true,
-      position: 'relative',
-      depth: 0,
-      order: blocks.length + 3,
-      marker: 'marker.task'
-    })
-  }
-
-  // 重新归一化 order 为 0, 1, 2...
   blocks.forEach((block, index) => {
     block.order = index
   })
+
+  const detectedToolCalling = detectPresetToolCalling(parsed, presetName, jsonContent, registerParts)
 
   return {
     id: randomUUID(),
     name: presetName,
     description: presetDescription,
     blocks,
+    toolCalling: detectedToolCalling,
     createdAt: Date.now(),
     updatedAt: Date.now()
   }

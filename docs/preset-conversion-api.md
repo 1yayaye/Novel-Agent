@@ -1,6 +1,6 @@
 # 预设转换后端接口
 
-本文对应 `src/shared/preset-conversion.ts` 的契约和 `src/main/preset-conversion.ts` 的实现。转换流程已经接入 Electron 预加载桥、共享平台桥和 WinUI Sidecar；本次没有实现导入界面。
+本文对应 `src/shared/preset-conversion.ts` 的契约和 `src/main/preset-conversion.ts` 的实现。转换流程已经接入 Electron 预加载桥、共享平台桥和 WinUI Sidecar，并提供了导入界面：`src/renderer/components/dialogs/` 下的 `PresetConversionDialog.tsx`（发起转换与两阶段进度）、`PresetConversionReportDialog.tsx`（兼容报告查看入口）与 `PresetConversionReportView.tsx`（报告渲染），由 `DialogHost.tsx` 挂载。
 
 酒馆预设经过来源解析、完整内容分批分析、摘要整合、静态转换和编译校验，返回待确认的预设及兼容报告。开始转换会调用模型，读取结果不会保存或启用预设；调用方确认后使用已有预设库接口保存。
 
@@ -51,7 +51,7 @@ type PresetConversionInput = {
 
 开始需要现有连接已完成目标端点确认，复用连接的密钥、模型、上下文预算和网关，不创建独立的转换配置。每次请求前后检查连接版本；转换期间修改连接会使任务失败，需要重新开始。
 
-酒馆来源的完整提示词、脚本、正则和扩展配置都会作为资料分批发送到所选模型，包含文件自身携带的敏感文本。不会下载文件内引用的远程资源，不执行 JavaScript、Slash 命令或正则。转换请求使用现有模型队列的 `low` 优先级。
+酒馆来源在本地先完成零 Token 预清洗（解析 `prompt_order` 优先级、展开静态 `setvar`/`getvar` 变量、处理停用块与空白分隔条、提取启用脚本与正则的特征摘要），再将有效提示词与启用扩展摘要按两阶段（第 1 批全局诊断 + 第 2 批写时复制静态适配）发送到所选模型。不会下载文件内引用的远程资源，不执行 JavaScript、Slash 命令或正则。转换请求使用现有模型队列的 `low` 优先级。
 
 ## 检查返回值
 
@@ -87,7 +87,7 @@ type PresetSourceItem = {
 
 提示词顺序优先使用 `character_id: 100001` 的组，其次使用第一个包含 `order` 的组或扁平顺序数组。选择的非空顺序中未列出的提示词默认停用；已列出的提示词采用顺序项开关，缺少开关时采用提示词自身开关，否则默认启用。其他顺序组仍进入来源清单供模型分析。
 
-`estimatedSourceTokens` 按连接的估算系数计算来源序列化文本，不包含参考指令、schema、摘要整合、输出或重试，不是总费用估算。`initialAnalysisBatches` 只计初始分析批次，不是总请求次数。本项目格式或未选出模型时，这两个值及 `connection` 都为 `null`；本项目格式的 `items` 为空。
+`estimatedSourceTokens` 按连接的估算系数计算本地预清洗后的有效发送载荷（启用提示词与启用扩展摘要），不包含参考指令、schema、输出或重试，不是总费用估算。`initialAnalysisBatches` 表示预计的逻辑请求总批次（常规预设为 2 批：1 批全局分析 + 1 批写时复制转换）。本项目格式或未选出模型时，这两个值及 `connection` 都为 `null`；本项目格式的 `items` 为空。
 
 参考资料固定于代码版本 `2026-10-12.1`，指向带提交哈希的 SillyTavern 和 JS-Slash-Runner 源码。转换不实时联网拉取规范。参考摘要只覆盖部分变量宏、格式化宏和宏注册机制，未知行为仍需报告为不确定或不支持。
 
@@ -116,11 +116,11 @@ type PresetConversionUsage = {
 }
 ```
 
-所有时间戳均为 Unix 毫秒。酒馆正常路径为 `queued → analyzing → summarizing → converting → validating → ready`；本项目格式为 `queued → ready`。活动阶段可进入 `failed` 或 `cancelled`。异步错误存于状态的 `error`，开始前的错误直接由开始接口返回。
+所有时间戳均为 Unix 毫秒。酒馆正常路径为 `queued → analyzing → converting → validating → ready`；本项目格式为 `queued → ready`。活动阶段可进入 `failed` 或 `cancelled`。异步错误存于状态的 `error`，开始前的错误直接由开始接口返回。
 
-`completedBatches` 是已返回并通过该请求结构校验的逻辑请求数，后续来源 ID 或编译校验仍可能失败。`totalBatches` 随摘要层级和转换批次追加，不能当作固定总量或可靠百分比；任务失败时不要求两者相等。至少需要 2048 输出 token，且扣除连接安全余量、输出预留和指令/schema 预算后的来源预算至少为 2048 token；单批来源预算上限为 60000 token。超过预算不会强行发送请求。
+`completedBatches` 是已返回并通过该请求结构校验的逻辑请求数，后续来源 ID 或编译校验仍可能失败。至少需要 2048 输出 token，且扣除连接安全余量、输出预留和指令/schema 预算后的来源预算至少为 2048 token；单批来源预算上限为 60000 token。超过预算不会强行发送请求。
 
-大来源条目连续分片分析，然后整合每个来源及全局关系。摘要上限为 2500 字符，递归整合最多 16 层。每批来源 ID 必须完整且唯一；无法收敛或单条目超预算会失败，不静默跳过条目。全部原文发送分析不代表模型理解没有遗漏。
+第 1 批（`analyzing`）进行全局结构与启用扩展诊断；第 2 批（`converting`）采用写时复制（`rewrittenContent: string | null`）对有效提示词进行静态适配，直接可复用的提示词块返回 `null` 复用本地预清洗文本，需要改写的提示词块返回适配后的完整文本。每批来源 ID 必须完整且唯一；在 `validating` 阶段自动完成残留宏兜底转义与核心结构插槽（`knowledge`、`history`、`task`）去重与顺序归一化。
 
 `usage.requests` 统计已提交给网关的逻辑结构化请求，不是 HTTP 请求数，网关重试/修复不会单独计数。token 数累计网关返回的 usage；`reportedRequests` 统计返回 usage 的逻辑请求。没有提供 usage 时计数可为零，因此不能据此计算精确账单。
 

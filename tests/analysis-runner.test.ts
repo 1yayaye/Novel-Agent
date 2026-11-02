@@ -57,7 +57,7 @@ describe('AnalysisRunner - Phase 7 Tasks, Knowledge Analysis & Reports', () => {
   afterAll(() => new Promise<void>((resolve) => {
     expect([...schemaProtocols]).toEqual(expect.arrayContaining([
       'knowledge', 'report', 'synopsis_compress', 'synopsis_step', 'synopsis_final',
-      'distill_segment', 'distill_stage', 'distill_master', 'summary_segment', 'summary_stage', 'summary_master', 'book_outline'
+      'distill_segment', 'distill_stage', 'distill_master', 'book_summary', 'book_outline'
     ]))
     server.closeAllConnections()
     server.close(() => resolve())
@@ -747,6 +747,9 @@ describe('AnalysisRunner - Phase 7 Tasks, Knowledge Analysis & Reports', () => {
               foreshadowing: '',
               unresolved: ''
             },
+            content: '主角在春日长街继续前行。',
+            graph: { nodes: [{ id: '主角', name: '主角', role: '主角', weight: 1 }], edges: [] },
+            assessment: { applicable: true, label: '修为体系', reason: '修仙', fields: ['修为'] },
             synopsis: '主角在春日长街继续前行。'
           }) } }]
         }))
@@ -776,13 +779,13 @@ describe('AnalysisRunner - Phase 7 Tasks, Knowledge Analysis & Reports', () => {
     }
 
     const parsedPipelineRequests = pipelineBodies.map((body) => JSON.parse(body))
-    for (const task of ['distill_segment', 'distill_stage', 'distill_master', 'summary_segment', 'summary_stage', 'summary_master']) {
+    for (const task of ['distill_segment', 'distill_stage', 'distill_master', 'book_summary']) {
       const protocol = PROMPT_DEFINITIONS.find((definition) => definition.id === `task.${task}`)!
       const requests = parsedPipelineRequests.filter((request) => request.messages.some((message: { role: string; content: string }) => message.role === 'system' && message.content === protocol.content))
       expect(requests.length, task).toBeGreaterThan(0)
       for (const request of requests) {
         const properties = request.response_format.json_schema.schema.properties
-        const expected = task.startsWith('distill') ? ['formula', task === 'distill_segment' ? 'observations' : 'prompt'] : task === 'summary_master' ? ['synopsis'] : ['summary', 'state']
+        const expected = task.startsWith('distill') ? ['formula', task === 'distill_segment' ? 'observations' : 'prompt'] : ['content']
         for (const field of expected) expect(properties, task).toHaveProperty(field)
         expect(request).not.toHaveProperty('temperature')
         expect(request.max_tokens).toBe(conn.maxOutputTokens)

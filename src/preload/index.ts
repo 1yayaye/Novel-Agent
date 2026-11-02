@@ -1,3 +1,4 @@
+import { ApplySummaryOutlineInputSchema, ExportSummaryInputSchema } from '../shared/contracts/book-summary'
 import { contextBridge, ipcRenderer } from 'electron'
 import { z } from 'zod'
 import {
@@ -335,6 +336,8 @@ const api: NovelAgentApi = {
     clearDetailedLogs: () => invoke('diagnostics.clearDetailedLogs', undefined, z.undefined(), SuccessResultSchema)
   },
   analysis: {
+    exportSummary: (input) => invoke('analysis.exportSummary', input, ExportSummaryInputSchema, ExportProjectResultSchema.nullable()),
+    applyOutline: (input) => invoke('analysis.applyOutline', input, ApplySummaryOutlineInputSchema, BookOutlineSchema),
     start: (input) => invoke('analysis.start', input, StartAnalysisInputSchema, StartAnalysisResultSchema),
     cancel: (input) => invoke('analysis.cancel', input, CancelTaskInputSchema, SuccessResultSchema),
     pause: (input) => invoke('analysis.pause', input, CancelTaskInputSchema, SuccessResultSchema),
