@@ -3,7 +3,7 @@ import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 import React from 'react'
 import { renderToStaticMarkup } from 'react-dom/server'
-import { EditorStatusBar } from '../src/renderer/components/editor/EditorStatusBar'
+import { EditorStatusBar } from '../src/renderer/features/editor/EditorStatusBar'
 import type { SaveState } from '../src/renderer/types/editor'
 
 describe('Ticket 02: Status Bar Save Lifecycle and Dark Contrast', () => {

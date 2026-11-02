@@ -5,6 +5,9 @@ import { existsSync, readFileSync, readdirSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { OpenProjectResult } from '../src/shared/project'
+import { PromptTaskSchema, PROMPT_MARKERS } from '../src/shared/prompt-settings'
+import { TASK_PROTOCOLS } from '../src/main/prompt-preset'
+import { PRESET_MARKER_OPTIONS } from '../src/renderer/utils/prompt-settings'
 import { useEditorStore } from '../src/renderer/stores/useEditorStore'
 import { useProjectStore } from '../src/renderer/stores/useProjectStore'
 
@@ -39,6 +42,20 @@ afterEach(() => {
     selectedChapterId: null,
     isLoading: false,
     error: null
+  })
+})
+
+describe('prompt catalogs single source', () => {
+  it('PromptTaskSchema 与 TASK_PROTOCOLS 的任务清单完全一致', () => {
+    expect([...PromptTaskSchema.options].sort()).toEqual(Object.keys(TASK_PROTOCOLS).sort())
+  })
+
+  it('renderer 预设编辑器的插槽选项覆盖 shared 清单的全部插槽', () => {
+    const optionValues = PRESET_MARKER_OPTIONS.map((option) => option.value)
+    for (const marker of PROMPT_MARKERS) {
+      expect(optionValues).toContain(`marker.${marker}`)
+    }
+    expect(optionValues).toContain('none')
   })
 })
 

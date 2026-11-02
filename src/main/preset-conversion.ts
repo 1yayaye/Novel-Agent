@@ -235,6 +235,11 @@ function readSource(input: PresetConversionInput): Source {
     rawPromptEntries.push({ item, promptObj, identifier, enabled, order })
   })
 
+  // 提前拒绝：没有提示词条目的预设会在模型调用烧掉真实 token 之后才在编译校验失败
+  if (!rawPromptEntries.length) {
+    throw new ProjectError('IMPORT_INVALID', '预设未包含任何提示词条目（prompts 为空）')
+  }
+
   for (const [key, value] of Object.entries(root)) {
     if (key === 'prompts') continue
     if (key === 'prompt_order') {

@@ -475,6 +475,9 @@ export class ConnectionStore {
     } catch {}
 
     if (!this.isTestFallbackAllowed()) {
+      // 已知限制：sidecar 是纯 Node 进程，safeStorage 不可用，因此无法持久化 API Key
+      // （读取不受影响）。WinUI 客户端需要带密钥的连接时，先在 Electron 端配置；
+      // 无头加密方案（如 DPAPI）确定后再放开此门控，见审查报告发现 8。
       throw new ProjectError('CONNECTION_FAILED', '系统加密存储不可用，无法保存连接凭据')
     }
 

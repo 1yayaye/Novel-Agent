@@ -22,7 +22,7 @@ import {
   formatNovelParagraphs,
   normalizeChinesePunctuation,
   cleanRedundantBlankLines
-} from './novel-typesetting'
+} from '../../features/editor/novel-typesetting'
 import { WindowControls } from '../common/WindowControls'
 import { Button } from '@appica/ui-react/button'
 import { NumberField } from '@appica/ui-react/number-field'

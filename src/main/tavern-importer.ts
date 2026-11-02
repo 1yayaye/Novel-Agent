@@ -467,7 +467,9 @@ export function parseTavernPreset(jsonContent: string, fallbackName?: string): N
     .map((raw) => {
       const identifier = raw.identifier || raw.id || randomUUID()
       const orderInfo = orderMap.get(identifier)
-      const order = orderInfo !== undefined ? orderInfo.order : (Number(raw.injection_order) || autoOrder)
+      // Number.isFinite 而非真值判断：显式 injection_order: 0 也是合法序号
+      const injectedOrder = Number(raw.injection_order)
+      const order = orderInfo !== undefined ? orderInfo.order : (Number.isFinite(injectedOrder) ? injectedOrder : autoOrder)
       autoOrder++
       const enabled = orderInfo?.enabled !== undefined ? orderInfo.enabled : Boolean(raw.enabled ?? true)
       return { raw, identifier, order, enabled }

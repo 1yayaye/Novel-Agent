@@ -4,7 +4,7 @@ import {
   cleanRedundantBlankLines,
   normalizeChinesePunctuation,
   wrapWithPunctuation
-} from '../src/renderer/components/editor/novel-typesetting'
+} from '../src/renderer/features/editor/novel-typesetting'
 
 describe('Novel Typesetting Utilities', () => {
   it('formatNovelParagraphs indents Chinese paragraphs with 2 full-width spaces and cleans whitespace', () => {

@@ -7,7 +7,7 @@ import type { Chapter } from '../../../shared/project'
 import type { SaveState, EditorHandle, EditorPreferences, SelectionInfo } from '../../types/editor'
 import { count } from '../../utils/formatters'
 import { EditorToolbar } from './EditorToolbar'
-import { EditorStatusBar } from './EditorStatusBar'
+import { EditorStatusBar } from '../../features/editor/EditorStatusBar'
 import { FloatingSelectionMenu } from './FloatingSelectionMenu'
 
 export function ChapterEditor({

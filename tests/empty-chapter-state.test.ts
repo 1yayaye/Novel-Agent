@@ -3,7 +3,7 @@ import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 import React from 'react'
 import { renderToStaticMarkup } from 'react-dom/server'
-import { EmptyChapterState } from '../src/renderer/components/editor/EmptyChapterState'
+import { EmptyChapterState } from '../src/renderer/features/editor/EmptyChapterState'
 import type { Chapter } from '../src/shared/project'
 
 describe('Ticket 03: Empty Chapter State Card & Blank Project Crash Guard', () => {

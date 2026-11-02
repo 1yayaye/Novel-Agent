@@ -2,14 +2,12 @@ import { createHash } from 'node:crypto'
 import { BOOK_SUMMARY_PROMPTS } from './book-summary-prompts'
 import type { AssembledMessage, ChatWorkflowStage, PromptTask } from '../shared/project.js'
 import type { ToolChoice, ToolDefinition } from './model-gateway.js'
-import type { NovelPromptPreset } from '../shared/prompt-settings.js'
-import { SOLIUMBRA_TOOL_NAME } from '../shared/prompt-settings.js'
+import type { NovelPromptPreset, PromptMarker } from '../shared/prompt-settings.js'
+import { PROMPT_MARKERS, SOLIUMBRA_TOOL_NAME } from '../shared/prompt-settings.js'
 
-export const PROMPT_MARKERS = [
-  'project_rules', 'outlines', 'knowledge', 'synopsis', 'style_samples',
-  'references', 'suggestions', 'preset', 'target', 'history', 'task'
-] as const
-export type PromptMarker = typeof PROMPT_MARKERS[number]
+// 插槽清单唯一来源在 shared；这里保持既有导出契约（prompt-runtime / preset-conversion 从此导入）
+export { PROMPT_MARKERS }
+export type { PromptMarker }
 
 export type PromptDefinition = {
   id: string

@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from 'vitest'
 import React from 'react'
 import { renderToStaticMarkup } from 'react-dom/server'
-import { NavRail } from '../src/renderer/components/workbench/NavRail'
+import { NavRail } from '../src/renderer/features/workbench/NavRail'
 
 describe('NavRail (Lifecycle 4-Section Workspaces & Expandable Label Support)', () => {
   it('renders 4 lifecycle sections in collapsed mode with mini-labels and icons', () => {

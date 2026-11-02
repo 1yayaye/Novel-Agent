@@ -7,6 +7,16 @@ export const PromptTaskSchema = z.enum([
   'book_outline', 'chat_summary'
 ])
 export type PromptTask = z.infer<typeof PromptTaskSchema>
+
+/**
+ * 资料插槽标记的唯一清单（main 的运行时装配与 renderer 的预设编辑器都从这里派生，
+ * 新增插槽只改这一处，避免两侧清单漂移）。
+ */
+export const PROMPT_MARKERS = [
+  'project_rules', 'outlines', 'knowledge', 'synopsis', 'style_samples',
+  'references', 'suggestions', 'preset', 'target', 'history', 'task'
+] as const
+export type PromptMarker = typeof PROMPT_MARKERS[number]
 export const PresetBlockSchema = z.object({
   id: z.string(),
   name: z.string(),
