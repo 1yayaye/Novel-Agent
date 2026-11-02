@@ -154,11 +154,13 @@ function detectPresetToolCalling(
       const name = String(binding.resolvedName || form?.name || '').trim()
       if (!name) continue
 
-      const properties: Record<string, unknown> = {}
+      // 无原型对象：参数名来自不可信预设（如 toString/__proto__），普通对象会被
+      // 继承属性误判重复或触发 __proto__ setter 导致参数静默丢失
+      const properties: Record<string, unknown> = Object.create(null)
       const required: string[] = []
       for (const param of Array.isArray(form?.parameters) ? form!.parameters! : []) {
         const paramName = String(param?.name || '').trim()
-        if (!paramName || properties[paramName]) continue
+        if (!paramName || Object.hasOwn(properties, paramName)) continue
         properties[paramName] = {
           type: String(param?.type || 'string'),
           ...(param?.description ? { description: String(param.description) } : {})
@@ -180,7 +182,8 @@ function detectPresetToolCalling(
   }
 
   if (registerParts.size > 0) {
-    const properties: Record<string, unknown> = {}
+    // 同上：部件名来自不可信预设正文，必须用无原型对象承载
+    const properties: Record<string, unknown> = Object.create(null)
     for (const [partName, partDesc] of registerParts) {
       properties[partName] = { type: 'string', description: partDesc || `${partName} content` }
     }
@@ -308,44 +311,84 @@ export function detectBlockMarker(prompt: {
   return undefined
 }
 
+export interface TavernPromptOrder {
+  /** identifier → 序号（0 起，按 prompt_order 内出现顺序）与显式启停（undefined 表示未声明） */
+  orders: Map<string, { order: number; enabled?: boolean }>
+  /**
+   * 参与排序的列表长度。0 表示预设没有可用的 prompt_order；AI 转换路径据此区分
+   * "有排序列表但条目缺席（视为停用）"与"没有排序列表（回退条目自身 enabled）"。
+   */
+  listLength: number
+}
+
 /**
- * 从 SillyTavern 的 prompt_order 配置中提取有序映射。
- * 支持 SillyTavern 的标准 character 组（如 character_id: 100001 包含 order 数组）、
+ * 统一解析 SillyTavern 的 prompt_order 配置（快速导入与 AI 转换两条路径共用）。
+ * 支持 SillyTavern 的标准 character 组（如 character_id: 100001，数字或字符串）、
  * 扁平对象数组（包含 identifier 与 enabled）以及纯字符串标识符数组。
  */
-export function extractPromptOrderMap(promptOrder: unknown): Map<string, { order: number; enabled?: boolean }> {
-  const map = new Map<string, { order: number; enabled?: boolean }>()
-  if (!Array.isArray(promptOrder)) return map
+export function resolveTavernPromptOrder(promptOrder: unknown): TavernPromptOrder {
+  const orders = new Map<string, { order: number; enabled?: boolean }>()
+  if (!Array.isArray(promptOrder)) return { orders, listLength: 0 }
 
-  let list = promptOrder
+  const groups = promptOrder
   const characterGroup = (
-    promptOrder.find(
-      (item) => item && typeof item === 'object' && (item as any).character_id === 100001 && Array.isArray((item as any).order) && (item as any).order.length > 0
+    groups.find(
+      (item) => item && typeof item === 'object' && ((item as any).character_id === 100001 || (item as any).character_id === '100001') && Array.isArray((item as any).order) && (item as any).order.length > 0
     ) ||
-    promptOrder.find(
+    groups.find(
       (item) => item && typeof item === 'object' && Array.isArray((item as any).order) && (item as any).order.length > 0
     ) ||
-    promptOrder.find(
+    groups.find(
       (item) => item && typeof item === 'object' && Array.isArray((item as any).order)
     )
   ) as { order: any[] } | undefined
 
-  if (characterGroup && Array.isArray(characterGroup.order)) {
-    list = characterGroup.order
-  }
-
+  const list = characterGroup ? characterGroup.order : groups
   list.forEach((entry: any, index: number) => {
     if (!entry) return
     const id = typeof entry === 'string' ? entry : (entry.identifier || entry.id)
     if (typeof id === 'string' && id.trim()) {
-      map.set(id.trim(), {
+      orders.set(id.trim(), {
         order: index,
         enabled: typeof entry === 'object' && typeof entry.enabled === 'boolean' ? entry.enabled : undefined
       })
     }
   })
 
-  return map
+  return { orders, listLength: list.length }
+}
+
+/**
+ * 从 SillyTavern 的 prompt_order 配置中提取有序映射（仅映射；需要列表长度用 resolveTavernPromptOrder）。
+ */
+export function extractPromptOrderMap(promptOrder: unknown): Map<string, { order: number; enabled?: boolean }> {
+  return resolveTavernPromptOrder(promptOrder).orders
+}
+
+/**
+ * 剥离 setvar 声明宏并展开 getvar 引用（最多 3 遍，支持变量嵌套）。
+ * 快速导入与 AI 转换两条路径共用；onUnresolved 是两者唯一的有意分歧：
+ * - 'empty'：快速导入把未解析的 getvar 清空（与酒馆运行时行为一致）
+ * - 'keep'：AI 转换保留 {{getvar::key}} 原样，交由编译期校验兜底
+ */
+export function expandTavernVariables(
+  text: string,
+  variables: Map<string, string>,
+  onUnresolved: 'empty' | 'keep'
+): string {
+  const getvarRegex = /\{\{\s*(?:getvar|getglobalvar)::([^}]+)\}\}/gi
+  const setvarStripRegex = /\{\{\s*(?:setvar|setglobalvar)::([^:]+)::([\s\S]*?)\}\}/gi
+  let result = text.replace(setvarStripRegex, '')
+  for (let pass = 0; pass < 3; pass++) {
+    if (!getvarRegex.test(result)) break
+    getvarRegex.lastIndex = 0
+    result = result.replace(getvarRegex, (_, key: string) => {
+      const resolved = variables.get(key.trim())
+      if (resolved !== undefined) return resolved
+      return onUnresolved === 'keep' ? `{{getvar::${key.trim()}}}` : ''
+    })
+  }
+  return result
 }
 
 /**
@@ -440,25 +483,18 @@ export function parseTavernPreset(jsonContent: string, fallbackName?: string): N
     }))
   )
 
-  const getvarRegex = /\{\{\s*(?:getvar|getglobalvar)::([^}]+)\}\}/gi
-  const setvarStripRegex = /\{\{\s*(?:setvar|setglobalvar)::([^:]+)::([\s\S]*?)\}\}/gi
-
   const blocks: PresetBlock[] = []
   const registerParts = new Map<string, string>()
 
   for (const item of normalizedPrompts) {
     const { raw, identifier, order, enabled } = item
-    const name = raw.name || raw.identifier || `Block ${blocks.length + 1}`
+    // String() 兜底：不可信预设里 name/identifier 可能是数字等非字符串
+    const name = String(raw.name ?? '').trim() || String(raw.identifier ?? '').trim() || `Block ${blocks.length + 1}`
     const rawRole = String(raw.role || (raw.system_prompt === true ? 'system' : 'system')).toLowerCase()
     const role: 'system' | 'user' | 'assistant' = rawRole === 'user' || rawRole === 'assistant' ? rawRole : 'system'
 
-    // 剔除 setvar 声明并在各处展开替换 getvar
-    let text = String(raw.content ?? '').replace(setvarStripRegex, '')
-    for (let pass = 0; pass < 3; pass++) {
-      if (!getvarRegex.test(text)) break
-      getvarRegex.lastIndex = 0
-      text = text.replace(getvarRegex, (_, key) => variables.get(key.trim()) ?? '')
-    }
+    // 剔除 setvar 声明并展开替换 getvar（未解析的引用置空）
+    const text = expandTavernVariables(String(raw.content ?? ''), variables, 'empty')
 
     // 仅启用的 prompt 会被酒馆发送，其 registerPart 部件声明才有效；须在清洗剥离宏之前收集
     if (enabled) collectRegisterPart(text, registerParts)

@@ -495,4 +495,63 @@ describe('ChatService - Q&A, Multi-turn History, Citations & Rolling Summary (SP
     expect(assistantMsg?.content).not.toContain('{"think_nya"')
     expect(assistantMsg?.content).not.toContain('"game_content"')
   })
+
+  it('separates interleaved fragment streams from parallel tool calls before parsing', async () => {
+    const preset = {
+      id: 'chat-parallel-tool-preset',
+      name: 'Parallel Tool Chat Test',
+      blocks: [],
+      toolCalling: { enabled: true, name: SOLIUMBRA_TOOL_NAME },
+      createdAt: Date.now(),
+      updatedAt: Date.now()
+    }
+    promptStore.save({ activePresetId: preset.id, presets: [preset] })
+
+    const session = chatService.createSession({ sessionId, title: '并行工具对话', connectionId: connId })
+
+    // 两个工具调用的参数片段交错到达：若按到达序拼接，两段 JSON 会互相搅碎
+    requestHandler = (req, res) => {
+      res.writeHead(200, { 'Content-Type': 'text/event-stream' })
+      res.write(`data: ${JSON.stringify({
+        choices: [{
+          delta: {
+            tool_calls: [
+              { index: 0, id: 'call_a', type: 'function', function: { name: SOLIUMBRA_TOOL_NAME, arguments: '{"game_content":"第一' } },
+              { index: 1, id: 'call_b', type: 'function', function: { name: SOLIUMBRA_TOOL_NAME, arguments: '{"game_content":"第二' } }
+            ]
+          }
+        }]
+      })}\n\n`)
+      res.write(`data: ${JSON.stringify({
+        choices: [{
+          delta: {
+            tool_calls: [
+              { index: 0, function: { arguments: '段正文。"}' } },
+              { index: 1, function: { arguments: '段正文。"}' } }
+            ]
+          }
+        }]
+      })}\n\n`)
+      res.write('data: [DONE]\n\n')
+      res.end()
+    }
+
+    await chatService.sendMessage({
+      sessionId,
+      chatSessionId: session.id,
+      content: '并行工具调用测试'
+    })
+    await new Promise((r) => setTimeout(r, 80))
+
+    const messages = chatService.listMessages({ sessionId, chatSessionId: session.id })
+    const assistantMsg = messages.find((m) => m.role === 'assistant')
+
+    expect(assistantMsg).toBeDefined()
+    expect(assistantMsg?.state).toBe('completed')
+    // 解析自按调用分组重组后的参数：第一段完整可读，且没有交错产生的乱码
+    expect(assistantMsg?.content).toContain('第一段正文。')
+    expect(assistantMsg?.content).not.toContain('第一{')
+    expect(assistantMsg?.content).not.toContain('}段正文')
+    expect(assistantMsg?.content).not.toContain('{"game_content"')
+  })
 })

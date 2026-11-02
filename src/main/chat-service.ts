@@ -644,6 +644,9 @@ export class ChatService {
     let totalTokens = 0
     let checkpointedText = ''
     let checkpointTimer: NodeJS.Timeout | undefined
+    // 工具调用参数按 index 归组累积（与 creation-runner 一致）。单工具调用的
+    // 到达序拼接天然正确；多工具调用片段交错时 fullText 已不可解析，结束后按调用重组。
+    const accumulatedToolCalls = new Map<number, { name: string; arguments: string }>()
     const throttler = createStreamThrottler<ChatDeltaEvent>(60, (event) => this.callbacks.onDelta?.(event))
 
     const checkpoint = () => {
@@ -690,10 +693,16 @@ export class ChatService {
         }
         let argDelta = ''
         if (chunk.toolCalls && chunk.toolCalls.length > 0) {
-          for (const tc of chunk.toolCalls) {
+          for (let i = 0; i < chunk.toolCalls.length; i++) {
+            const tc = chunk.toolCalls[i]
+            const idx = tc.index ?? i
+            const existing = accumulatedToolCalls.get(idx) || { name: tc.function?.name || '', arguments: '' }
+            if (tc.function?.name) existing.name = tc.function.name
             if (tc.function?.arguments) {
+              existing.arguments += tc.function.arguments
               argDelta += tc.function.arguments
             }
+            accumulatedToolCalls.set(idx, existing)
           }
         }
         const deltaText = (chunk.text || '') + (argDelta || '')
@@ -721,7 +730,15 @@ export class ChatService {
         return
       }
 
-      this.finishMessage(sessionId, chatSessionId, messageId, fullText, totalTokens, 'completed', contextPackage)
+      // 多工具调用时到达序文本不可解析，按索引序重组各调用的完整参数再交给阶段解析
+      let finalText = fullText
+      if (accumulatedToolCalls.size > 1) {
+        finalText = Array.from(accumulatedToolCalls.entries())
+          .sort(([a], [b]) => a - b)
+          .map(([, call]) => call.arguments)
+          .join('\n\n')
+      }
+      this.finishMessage(sessionId, chatSessionId, messageId, finalText, totalTokens, 'completed', contextPackage)
     } catch (error) {
       throttler.flush()
       if (error instanceof ProjectError && error.code === 'PROJECT_NOT_OPEN') {

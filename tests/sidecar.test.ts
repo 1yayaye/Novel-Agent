@@ -2,7 +2,7 @@ import { PromptSettingsStore } from '../src/main/prompt-store.js'
 import { existsSync, mkdirSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { PassThrough } from 'node:stream'
+import { PassThrough, Writable } from 'node:stream'
 import { createInterface } from 'node:readline'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { createServiceRouter, type ServiceRouterDependencies, type WindowDelegate } from '../src/main/service-router.js'
@@ -386,6 +386,29 @@ describe('ServiceRouter & Sidecar Implementation', () => {
       expect(responses.get('burst-3')?.result?.status).toBe('healthy')
 
       await close()
+    })
+
+    it('waits for buffered response writes to land before close resolves', async () => {
+      // 模拟 Windows 管道：write 回调延迟 50ms，数据在回调触发前尚未"落地"。
+      // close() 必须等缓冲排空，否则最后一条响应会被 process.exit 截断。
+      const received: string[] = []
+      const input = new PassThrough()
+      const output = new Writable({
+        write(chunk: unknown, _encoding, callback) {
+          setTimeout(() => {
+            received.push(String(chunk))
+            callback()
+          }, 50)
+        }
+      })
+
+      const { close } = startSidecar({ input, output, deps })
+      input.write(JSON.stringify({ jsonrpc: '2.0', id: 'drain-1', method: 'system.ping', params: {} }) + '\n')
+      input.end()
+
+      await close()
+
+      expect(received.join('')).toContain('"id":"drain-1"')
     })
   })
 })

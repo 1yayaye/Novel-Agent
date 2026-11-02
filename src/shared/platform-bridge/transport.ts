@@ -60,6 +60,17 @@ export function isNovelAgentError(error: unknown): error is NovelAgentErrorPaylo
 // ============================================================================
 
 /**
+ * Per-call overrides for a single RPC invocation.
+ */
+export interface InvokeOptions {
+  /**
+   * Timeout for this call in milliseconds. Overrides the transport default;
+   * long-running channels (index rebuild, provider round-trips) must raise it.
+   */
+  timeoutMs?: number
+}
+
+/**
  * Generic IPC transport contract implemented by platform adapters.
  */
 export interface IpcTransport {
@@ -68,7 +79,7 @@ export interface IpcTransport {
    * Resolves to the unwrapped value on success.
    * Rejects with NovelAgentError on failure or timeout.
    */
-  invoke(channel: string, payload?: unknown): Promise<unknown>
+  invoke(channel: string, payload?: unknown, options?: InvokeOptions): Promise<unknown>
 
   /**
    * Subscribe to server-initiated push events.
@@ -279,11 +290,12 @@ export class WebView2Transport implements IpcTransport {
     this.webview.addEventListener('message', this.messageHandler)
   }
 
-  async invoke(channel: string, payload?: unknown): Promise<unknown> {
+  async invoke(channel: string, payload?: unknown, options?: InvokeOptions): Promise<unknown> {
     if (this.isDisposed) {
       throw new NovelAgentError('TASK_CANCELLED', 'Transport has been disposed')
     }
 
+    const timeoutMs = options?.timeoutMs ?? this.defaultTimeoutMs
     const id = generateCorrelationId()
     const request: WebView2RpcRequest = {
       type: 'rpc_request',
@@ -298,12 +310,12 @@ export class WebView2Transport implements IpcTransport {
           this.pendingRequests.delete(id)
           reject(
             new NovelAgentError(
-              'DATABASE_ERROR',
-              `IPC call timeout after ${this.defaultTimeoutMs}ms: ${channel}`
+              'TIMEOUT',
+              `IPC call timeout after ${timeoutMs}ms: ${channel}`
             )
           )
         }
-      }, this.defaultTimeoutMs)
+      }, timeoutMs)
 
       this.pendingRequests.set(id, {
         channel,

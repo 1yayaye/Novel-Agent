@@ -289,7 +289,7 @@ describe('PlatformBridge - WebView2Transport', () => {
     await expect(invokePromise).rejects.toSatisfy((err: unknown) => {
       return (
         isNovelAgentError(err) &&
-        err.code === 'DATABASE_ERROR' &&
+        err.code === 'TIMEOUT' &&
         err.message.includes('IPC call timeout after 50ms')
       )
     })
@@ -300,6 +300,32 @@ describe('PlatformBridge - WebView2Transport', () => {
         data: { type: 'rpc_response', id: sent.id, ok: true, value: 'late' }
       })
     }).not.toThrow()
+  })
+
+  it('honors a per-call timeout override above the transport default', async () => {
+    vi.useFakeTimers()
+    try {
+      const transport = new WebView2Transport(mockWebview, { defaultTimeoutMs: 60_000 })
+
+      // 60s 默认下，40s 的慢通道调用带 5s per-call 超时 → 5s 即超时
+      const shortPromise = transport.invoke('chat.send', {}, { timeoutMs: 5_000 })
+      const shortSent = vi.mocked(mockWebview.postMessage).mock.calls[0][0] as { id: string }
+      const shortExpect = expect(shortPromise).rejects.toSatisfy((err: unknown) =>
+        isNovelAgentError(err) && err.code === 'TIMEOUT' && err.message.includes('after 5000ms')
+      )
+      await vi.advanceTimersByTimeAsync(5_000)
+      await shortExpect
+      void shortSent
+
+      // 60s 默认下，携带 10 分钟放宽的重建调用在 61s 时仍未超时
+      const longPromise = transport.invoke('index.rebuild', {}, { timeoutMs: 10 * 60_000 })
+      const longExpect = expect(longPromise).resolves.toBe('rebuilt')
+      await vi.advanceTimersByTimeAsync(61_000)
+      listeners[0]({ data: { type: 'rpc_response', id: (vi.mocked(mockWebview.postMessage).mock.calls[1][0] as { id: string }).id, ok: true, value: 'rebuilt' } })
+      await longExpect
+    } finally {
+      vi.useRealTimers()
+    }
   })
 
   it('rejects with NovelAgentError when postMessage fails', async () => {

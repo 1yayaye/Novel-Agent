@@ -62,6 +62,38 @@ describe('Tavern Preset Tool Calling Recognition', () => {
     expect(resolved?.tools[0].function.parameters).toEqual(preset.toolCalling?.parameters)
   })
 
+  it('keeps adversarially named parameters (toString/__proto__) instead of dropping them', () => {
+    const raw = JSON.stringify({
+      name: '对抗命名预设',
+      prompts: [
+        { identifier: 'p1', name: '部件', role: 'system', enabled: true, content: '<<<|catgodml|registerPart:__proto__:危险部件>>>' }
+      ],
+      extensions: {
+        ToolBindings: {
+          binding1: {
+            enabled: true,
+            valid: true,
+            resolvedName: 'novel_reply',
+            form: {
+              name: 'novel_reply',
+              parameters: [
+                { name: 'toString', type: 'string', description: '同名继承属性', required: false },
+                { name: 'game_content', type: 'string', description: '正文', required: true }
+              ]
+            }
+          }
+        }
+      }
+    })
+    const preset = parseTavernPreset(raw, '对抗命名预设')
+    const params = preset.toolCalling?.parameters as { properties: Record<string, { type: string; description?: string }> }
+    // 无原型对象承载：toString 不再被 Object.prototype 的继承属性误判为重复
+    expect(params.properties.toString).toEqual({ type: 'string', description: '同名继承属性' })
+    // __proto__ 作为普通自有键保留，不会改写对象原型导致参数从 JSON 中消失
+    expect(JSON.parse(JSON.stringify(params.properties)).__proto__).toEqual({ type: 'string', description: '危险部件' })
+    expect(params.properties.game_content).toEqual({ type: 'string', description: '正文' })
+  })
+
   it('prefers preset.toolCalling.parameters over the hardcoded soliumbra tool', () => {
     const generated: NovelPromptPreset = {
       id: 'generated-1',

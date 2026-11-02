@@ -38,6 +38,20 @@ describe('酒馆预设导入解析与清洗 (tavern-importer)', () => {
     expect(cleanedMacros.endsWith('尾')).toBe(true)
   })
 
+  it('非字符串 name/identifier 不再抛 TypeError，而是走默认命名', () => {
+    const json = JSON.stringify({
+      name: '脏数据预设',
+      prompts: [
+        { identifier: 'p1', name: 123, content: '第一块' },
+        { identifier: 'p2', name: null, content: '第二块' }
+      ]
+    })
+    const preset = parseTavernPreset(json, '脏数据预设')
+    expect(preset.blocks).toHaveLength(2)
+    expect(preset.blocks[0].name).toBe('123')
+    expect(preset.blocks[1].name).toBe('p2')
+  })
+
   it('解析带 UTF-8 BOM 的预设文件（与 AI 转换路径行为一致）', () => {
     const json = '\uFEFF' + JSON.stringify({
       name: 'BOM 预设',

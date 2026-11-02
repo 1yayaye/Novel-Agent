@@ -214,8 +214,22 @@ import {
   ElectronPreloadTransport,
   WebView2Transport,
   type ChromeWebViewLike,
-  type ElectronIpcRendererLike
+  type ElectronIpcRendererLike,
+  type InvokeOptions
 } from './transport.js'
+
+/**
+ * Known-slow channels 的超时放宽（毫秒）。WebView2 transport 默认 60s，
+ * 对全量索引重建或真实供应商往返太短——超时错误会诱导用户重试重复重活。
+ */
+const SLOW_CALL_TIMEOUTS = {
+  /** 全量索引重建（向量化整本书） */
+  indexRebuild: 10 * 60_000,
+  /** 真实模型供应商往返（连接测试、远程模型列表） */
+  providerRoundTrip: 2 * 60_000,
+  /** 服务端要等一轮 LLM 完成才返回的聊天调用（发送、压缩） */
+  chatTurn: 5 * 60_000
+} as const
 
 /**
  * Reusable invocation helper validating input & output schemas and standardizing error handling.
@@ -225,7 +239,8 @@ export async function invokeApi<I, O>(
   channel: string,
   input: I,
   inputSchema: z.ZodType<I>,
-  outputSchema: z.ZodType<O>
+  outputSchema: z.ZodType<O>,
+  options?: InvokeOptions
 ): Promise<O> {
   let validatedInput: I
   try {
@@ -239,7 +254,7 @@ export async function invokeApi<I, O>(
 
   let rawValue: unknown
   try {
-    rawValue = await transport.invoke(channel, validatedInput)
+    rawValue = await transport.invoke(channel, validatedInput, options)
   } catch (err) {
     if (err instanceof NovelAgentError) {
       throw err
@@ -354,7 +369,7 @@ export function createNovelAgentApi(transport: IpcTransport): NovelAgentApi {
     },
     index: {
       getStatus: (input) => invokeApi(transport, 'index.getStatus', input, GetIndexStatusInputSchema, IndexStatusResultSchema),
-      rebuild: (input) => invokeApi(transport, 'index.rebuild', input, RebuildIndexInputSchema, RebuildIndexResultSchema)
+      rebuild: (input) => invokeApi(transport, 'index.rebuild', input, RebuildIndexInputSchema, RebuildIndexResultSchema, { timeoutMs: SLOW_CALL_TIMEOUTS.indexRebuild })
     },
     creativeRule: {
       get: (input) => invokeApi(transport, 'creativeRule.get', input, GetCreativeRuleInputSchema, CreativeRuleSchema),
@@ -414,8 +429,8 @@ export function createNovelAgentApi(transport: IpcTransport): NovelAgentApi {
       create: (input) => invokeApi(transport, 'connection.create', input, CreateModelConnectionInputSchema, ModelConnectionSummarySchema),
       update: (input) => invokeApi(transport, 'connection.update', input, UpdateModelConnectionInputSchema, ModelConnectionSummarySchema),
       delete: (input) => invokeApi(transport, 'connection.delete', input, DeleteModelConnectionInputSchema, SuccessResultSchema),
-      test: (input) => invokeApi(transport, 'connection.test', input, TestModelConnectionInputSchema, ConnectionTestResultSchema),
-      listModels: (input) => invokeApi(transport, 'connection.listModels', input, ListRemoteModelsInputSchema, ListRemoteModelsResultSchema),
+      test: (input) => invokeApi(transport, 'connection.test', input, TestModelConnectionInputSchema, ConnectionTestResultSchema, { timeoutMs: SLOW_CALL_TIMEOUTS.providerRoundTrip }),
+      listModels: (input) => invokeApi(transport, 'connection.listModels', input, ListRemoteModelsInputSchema, ListRemoteModelsResultSchema, { timeoutMs: SLOW_CALL_TIMEOUTS.providerRoundTrip }),
       confirmContentTarget: (input) => invokeApi(transport, 'connection.confirmContentTarget', input, ConfirmContentTargetInputSchema, ConfirmContentTargetResultSchema),
       setTaskRoute: (input) => invokeApi(transport, 'connection.setTaskRoute', input, SetTaskRouteInputSchema, TaskRouteSummarySchema.nullable())
     },
@@ -489,9 +504,9 @@ export function createNovelAgentApi(transport: IpcTransport): NovelAgentApi {
       getSession: (input) => invokeApi(transport, 'chat.getSession', input, GetChatSessionInputSchema, ChatSessionSchema),
       updateStage: (input) => invokeApi(transport, 'chat.updateStage', input, UpdateChatWorkflowStageInputSchema, ChatSessionSchema),
       delete: (input) => invokeApi(transport, 'chat.delete', input, DeleteChatSessionInputSchema, SuccessResultSchema),
-      send: (input) => invokeApi(transport, 'chat.send', input, SendChatMessageInputSchema, z.object({ messageId: z.string().uuid(), userMessageId: z.string().uuid(), contextPackageId: z.string().uuid() })),
+      send: (input) => invokeApi(transport, 'chat.send', input, SendChatMessageInputSchema, z.object({ messageId: z.string().uuid(), userMessageId: z.string().uuid(), contextPackageId: z.string().uuid() }), { timeoutMs: SLOW_CALL_TIMEOUTS.chatTurn }),
       cancel: (input) => invokeApi(transport, 'chat.cancel', input, CancelChatInputSchema, SuccessResultSchema),
-      compact: (input) => invokeApi(transport, 'chat.compact', input, CompactChatSessionInputSchema, ChatSummarySchema),
+      compact: (input) => invokeApi(transport, 'chat.compact', input, CompactChatSessionInputSchema, ChatSummarySchema, { timeoutMs: SLOW_CALL_TIMEOUTS.chatTurn }),
       listMessages: (input) => invokeApi(transport, 'chat.listMessages', input, ListChatMessagesInputSchema, z.array(ChatMessageSchema)),
       getSummary: (input) => invokeApi(transport, 'chat.getSummary', input, GetChatSummaryInputSchema, ChatSummarySchema.nullable()),
       updateSummary: (input) => invokeApi(transport, 'chat.updateSummary', input, UpdateChatSummaryInputSchema, ChatSummarySchema),

@@ -17,7 +17,7 @@ import { compilePromptMessages } from './prompt-runtime'
 import { PROMPT_MARKERS, TASK_PROTOCOLS } from './prompt-preset'
 import { presetContentFingerprint, PromptSettingsStore } from './prompt-store'
 import { TAVERN_CONVERSION_REFERENCE as reference } from './tavern-conversion-reference'
-import { cleanTavernContent, detectBlockMarker, resolveTavernVariables } from './tavern-importer'
+import { cleanTavernContent, detectBlockMarker, expandTavernVariables, resolveTavernPromptOrder, resolveTavernVariables } from './tavern-importer'
 
 type SourceItem = PresetSourceItem & { text: string }
 type ConvertedBlockDraft = {
@@ -210,15 +210,8 @@ function readSource(input: PresetConversionInput): Source {
   const activePrompts: ActivePromptItem[] = []
   const activeExtensions: ExtensionDigest[] = []
 
-  const orders = new Map<string, { index: number; enabled: boolean | null }>()
-  const groups = Array.isArray(root.prompt_order) ? root.prompt_order : []
-  const group = groups.find((entry) => object(entry) && (entry.character_id === 100001 || entry.character_id === '100001') && Array.isArray(entry.order))
-    ?? groups.find((entry) => object(entry) && Array.isArray(entry.order))
-  const orderList = object(group) ? group.order as unknown[] : groups
-  orderList.forEach((entry, index) => {
-    const id = typeof entry === 'string' ? entry : object(entry) ? entry.identifier ?? entry.id : undefined
-    if (typeof id === 'string') orders.set(id, { index, enabled: object(entry) && typeof entry.enabled === 'boolean' ? entry.enabled : null })
-  })
+  // prompt_order 解析与快速导入路径共用同一实现（tavern-importer.resolveTavernPromptOrder）
+  const { orders, listLength } = resolveTavernPromptOrder(root.prompt_order)
 
   const add = (path: string, kind: SourceItem['kind'], value: unknown, name = path, enabled: boolean | null = null, order: number | null = null): SourceItem => {
     const text = JSON.stringify(value)
@@ -234,8 +227,9 @@ function readSource(input: PresetConversionInput): Source {
     const identifier = String(promptObj.identifier ?? promptObj.id ?? '')
     const info = identifier ? orders.get(identifier) : undefined
     const defaultEnabled = typeof promptObj.enabled === 'boolean' ? promptObj.enabled : true
-    const enabled = orderList.length ? info ? info.enabled ?? defaultEnabled : false : defaultEnabled
-    const order = info?.index ?? orderList.length + index
+    // 与快速导入的有意分歧：有排序列表但条目缺席时视为停用（转换路径要求显式启用）
+    const enabled = listLength ? info ? info.enabled ?? defaultEnabled : false : defaultEnabled
+    const order = info?.order ?? listLength + index
     const name = String(promptObj.name || identifier || `Prompt ${index + 1}`)
     const item = add(Array.isArray(raw) ? `$[${index}]` : `$.prompts[${index}]`, 'prompt', prompt, name, enabled, order)
     rawPromptEntries.push({ item, promptObj, identifier, enabled, order })
@@ -328,8 +322,6 @@ function readSource(input: PresetConversionInput): Source {
     if (!variables.has(key) && value.trim()) variables.set(key, value)
   }
 
-  const getvarRegex = /\{\{\s*(?:getvar|getglobalvar)::([^}]+)\}\}/gi
-  const setvarStripRegex = /\{\{\s*(?:setvar|setglobalvar)::([^:]+)::([\s\S]*?)\}\}/gi
   const seenEmptyMarkers = new Set<string>()
 
   for (const entry of sortedPromptEntries) {
@@ -342,12 +334,8 @@ function readSource(input: PresetConversionInput): Source {
     const rawContent = String(promptObj.content ?? '')
     const hadSetvar = /\{\{\s*(?:setvar|setglobalvar)::/i.test(rawContent)
 
-    let text = rawContent.replace(setvarStripRegex, '')
-    for (let pass = 0; pass < 3; pass++) {
-      if (!getvarRegex.test(text)) break
-      getvarRegex.lastIndex = 0
-      text = text.replace(getvarRegex, (_, key: string) => variables.get(key.trim()) ?? `{{getvar::${key.trim()}}}`)
-    }
+    // 未解析的 getvar 保留原样（与快速导入的有意分歧），交由编译期校验兜底
+    const text = expandTavernVariables(rawContent, variables, 'keep')
     const cleanedContent = cleanTavernContent(text)
     const suggestedMarker = detectBlockMarker({ ...promptObj, identifier, name: item.name, content: cleanedContent }) ?? null
 

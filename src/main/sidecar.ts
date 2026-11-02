@@ -88,6 +88,23 @@ export function startSidecar(options: SidecarOptions = {}): {
     terminal: false
   })
 
+  // 未落地的写入计数：Windows 管道写是异步的，进程退出过早会把缓冲中的
+  // 最后一条响应截断（宿主会误判"最后一条命令失败"）。
+  let pendingWrites = 0
+  const writeOut = (payload: string): void => {
+    pendingWrites += 1
+    output.write(payload + '\n', () => {
+      pendingWrites -= 1
+    })
+  }
+
+  const waitForOutputDrain = async (): Promise<void> => {
+    const deadline = Date.now() + 1000
+    while (pendingWrites > 0 && Date.now() < deadline) {
+      await new Promise<void>((resolve) => setTimeout(resolve, 10))
+    }
+  }
+
   const unsubscribeEvents = router.onEvent((event) => {
     try {
       const notification = JSON.stringify({
@@ -98,7 +115,7 @@ export function startSidecar(options: SidecarOptions = {}): {
           payload: event.payload
         }
       })
-      output.write(notification + '\n')
+      writeOut(notification)
     } catch (err) {
       process.stderr.write(`[Sidecar] Failed to write event notification: ${String(err)}\n`)
     }
@@ -120,6 +137,7 @@ export function startSidecar(options: SidecarOptions = {}): {
       process.removeListener('SIGINT', onSignal)
       process.removeListener('SIGTERM', onSignal)
     }
+    await waitForOutputDrain()
     if (exitOnClose) {
       process.exit(0)
     }
@@ -133,34 +151,34 @@ export function startSidecar(options: SidecarOptions = {}): {
     try {
       req = JSON.parse(trimmed)
     } catch {
-      output.write(
+      writeOut(
         JSON.stringify({
           jsonrpc: '2.0',
           id: null,
           error: { code: -32700, message: 'Parse error' }
-        }) + '\n'
+        })
       )
       return
     }
 
     if (req.jsonrpc !== '2.0') {
-      output.write(
+      writeOut(
         JSON.stringify({
           jsonrpc: '2.0',
           id: req.id ?? null,
           error: { code: -32600, message: 'Invalid Request: jsonrpc must be 2.0' }
-        }) + '\n'
+        })
       )
       return
     }
 
     if (!req.method || !router.has(req.method)) {
-      output.write(
+      writeOut(
         JSON.stringify({
           jsonrpc: '2.0',
           id: req.id,
           error: { code: -32601, message: `Method not found: ${req.method}` }
-        }) + '\n'
+        })
       )
       return
     }
@@ -168,16 +186,16 @@ export function startSidecar(options: SidecarOptions = {}): {
     try {
       const res = await router.handle(req.method, req.params)
       if (res.ok) {
-        output.write(
+        writeOut(
           JSON.stringify({
             jsonrpc: '2.0',
             id: req.id,
             result: res.value
-          }) + '\n'
+          })
         )
       } else {
         const err = res.error as { code?: string; message?: string }
-        output.write(
+        writeOut(
           JSON.stringify({
             jsonrpc: '2.0',
             id: req.id,
@@ -186,12 +204,12 @@ export function startSidecar(options: SidecarOptions = {}): {
               message: err.message || 'Server error',
               data: { domainCode: err.code }
             }
-          }) + '\n'
+          })
         )
       }
     } catch (e: unknown) {
       const err = e as { code?: string; message?: string }
-      output.write(
+      writeOut(
         JSON.stringify({
           jsonrpc: '2.0',
           id: req.id,
@@ -200,7 +218,7 @@ export function startSidecar(options: SidecarOptions = {}): {
             message: err.message || 'Server error',
             data: { domainCode: err.code }
           }
-        }) + '\n'
+        })
       )
     }
   })
