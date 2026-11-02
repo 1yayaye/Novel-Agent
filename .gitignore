@@ -17,6 +17,7 @@ secrets/
 
 # Test & coverage artifacts
 coverage/
+test-results/
 docs/**/screenshots/
 
 # Real-API tests with personal keys/paths — keep local only, never push

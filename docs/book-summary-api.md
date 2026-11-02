@@ -1,6 +1,6 @@
 # 全书剧情提取与大纲：前端接口
 
-后端入口为 `window.novelAgent.analysis.start({ type: 'book_summary', ... })`。Electron 和 WinUI/WebView2 使用同一份 `NovelAgentApi`；新增方法已接入 preload、共享桥接和服务路由。本文覆盖后端已经实现的行为，前端页面和按钮需要另行接入。
+后端入口为 `window.novelAgent.analysis.start({ type: 'book_summary', ... })`。WinUI/WebView2 宿主使用统一的 `NovelAgentApi`；新增方法已接入共享桥接和服务路由。本文覆盖后端已经实现的行为，前端页面和按钮需要另行接入。
 
 类型定义以 `src/shared/contracts/book-summary.ts`、`src/shared/contracts/ai.ts`、`src/shared/contracts/outline.ts` 和 `src/shared/contracts/index.ts` 为准，可统一从 `src/shared/project.ts` 导入。不要解析 `scopeJson` 或 `checkpointJson` 展示结果，使用 `TaskDetail.bookSummary`。
 

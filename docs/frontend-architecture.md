@@ -12,7 +12,7 @@
 3. **视觉偏离用户**：早期的界面设计偏向于冷峻硬朗的程序员 IDE（黑色控制台与密集树状图），缺少小说创作者所需要的温润、呼吸感与人文关怀。
 
 ### 重构后技术基座
-- **核心框架**：React 19.2 + TypeScript 7.0 + Vite 7.3 + Electron 43
+- **核心框架**：React 19.2 + TypeScript 7.0 + Vite 7.3（宿主为 WinUI 3 + WebView2）
 - **样式引擎**：Tailwind CSS v4（通过 `@tailwindcss/vite` 原生编译，CSS 体积压缩逾 90% 至 58.5 KB）
 - **状态流解耦**：Zustand 领域切片状态池（`useProjectStore`, `useEditorStore`, `useWorkbenchStore`, `useTaskStore`）
 - **组件范式**：`@appica/ui-react`（基于 Base UI）+ `src/renderer/components/ai/` 的轻量 AI 表面

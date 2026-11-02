@@ -1,6 +1,6 @@
 # 预设转换后端接口
 
-本文对应 `src/shared/preset-conversion.ts` 的契约和 `src/main/preset-conversion.ts` 的实现。转换流程已经接入 Electron 预加载桥、共享平台桥和 WinUI Sidecar，并提供了导入界面：`src/renderer/components/dialogs/` 下的 `PresetConversionDialog.tsx`（发起转换与两阶段进度）、`PresetConversionReportDialog.tsx`（兼容报告查看入口）与 `PresetConversionReportView.tsx`（报告渲染），由 `DialogHost.tsx` 挂载。
+本文对应 `src/shared/preset-conversion.ts` 的契约和 `src/main/preset-conversion.ts` 的实现。转换流程已经接入共享平台桥和 WinUI Sidecar，并提供了导入界面：`src/renderer/components/dialogs/` 下的 `PresetConversionDialog.tsx`（发起转换与两阶段进度）、`PresetConversionReportDialog.tsx`（兼容报告查看入口）与 `PresetConversionReportView.tsx`（报告渲染），由 `DialogHost.tsx` 挂载。
 
 酒馆预设经过来源解析、完整内容分批分析、摘要整合、静态转换和编译校验，返回待确认的预设及兼容报告。开始转换会调用模型，读取结果不会保存或启用预设；调用方确认后使用已有预设库接口保存。
 

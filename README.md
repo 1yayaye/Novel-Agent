@@ -14,11 +14,12 @@
 - 温润拿铁视觉系统：针对小说作者量身打造的卡片叙事流（Warm Latte），14px 圆角书房质感，内置明亮纸张、羊皮手稿、夜幕写作三套主题
 - 交互分层与 Action Dock：底部悬浮胶囊工具坞（大纲速查/人物卡/一键润色/字数环），右侧无干扰滑入式抽屉（故事节拍、大纲、知识库、后台任务）
 
-当前打包目标为 Windows x64 便携版。
+应用宿主为 WinUI 3 + WebView2，打包目标为 Windows x64 便携 ZIP。
 
 ## 前端技术栈与架构
 
 - **渲染层技术栈**：React 19 + TypeScript + Vite + Tailwind CSS v4 + Zustand
+- **宿主形态**：WinUI 3 + WebView2 加载渲染层；本地服务由 Node sidecar（stdio JSON-RPC）提供
 - **前端架构文档**：详见 [docs/frontend-architecture.md](docs/frontend-architecture.md)
 
 ## 环境
@@ -26,6 +27,7 @@
 - Windows 10 / 11（x64）
 - Node.js 20.18+（推荐 22 LTS）
 - pnpm 9+（仓库锁定 `pnpm@11.21.0`）
+- .NET 8 SDK（WinUI 宿主开发与打包需要）
 
 ```bash
 pnpm install
@@ -35,22 +37,22 @@ pnpm dev
 ## 常用命令
 
 ```bash
+pnpm dev                # 启动 WinUI 宿主 + 渲染层热更新（等价 winui:dev）
 pnpm typecheck          # TypeScript 检查
-pnpm test               # 单元 / 集成测试
-pnpm probe:native       # SQLite 与 sqlite-vec 原生模块
-pnpm test:e2e           # Playwright Electron 冒烟测试
-pnpm package:portable   # Windows 便携版 .exe
-pnpm package:zip        # Windows 绿色 ZIP
+pnpm test               # 单元 / 集成测试（含 dual-track 服务层集成）
+pnpm probe:native       # SQLite 与 sqlite-vec 原生模块探针（纯 Node）
+pnpm build              # 构建渲染层与 sidecar
+pnpm winui:package      # Windows x64 便携 ZIP
 pnpm verify             # 发布前全量检查
 ```
 
-便携版数据写在可执行文件旁的 `data/` 目录。项目版本兼容和能力边界见 [项目版本兼容与功能能力](docs/project-compatibility-and-capabilities.md)。旧项目不会自动迁移，也没有升级入口；新能力只对新建的当前 schema 项目开放。
+便携版数据写在可执行文件旁的 `data/` 目录；打包版要求目标机器 PATH 中有 Node.js（已知限制）。项目版本兼容和能力边界见 [项目版本兼容与功能能力](docs/project-compatibility-and-capabilities.md)。旧项目不会自动迁移，也没有升级入口；新能力只对新建的当前 schema 项目开放。
 
 ## 数据与隐私
 
 - 稿件默认只存在本机 `.novelproj` 中，不上传云端
 - 无遥测、无行为追踪
-- 模型 API Key 由 Electron `safeStorage` 加密存放
+- 模型 API Key 由 Windows DPAPI（CurrentUser 作用域）加密存放
 - 首次向某个 API 端点发送正文前会要求确认
 
 请勿把 `dist/`、`data/`、`*.novelproj` 或 `secrets/` 提交到 Git。
@@ -66,6 +68,8 @@ pnpm verify             # 发布前全量检查
 - [0005 渲染层组件体系与工作台交互分层 (Appica UI + drawers)](docs/adr/0005-renderer-component-and-workspace-interaction-hierarchy.md)
 - [0006 视觉设计语言与领域切片重塑 (温润拿铁与故事节拍流)](docs/adr/0006-visual-direction-and-renderer-reconstruction.md)
 - [0007 以完整明月流程实现全书剧情提取](docs/adr/0007-mingyue-book-summary.md)
+- [0008 移除 Electron 宿主，只保留 WinUI 宿主](docs/adr/0008-remove-electron-host.md)
+- [0009 连接凭据改用 Windows DPAPI 加密](docs/adr/0009-dpapi-credential-encryption.md)
 
 
 ## 许可证
