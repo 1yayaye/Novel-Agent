@@ -1,23 +1,16 @@
 import { mkdirSync, mkdtempSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
-import { dirname, join, sep } from 'node:path'
+import { dirname, join } from 'node:path'
 import Database from 'better-sqlite3'
 import * as sqliteVec from 'sqlite-vec'
 import { NativeProbeResultSchema, type NativeProbeResult } from '../shared/native-probe'
 import { pingWorker } from './worker'
 
-function loadableSqliteVecPath(isPackaged: boolean): string {
-  const loadablePath = sqliteVec.getLoadablePath()
-  return isPackaged
-    ? loadablePath.replace(`${sep}app.asar${sep}`, `${sep}app.asar.unpacked${sep}`)
-    : loadablePath
-}
-
-export async function runNativeProbe(isPackaged: boolean): Promise<NativeProbeResult> {
+export async function runNativeProbe(): Promise<NativeProbeResult> {
   const projectDirectory = mkdtempSync(join(tmpdir(), 'Novel-Agent-探针-'))
   const projectPath = join(projectDirectory, '中文临时项目.novelproj')
   const database = new Database(projectPath)
-  const sqliteVecPath = loadableSqliteVecPath(isPackaged)
+  const sqliteVecPath = sqliteVec.getLoadablePath()
 
   try {
     const sqliteVersion = database.prepare('select sqlite_version() as version').get() as { version: string }

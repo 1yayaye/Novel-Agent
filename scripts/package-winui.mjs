@@ -10,8 +10,8 @@ const RENDERER_DEST = resolve(DIST_DIR, 'renderer')
 const SIDECAR_OUT = resolve(PROJECT_ROOT, 'out/main/sidecar.cjs')
 const SIDECAR_DEST_DIR = resolve(DIST_DIR, 'sidecar')
 const SIDECAR_DEST = resolve(SIDECAR_DEST_DIR, 'index.cjs')
-const SIDECAR_CHUNKS_OUT = resolve(PROJECT_ROOT, 'out/main/chunks')
-const SIDECAR_CHUNKS_DEST = resolve(SIDECAR_DEST_DIR, 'chunks')
+const WORKER_OUT = resolve(PROJECT_ROOT, 'out/main/worker.cjs')
+const WORKER_DEST = resolve(SIDECAR_DEST_DIR, 'worker.cjs')
 const RUNTIME_MODULES = ['better-sqlite3', 'sqlite-vec', 'sqlite-vec-windows-x64']
 const WINUI_PROJ = resolve(PROJECT_ROOT, 'src-winui/NovelAgent.WinUI.csproj')
 
@@ -89,9 +89,7 @@ console.log('\n[3/3] Copying renderer assets to dist-winui/renderer...')
 await cp(RENDERER_OUT, RENDERER_DEST, { recursive: true })
 await mkdir(SIDECAR_DEST_DIR, { recursive: true })
 await cp(SIDECAR_OUT, SIDECAR_DEST)
-if (existsSync(SIDECAR_CHUNKS_OUT)) {
-  await cp(SIDECAR_CHUNKS_OUT, SIDECAR_CHUNKS_DEST, { recursive: true })
-}
+await cp(WORKER_OUT, WORKER_DEST)
 const runtimeModulesDir = resolve(DIST_DIR, 'node_modules')
 await mkdir(runtimeModulesDir, { recursive: true })
 for (const moduleName of RUNTIME_MODULES) {
@@ -128,12 +126,12 @@ if (!existsSync(htmlPath)) {
 }
 
 if (!existsSync(SIDECAR_DEST)) {
-  console.error(`[winui:package] Verification failed: ${SIDECAR_DEST} missing.`)
+  console.error('[winui:package] Verification failed: sidecar index.cjs missing.')
   process.exit(1)
 }
 
-if (!existsSync(SIDECAR_CHUNKS_DEST)) {
-  console.error(`[winui:package] Verification failed: ${SIDECAR_CHUNKS_DEST} missing.`)
+if (!existsSync(WORKER_DEST)) {
+  console.error('[winui:package] Verification failed: sidecar worker.cjs missing.')
   process.exit(1)
 }
 

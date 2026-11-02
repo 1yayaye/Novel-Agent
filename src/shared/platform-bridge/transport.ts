@@ -2,7 +2,7 @@
  * src/shared/platform-bridge/transport.ts
  *
  * Core IPC transport interfaces and platform adapters for Novel Agent.
- * Enables transparent communication across Electron preload and WinUI 3 WebView2.
+ * Communicates with the WinUI 3 host through WebView2 postMessage.
  */
 
 import type { ProjectErrorCode } from '../contracts/system.js'
@@ -89,97 +89,7 @@ export interface IpcTransport {
 }
 
 // ============================================================================
-// 3. Electron Preload Adapter
-// ============================================================================
-
-export interface ElectronIpcRendererLike {
-  invoke(channel: string, ...args: unknown[]): Promise<unknown>
-  on(channel: string, listener: (event: unknown, ...args: unknown[]) => void): unknown
-  removeListener(channel: string, listener: (event: unknown, ...args: unknown[]) => void): unknown
-}
-
-/**
- * Transport adapter wrapping Electron's ipcRenderer.
- */
-export class ElectronPreloadTransport implements IpcTransport {
-  private readonly ipc: ElectronIpcRendererLike
-
-  constructor(ipcRenderer?: ElectronIpcRendererLike) {
-    if (ipcRenderer) {
-      this.ipc = ipcRenderer
-    } else if (
-      typeof window !== 'undefined' &&
-      (window as unknown as { electron?: { ipcRenderer?: ElectronIpcRendererLike } }).electron?.ipcRenderer
-    ) {
-      this.ipc = (window as unknown as { electron: { ipcRenderer: ElectronIpcRendererLike } }).electron.ipcRenderer
-    } else if (
-      typeof window !== 'undefined' &&
-      (window as unknown as { ipcRenderer?: ElectronIpcRendererLike }).ipcRenderer
-    ) {
-      this.ipc = (window as unknown as { ipcRenderer: ElectronIpcRendererLike }).ipcRenderer
-    } else if (typeof require !== 'undefined') {
-      try {
-        // Fallback for direct node/electron preload environment where electron module is available
-        // eslint-disable-next-line @typescript-eslint/no-require-imports
-        const electronModule = require('electron') as { ipcRenderer?: ElectronIpcRendererLike }
-        if (!electronModule?.ipcRenderer) {
-          throw new Error('electron.ipcRenderer is undefined')
-        }
-        this.ipc = electronModule.ipcRenderer
-      } catch (err) {
-        throw new Error(`ElectronPreloadTransport: ipcRenderer unavailable (${(err as Error).message})`)
-      }
-    } else {
-      throw new Error('ElectronPreloadTransport: ipcRenderer unavailable in current environment')
-    }
-  }
-
-  async invoke(channel: string, payload?: unknown): Promise<unknown> {
-    try {
-      const result = await this.ipc.invoke(channel, payload)
-      // Check for wrapped IpcResult { ok: true, value } | { ok: false, error }
-      if (result && typeof result === 'object' && 'ok' in result) {
-        const res = result as { ok: boolean; value?: unknown; error?: { code?: string; message?: string } }
-        if (res.ok) {
-          return res.value
-        }
-        const code = res.error?.code ?? 'DATABASE_ERROR'
-        const message = res.error?.message ?? 'IPC invocation failed'
-        throw new NovelAgentError(code, message)
-      }
-      return result
-    } catch (error) {
-      if (isNovelAgentError(error)) {
-        throw error
-      }
-      throw new NovelAgentError(
-        'DATABASE_ERROR',
-        (error as Error)?.message ?? 'IPC invocation failed'
-      )
-    }
-  }
-
-  on(channel: string, listener: (payload: unknown) => void): () => void {
-    const ipcListener = (_event: unknown, data: unknown) => {
-      try {
-        listener(data)
-      } catch (err) {
-        console.error(`[ElectronPreloadTransport] Uncaught error in listener for "${channel}":`, err)
-      }
-    }
-
-    this.ipc.on(channel, ipcListener)
-    let unsubscribed = false
-    return () => {
-      if (unsubscribed) return
-      unsubscribed = true
-      this.ipc.removeListener(channel, ipcListener)
-    }
-  }
-}
-
-// ============================================================================
-// 4. WebView2 Wire Protocol & Types
+// 3. WebView2 Wire Protocol & Types
 // ============================================================================
 
 export interface WebView2RpcRequest {
@@ -240,7 +150,7 @@ interface PendingRpcRequest {
 }
 
 // ============================================================================
-// 5. WebView2 Transport Adapter
+// 4. WebView2 Transport Adapter
 // ============================================================================
 
 /**

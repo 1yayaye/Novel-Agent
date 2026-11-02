@@ -3,7 +3,7 @@ import { ApplySummaryOutlineInputSchema, ExportSummaryInputSchema } from '../con
  * src/shared/platform-bridge/api-factory.ts
  *
  * Constructs the strongly typed NovelAgentApi surface on top of an IpcTransport.
- * Compatible with Electron preload and WinUI 3 WebView2.
+ * Runs inside the WinUI 3 WebView2 renderer.
  */
 
 import { z } from 'zod'
@@ -211,10 +211,8 @@ import {
   type IpcTransport,
   NovelAgentError,
   isNovelAgentError,
-  ElectronPreloadTransport,
   WebView2Transport,
   type ChromeWebViewLike,
-  type ElectronIpcRendererLike,
   type InvokeOptions
 } from './transport.js'
 
@@ -546,7 +544,7 @@ export function createNovelAgentApi(transport: IpcTransport): NovelAgentApi {
 
 /**
  * Ensures a valid platform bridge is attached to window.novelAgent.
- * Autodetects Electron preload vs WinUI 3 WebView2, or provides headless fallback.
+ * Autodetects WinUI 3 WebView2, or provides headless fallback.
  */
 export function ensurePlatformBridge(customTransport?: IpcTransport): NovelAgentApi {
   if (customTransport) {
@@ -567,13 +565,6 @@ export function ensurePlatformBridge(customTransport?: IpcTransport): NovelAgent
     (window as unknown as { chrome?: { webview?: ChromeWebViewLike } }).chrome?.webview
   ) {
     transport = new WebView2Transport((window as unknown as { chrome: { webview: ChromeWebViewLike } }).chrome.webview)
-  } else if (
-    typeof window !== 'undefined' &&
-    (window as unknown as { electron?: { ipcRenderer?: ElectronIpcRendererLike } }).electron?.ipcRenderer
-  ) {
-    transport = new ElectronPreloadTransport(
-      (window as unknown as { electron: { ipcRenderer: ElectronIpcRendererLike } }).electron.ipcRenderer
-    )
   } else {
     transport = new HeadlessFallbackTransport()
   }

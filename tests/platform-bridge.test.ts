@@ -2,11 +2,9 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import {
   NovelAgentError,
   isNovelAgentError,
-  ElectronPreloadTransport,
   WebView2Transport,
   generateCorrelationId,
   type ChromeWebViewLike,
-  type ElectronIpcRendererLike,
   type IpcTransport
 } from '../src/shared/platform-bridge/transport'
 import {
@@ -79,98 +77,6 @@ describe('PlatformBridge - NovelAgentError & Type Guards', () => {
     expect(isNovelAgentError(badObject)).toBe(false)
     expect(isNovelAgentError(null)).toBe(false)
     expect(isNovelAgentError('error string')).toBe(false)
-  })
-})
-
-describe('PlatformBridge - ElectronPreloadTransport', () => {
-  it('unwraps successful { ok: true, value } responses from ipcRenderer', async () => {
-    const mockIpc: ElectronIpcRendererLike = {
-      invoke: vi.fn().mockResolvedValue({ ok: true, value: { success: true } }),
-      on: vi.fn(),
-      removeListener: vi.fn()
-    }
-    const transport = new ElectronPreloadTransport(mockIpc)
-
-    const result = await transport.invoke('project.close', { sessionId: '00000000-0000-0000-0000-000000000000' })
-    expect(result).toEqual({ success: true })
-    expect(mockIpc.invoke).toHaveBeenCalledWith('project.close', {
-      sessionId: '00000000-0000-0000-0000-000000000000'
-    })
-  })
-
-  it('unwraps raw responses when not wrapped in ok object', async () => {
-    const mockIpc: ElectronIpcRendererLike = {
-      invoke: vi.fn().mockResolvedValue('raw-value'),
-      on: vi.fn(),
-      removeListener: vi.fn()
-    }
-    const transport = new ElectronPreloadTransport(mockIpc)
-
-    const result = await transport.invoke('custom.channel')
-    expect(result).toBe('raw-value')
-  })
-
-  it('maps { ok: false, error } responses to NovelAgentError', async () => {
-    const mockIpc: ElectronIpcRendererLike = {
-      invoke: vi.fn().mockResolvedValue({
-        ok: false,
-        error: { code: 'VERSION_CONFLICT', message: 'Version conflict detected' }
-      }),
-      on: vi.fn(),
-      removeListener: vi.fn()
-    }
-    const transport = new ElectronPreloadTransport(mockIpc)
-
-    await expect(transport.invoke('chapter.update')).rejects.toSatisfy((err: unknown) => {
-      return (
-        isNovelAgentError(err) &&
-        err.code === 'VERSION_CONFLICT' &&
-        err.message === 'Version conflict detected'
-      )
-    })
-  })
-
-  it('maps unexpected thrown errors to NovelAgentError with DATABASE_ERROR', async () => {
-    const mockIpc: ElectronIpcRendererLike = {
-      invoke: vi.fn().mockRejectedValue(new Error('IPC bus crash')),
-      on: vi.fn(),
-      removeListener: vi.fn()
-    }
-    const transport = new ElectronPreloadTransport(mockIpc)
-
-    await expect(transport.invoke('project.open')).rejects.toSatisfy((err: unknown) => {
-      return isNovelAgentError(err) && err.code === 'DATABASE_ERROR' && err.message === 'IPC bus crash'
-    })
-  })
-
-  it('registers and unregisters push event listeners correctly and idempotently', () => {
-    let capturedListener: ((event: unknown, data: unknown) => void) | null = null
-    const mockIpc: ElectronIpcRendererLike = {
-      invoke: vi.fn(),
-      on: vi.fn((_channel, listener) => {
-        capturedListener = listener
-      }),
-      removeListener: vi.fn()
-    }
-    const transport = new ElectronPreloadTransport(mockIpc)
-
-    const callback = vi.fn()
-    const unsubscribe = transport.on('candidate:delta', callback)
-
-    expect(mockIpc.on).toHaveBeenCalledWith('candidate:delta', expect.any(Function))
-    expect(capturedListener).not.toBeNull()
-
-    // Trigger event
-    capturedListener!({}, { text: 'hello' })
-    expect(callback).toHaveBeenCalledWith({ text: 'hello' })
-
-    // Unsubscribe
-    unsubscribe()
-    expect(mockIpc.removeListener).toHaveBeenCalledTimes(1)
-
-    // Second unsubscribe call is idempotent
-    unsubscribe()
-    expect(mockIpc.removeListener).toHaveBeenCalledTimes(1)
   })
 })
 
@@ -716,20 +622,6 @@ describe('PlatformBridge - ensurePlatformBridge Bootstrap & Autodetection', () =
     }
     // @ts-expect-error inject chrome.webview
     globalThis.window = { chrome: { webview: mockWebview } }
-
-    const bridge = ensurePlatformBridge()
-    expect(bridge).not.toBeUndefined()
-    expect((window as unknown as { novelAgent: unknown }).novelAgent).toBe(bridge)
-  })
-
-  it('autodetects window.electron.ipcRenderer and creates ElectronPreloadTransport', () => {
-    const mockIpc: ElectronIpcRendererLike = {
-      invoke: vi.fn(),
-      on: vi.fn(),
-      removeListener: vi.fn()
-    }
-    // @ts-expect-error inject electron.ipcRenderer
-    globalThis.window = { electron: { ipcRenderer: mockIpc } }
 
     const bridge = ensurePlatformBridge()
     expect(bridge).not.toBeUndefined()

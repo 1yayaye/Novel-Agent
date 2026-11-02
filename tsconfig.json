@@ -10,5 +10,5 @@
     "noEmit": true,
     "types": ["node", "vitest/globals"]
   },
-  "include": ["src", "scripts", "tests", "playwright.config.ts", "electron.vite.config.ts"]
+  "include": ["src", "scripts", "tests", "vite.config.ts", "vitest.config.ts"]
 }

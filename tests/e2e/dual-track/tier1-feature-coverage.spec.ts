@@ -444,9 +444,10 @@ describe('Tier 1: Feature Coverage — Dual-Track Core Architecture', () => {
     expect(pkg.scripts.test).toBeDefined()
   })
 
-  it('cli-02: verifies baseline Electron run & build scripts are 100% preserved', async () => {
+  it('cli-02: verifies single-host WinUI scripts are wired up', async () => {
     const pkg = JSON.parse(readFileSync('package.json', 'utf8'))
-    expect(pkg.scripts['package:portable']).toContain('electron-builder')
+    expect(pkg.scripts['winui:dev']).toBeDefined()
+    expect(pkg.scripts['winui:package']).toBeDefined()
     expect(pkg.scripts.test).toContain('vitest')
   })
 
@@ -456,11 +457,12 @@ describe('Tier 1: Feature Coverage — Dual-Track Core Architecture', () => {
     expect(buildCmd).toContain('-p:Platform=x64')
   })
 
-  it('cli-04: verifies renderer dist folder is configured for dual-track consumption', async () => {
-    const configPath = 'electron.vite.config.ts'
+  it('cli-04: verifies renderer dist folder is configured for sidecar consumption', async () => {
+    const configPath = 'vite.config.ts'
     expect(existsSync(configPath)).toBe(true)
     const viteConfig = readFileSync(configPath, 'utf8')
     expect(viteConfig).toContain('renderer')
+    expect(viteConfig).toContain('out/renderer')
   })
 
   it('cli-05: verifies unpackaged distribution directory isolation', async () => {

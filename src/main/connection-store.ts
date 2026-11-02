@@ -26,7 +26,7 @@ type DpapiBindings = {
 const dpapi: DpapiBindings | undefined = (() => {
   if (process.platform !== 'win32') return undefined
   try {
-    return createRequire(import.meta.url)('@primno/dpapi').default as DpapiBindings
+    return createRequire(__filename)('@primno/dpapi').default as DpapiBindings
   } catch {
     return undefined
   }

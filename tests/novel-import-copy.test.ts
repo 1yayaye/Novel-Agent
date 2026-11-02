@@ -2,7 +2,7 @@ import { existsSync, mkdirSync, readFileSync, unlinkSync, writeFileSync } from '
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
-import { copySourceToNovels } from '../src/main/project-ipc'
+import { copySourceToNovels } from '../src/main/service-router'
 import { ProjectStore } from '../src/main/project-store'
 import { parseImport } from '../src/main/import-parser'
 
