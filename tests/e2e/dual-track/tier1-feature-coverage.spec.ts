@@ -466,8 +466,8 @@ describe('Tier 1: Feature Coverage — Dual-Track Core Architecture', () => {
   })
 
   it('cli-05: verifies unpackaged distribution directory isolation', async () => {
-    const electronOut = 'out'
+    const webBuildOut = 'out'
     const winuiOut = 'src-winui/bin'
-    expect(electronOut).not.toBe(winuiOut)
+    expect(webBuildOut).not.toBe(winuiOut)
   })
 })

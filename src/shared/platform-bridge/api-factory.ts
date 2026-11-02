@@ -306,7 +306,7 @@ export function subscribeEvent<E>(
 }
 
 /**
- * Headless fallback transport used when neither Electron nor WebView2 runtime is present.
+ * Headless fallback transport used when no WebView2 runtime is present.
  */
 export class HeadlessFallbackTransport implements IpcTransport {
   async invoke(channel: string): Promise<unknown> {

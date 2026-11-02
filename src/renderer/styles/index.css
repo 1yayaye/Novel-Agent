@@ -114,7 +114,8 @@
     background: #baa997;
   }
 
-  /* Electron window drag headers */
+  /* 自定义标题栏拖拽区（WebView2 内的 CSS 拖拽仅对 Electron 生效，
+     WinUI 宿主由 C# 侧 AppWindow 处理拖拽，此样式保持布局占位与降级兼容） */
   .drag-region {
     -webkit-app-region: drag;
   }

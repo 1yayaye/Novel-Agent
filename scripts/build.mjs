@@ -8,7 +8,7 @@ const PROJECT_ROOT = resolve(import.meta.dirname, '..')
 const isWin = process.platform === 'win32'
 
 // 原生模块外部化：打包产物只含业务代码，原生 .node 文件由 package-winui.mjs 复制真实目录。
-// zod 会被打进产物（与旧 electron-vite 行为一致），打包目录无需携带它。
+// zod 会被打进产物，打包目录无需携带它。
 const EXTERNAL = ['better-sqlite3', 'sqlite-vec', '@primno/dpapi']
 
 // 服务层沿用 Vite 的 `?raw` 约定内联 SQL 迁移脚本；esbuild 会剥掉 query 后缀，

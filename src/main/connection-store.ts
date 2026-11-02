@@ -390,7 +390,7 @@ export class ConnectionStore {
       if (Array.isArray(parsed)) return parsed
       throw new Error('connections.json 顶层不是数组')
     } catch (error) {
-      // Electron 主进程与 sidecar 可能写同一份文件；损坏的配置绝不能被下一次
+      // 多个服务进程（sidecar 或测试）可能写同一份文件；损坏的配置绝不能被下一次
       // 写入静默覆盖——先改名保留现场供人工恢复，再从空列表重建。
       const quarantinePath = `${this.configPath}.corrupt-${Date.now()}`
       try {
