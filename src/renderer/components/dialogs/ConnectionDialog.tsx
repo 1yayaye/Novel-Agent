@@ -488,7 +488,7 @@ export function ConnectionDialog({
                     </p>
                     <p>
                       3. <strong>系统级加密存储</strong>：API Key 与敏感鉴权信息在本地通过 OS
-                      凭据库 (Electron safeStorage / AES-256-GCM) 严密加密，严禁随作品项目文件分发。
+                      凭据库（Windows DPAPI）严密加密，严禁随作品项目文件分发。
                     </p>
                   </Card>
 

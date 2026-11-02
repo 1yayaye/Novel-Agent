@@ -194,48 +194,48 @@ describe('ConnectionStore', () => {
     })
   })
 
-  it('rejects production credential writes when safeStorage is unavailable without changing old data', () => {
-    const existing = store.create({
-      name: 'Existing Secret',
+  it('encrypts credentials with Windows DPAPI and decrypts them in a later session', () => {
+    const created = store.create({
+      name: 'DPAPI Roundtrip',
       kind: 'generation',
       baseUrl: 'https://api.example.com/v1',
       model: 'test-model',
-      apiKey: 'old-secret'
+      apiKey: 'sk-dpapi-secret-12345'
     })
-    const secretPath = join(tempDir, 'secrets', `${existing.id}.enc`)
-    const beforeSecret = readFileSync(secretPath)
+    const secretPath = join(tempDir, 'secrets', `${created.id}.enc`)
+    const blob = readFileSync(secretPath)
 
-    const originalVitest = process.env.VITEST
-    const originalNodeEnv = process.env.NODE_ENV
-    try {
-      process.env.VITEST = 'false'
-      process.env.NODE_ENV = 'production'
+    // 落盘的是 SAFE: 前缀的 DPAPI 密文，明文不出现在文件里
+    expect(blob.subarray(0, 5).toString('utf8')).toBe('SAFE:')
+    expect(blob.toString('utf8')).not.toContain('sk-dpapi-secret-12345')
 
-      expect(() => store.update({
-        connectionId: existing.id,
-        expectedVersion: existing.version,
-        apiKey: 'new-secret'
-      })).toThrowError(expect.objectContaining({ code: 'CONNECTION_FAILED' }))
+    const reopened = new ConnectionStore(tempDir)
+    expect(reopened.getInternal(created.id).secret.apiKey).toBe('sk-dpapi-secret-12345')
+  })
 
-      expect(readFileSync(secretPath)).toEqual(beforeSecret)
-      expect(store.get(existing.id).version).toBe(existing.version)
+  it('rejects undecryptable credentials (e.g. from another machine) with a re-save hint', () => {
+    const created = store.create({
+      name: 'Foreign Secret',
+      kind: 'generation',
+      baseUrl: 'https://api.example.com/v1',
+      model: 'test-model',
+      apiKey: 'will-be-replaced'
+    })
+    const secretPath = join(tempDir, 'secrets', `${created.id}.enc`)
+    // 模拟来自其他 Windows 账户/机器的 SAFE: 密文：本机 DPAPI 无法解开
+    writeFileSync(secretPath, Buffer.concat([Buffer.from('SAFE:'), Buffer.from('01000000-not-a-valid-blob')]))
 
-      const freshPath = join(tempDir, 'fresh')
-      const freshStore = new ConnectionStore(freshPath)
-      expect(() => freshStore.create({
-        name: 'Unavailable Secret',
-        kind: 'generation',
-        baseUrl: 'https://api.example.com/v1',
-        model: 'test-model',
-        apiKey: 'new-secret'
-      })).toThrowError(expect.objectContaining({ code: 'CONNECTION_FAILED' }))
-      expect(readdirSync(join(freshPath, 'secrets'))).toEqual([])
-    } finally {
-      if (originalVitest === undefined) delete process.env.VITEST
-      else process.env.VITEST = originalVitest
-      if (originalNodeEnv === undefined) delete process.env.NODE_ENV
-      else process.env.NODE_ENV = originalNodeEnv
-    }
+    expect(() => store.getInternal(created.id)).toThrowError(
+      expect.objectContaining({ code: 'CONNECTION_FAILED', message: expect.stringContaining('重新保存') })
+    )
+
+    // 用户重新保存 API Key 后恢复可用，不需要删除连接重建
+    const repaired = store.update({
+      connectionId: created.id,
+      expectedVersion: created.version,
+      apiKey: 'sk-new-secret'
+    })
+    expect(store.getInternal(repaired.id).secret.apiKey).toBe('sk-new-secret')
   })
 
   it('quarantines a corrupted connections.json instead of letting the next write destroy it', () => {

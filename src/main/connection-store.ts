@@ -1,4 +1,4 @@
-import { createCipheriv, createDecipheriv, createHash, randomBytes, randomUUID } from 'node:crypto'
+import { createHash, randomUUID } from 'node:crypto'
 import { existsSync, mkdirSync, readFileSync, renameSync, rmSync, unlinkSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { createRequire } from 'node:module'
@@ -14,16 +14,19 @@ import {
 } from '../shared/project'
 import { ProjectError } from './project-store'
 
-type SafeStorage = {
-  isEncryptionAvailable(): boolean
-  encryptString(value: string): Buffer
-  decryptString(value: Buffer): string
+type DpapiScope = 'CurrentUser' | 'LocalMachine'
+
+type DpapiBindings = {
+  protectData(dataToEncrypt: Uint8Array, optionalEntropy: Uint8Array | null, scope: DpapiScope): Uint8Array
+  unprotectData(encryptData: Uint8Array, optionalEntropy: Uint8Array | null, scope: DpapiScope): Uint8Array
 }
 
-const safeStorage: SafeStorage | undefined = (() => {
-  if (!process.versions.electron) return undefined
+// Windows DPAPI（CurrentUser 作用域）加密连接凭据。Electron safeStorage 在 Windows 上的
+// 底层就是无附加熵的 DPAPI，因此宿主迁移前写入的旧 SAFE: 密文可直接解密。
+const dpapi: DpapiBindings | undefined = (() => {
+  if (process.platform !== 'win32') return undefined
   try {
-    return createRequire(import.meta.url)('electron').safeStorage as SafeStorage
+    return createRequire(import.meta.url)('@primno/dpapi').default as DpapiBindings
   } catch {
     return undefined
   }
@@ -145,15 +148,12 @@ export function getModelsEndpointUrl(baseUrl: string): { url: string; host: stri
 export class ConnectionStore {
   private readonly configPath: string
   private readonly secretsDir: string
-  private readonly fallbackKeyPath: string
-  private fallbackMasterKey?: Buffer
 
   constructor(private readonly dataPath: string) {
     mkdirSync(dataPath, { recursive: true })
     this.configPath = join(dataPath, 'connections.json')
     this.secretsDir = join(dataPath, 'secrets')
     mkdirSync(this.secretsDir, { recursive: true })
-    this.fallbackKeyPath = join(this.secretsDir, '.master.key')
   }
 
   list(kind?: ModelConnectionKind): ModelConnectionSummary[] {
@@ -265,7 +265,7 @@ export class ConnectionStore {
     }
 
     if (input.apiKey !== undefined || input.customHeaders !== undefined) {
-      const existingSecret = this.readSecret(input.connectionId)
+      const existingSecret = this.readSecretOrEmpty(input.connectionId)
       this.writeSecret(input.connectionId, {
         apiKey: input.apiKey !== undefined ? input.apiKey : existingSecret.apiKey,
         customHeaders: input.customHeaders !== undefined ? input.customHeaders : existingSecret.customHeaders
@@ -421,10 +421,24 @@ export class ConnectionStore {
   private readSecret(connectionId: string): StoredSecret {
     const secretPath = join(this.secretsDir, `${connectionId}.enc`)
     if (!existsSync(secretPath)) return {}
+    let decryptedJson: string
     try {
-      const buffer = readFileSync(secretPath)
-      const decryptedJson = this.decrypt(buffer)
+      decryptedJson = this.decrypt(readFileSync(secretPath))
+    } catch (error) {
+      if (error instanceof ProjectError) throw error
+      throw new ProjectError('CONNECTION_FAILED', '连接凭据无法解密，请打开连接设置重新保存 API Key')
+    }
+    try {
       return JSON.parse(decryptedJson) as StoredSecret
+    } catch {
+      throw new ProjectError('CONNECTION_FAILED', '连接凭据内容已损坏，请打开连接设置重新保存 API Key')
+    }
+  }
+
+  /** 合并旧凭据时使用：解不开的旧凭据按丢失处理，用户重存的字段直接生效。 */
+  private readSecretOrEmpty(connectionId: string): StoredSecret {
+    try {
+      return this.readSecret(connectionId)
     } catch {
       return {}
     }
@@ -446,72 +460,27 @@ export class ConnectionStore {
     }
   }
 
-  private getFallbackMasterKey(create = false): Buffer {
-    if (this.fallbackMasterKey) return this.fallbackMasterKey
-    if (existsSync(this.fallbackKeyPath)) {
-      try {
-        const existingKey = readFileSync(this.fallbackKeyPath)
-        if (existingKey.length === 32) {
-          this.fallbackMasterKey = existingKey
-          return existingKey
-        }
-      } catch {}
-    }
-    if (!create || !this.isTestFallbackAllowed()) {
-      throw new ProjectError('CONNECTION_FAILED', '系统加密存储不可用，无法保存连接凭据')
-    }
-    const newKey = randomBytes(32)
-    this.writeFileAtomic(this.fallbackKeyPath, newKey)
-    this.fallbackMasterKey = newKey
-    return newKey
-  }
-
   private encrypt(plainText: string): Buffer {
-    try {
-      if (safeStorage && typeof safeStorage.isEncryptionAvailable === 'function' && safeStorage.isEncryptionAvailable()) {
-        const encrypted = safeStorage.encryptString(plainText)
-        return Buffer.concat([Buffer.from('SAFE:'), encrypted])
-      }
-    } catch {}
-
-    if (!this.isTestFallbackAllowed()) {
-      // 已知限制：sidecar 是纯 Node 进程，safeStorage 不可用，因此无法持久化 API Key
-      // （读取不受影响）。WinUI 客户端需要带密钥的连接时，先在 Electron 端配置；
-      // 无头加密方案（如 DPAPI）确定后再放开此门控，见审查报告发现 8。
-      throw new ProjectError('CONNECTION_FAILED', '系统加密存储不可用，无法保存连接凭据')
+    if (!dpapi) {
+      throw new ProjectError('CONNECTION_FAILED', '系统加密存储不可用（Windows DPAPI），无法保存连接凭据')
     }
-
-    const key = this.getFallbackMasterKey(true)
-    const iv = randomBytes(12)
-    const cipher = createCipheriv('aes-256-gcm', key, iv)
-    const encrypted = Buffer.concat([cipher.update(plainText, 'utf8'), cipher.final()])
-    const tag = cipher.getAuthTag()
-    return Buffer.concat([Buffer.from('FALL:'), iv, tag, encrypted])
+    return Buffer.concat([Buffer.from('SAFE:'), dpapi.protectData(Buffer.from(plainText, 'utf8'), null, 'CurrentUser')])
   }
 
   private decrypt(buffer: Buffer): string {
     const prefix = buffer.subarray(0, 5).toString('utf8')
     if (prefix === 'SAFE:') {
       const payload = buffer.subarray(5)
-      if (!safeStorage) throw new ProjectError('CONNECTION_FAILED', '系统加密存储不可用，无法读取连接凭据')
-      return safeStorage.decryptString(payload)
-    }
-
-    if (prefix === 'FALL:') {
-      const iv = buffer.subarray(5, 17)
-      const tag = buffer.subarray(17, 33)
-      const encrypted = buffer.subarray(33)
-      const key = this.getFallbackMasterKey()
-      const decipher = createDecipheriv('aes-256-gcm', key, iv)
-      decipher.setAuthTag(tag)
-      return Buffer.concat([decipher.update(encrypted), decipher.final()]).toString('utf8')
+      if (!dpapi) throw new ProjectError('CONNECTION_FAILED', '系统加密存储不可用（Windows DPAPI），无法读取连接凭据')
+      try {
+        return Buffer.from(dpapi.unprotectData(payload, null, 'CurrentUser')).toString('utf8')
+      } catch {
+        // 旧凭据来自其他 Windows 账户/机器或已损坏时无法解密，让用户重存即可恢复。
+        throw new ProjectError('CONNECTION_FAILED', '连接凭据无法解密，请打开连接设置重新保存 API Key')
+      }
     }
 
     // Direct plain JSON fallback if unencrypted or legacy
     return buffer.toString('utf8')
-  }
-
-  private isTestFallbackAllowed(): boolean {
-    return process.env.VITEST === 'true' && process.env.NODE_ENV === 'test'
   }
 }

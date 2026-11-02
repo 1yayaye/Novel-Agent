@@ -2,12 +2,14 @@ packages:
   - .
 
 onlyBuiltDependencies:
+  - '@primno/dpapi'
   - better-sqlite3
   - esbuild
 
 overrides:
   '@electron/get': 5.1.0
 allowBuilds:
+  '@primno/dpapi': true
   better-sqlite3: true
   esbuild: true
 

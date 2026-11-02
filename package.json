@@ -25,6 +25,7 @@
     "winui:package": "node scripts/package-winui.mjs"
   },
   "dependencies": {
+    "@primno/dpapi": "^2.0.1",
     "better-sqlite3": "13.0.3",
     "sqlite-vec": "0.1.9"
   },
