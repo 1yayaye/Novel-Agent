@@ -60,6 +60,11 @@ public sealed class SidecarSupervisor : IAsyncDisposable
         string workingDir = FindRepositoryRoot() ?? AppContext.BaseDirectory;
         startInfo.WorkingDirectory = workingDir;
 
+        // The sidecar must read/write the SAME data directory as the Electron app.
+        // Its cwd-based default diverges once packaged, so the host states it explicitly
+        // (NOVEL_AGENT_DATA_PATH is the documented override in src/main/paths.ts).
+        startInfo.EnvironmentVariables["NOVEL_AGENT_DATA_PATH"] = Path.Combine(workingDir, "data");
+
         try
         {
             _process = new Process { StartInfo = startInfo, EnableRaisingEvents = true };

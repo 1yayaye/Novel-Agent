@@ -528,7 +528,8 @@ export function createServiceRouter(deps: ServiceRouterDependencies): ServiceRou
   // Prompt namespace：应用级预设库管理与酒馆预设导入
   register('prompt.getPresetStore', z.undefined(), PromptSettingsStateSchema, () => promptStore.get())
   register('prompt.savePresetStore', PresetStoreDataSchema, PromptSettingsStateSchema, (input) => promptStore.save(input))
-  register('prompt.parseTavernFile', z.string(), NovelPromptPresetSchema, (input) => Promise.resolve(parseTavernPreset(input)))
+  // 与 AI 转换路径（PresetConversionInputSchema）保持同样的 32MiB 上限，防止超大字符串打爆内存
+  register('prompt.parseTavernFile', z.string().min(1).max(32 * 1024 * 1024), NovelPromptPresetSchema, (input) => Promise.resolve(parseTavernPreset(input)))
   register('prompt.inspectPresetConversion', PresetConversionInputSchema, PresetConversionInspectionSchema, (input) => {
     return presetConversion.inspect(input)
   })

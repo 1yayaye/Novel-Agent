@@ -1,4 +1,4 @@
-import { mkdtempSync, readFileSync, readdirSync, rmSync } from 'node:fs'
+import { mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
@@ -236,6 +236,38 @@ describe('ConnectionStore', () => {
       if (originalNodeEnv === undefined) delete process.env.NODE_ENV
       else process.env.NODE_ENV = originalNodeEnv
     }
+  })
+
+  it('quarantines a corrupted connections.json instead of letting the next write destroy it', () => {
+    const conn = store.create({
+      name: 'Before Corruption',
+      kind: 'generation',
+      baseUrl: 'https://api.example.com/v1',
+      model: 'test-model'
+    })
+
+    const configPath = join(tempDir, 'connections.json')
+    writeFileSync(configPath, '{"connections": [truncated', 'utf8')
+
+    // 读到损坏文件：返回空列表且坏文件被改名保留，而不是被下次写入覆盖
+    expect(store.list()).toEqual([])
+    const entries = readdirSync(tempDir)
+    const quarantined = entries.find((name) => name.startsWith('connections.json.corrupt-'))
+    expect(quarantined).toBeDefined()
+    expect(readFileSync(join(tempDir, quarantined!), 'utf8')).toContain('truncated')
+
+    // 之后的写入从空列表重建，且文件始终是合法 JSON
+    const recreated = store.create({
+      name: 'After Corruption',
+      kind: 'generation',
+      baseUrl: 'https://api.example.com/v1',
+      model: 'test-model'
+    })
+    expect(JSON.parse(readFileSync(configPath, 'utf8'))).toEqual(
+      expect.arrayContaining([expect.objectContaining({ id: recreated.id })])
+    )
+    expect(readdirSync(tempDir).some((name) => name.endsWith('.tmp-'))).toBe(false)
+    expect(conn.id).toBeDefined()
   })
 
   it('persists and updates reasoningEffort on generation connections', () => {

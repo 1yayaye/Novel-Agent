@@ -19,6 +19,35 @@ import { ANALYSIS_PROTOCOLS, FALLBACK_CREATION_PROTOCOLS } from '../src/main/pro
 import { PromptSettingsStore } from '../src/main/prompt-store'
 
 describe('酒馆预设导入解析与清洗 (tavern-importer)', () => {
+  it('<<< 宏块洪水的恶意输入在线性时间内完成清洗且语义不变', () => {
+    // 曾经的懒惰正则 <<<[\s\S]*?>>> 在这种输入上是 O(n²)，1MB 实测卡死主进程数分钟
+    const flood = '正文甲<<<'.repeat(200_000) + '正文乙'
+    const startedAt = Date.now()
+    const cleaned = cleanTavernContent(flood)
+    expect(Date.now() - startedAt).toBeLessThan(2000)
+    expect(cleaned).toContain('正文甲')
+    expect(cleaned).toContain('正文乙')
+
+    // 正常宏语义保持：deepthink 替换、setLastMessage 保留正文、其余剔除
+    const macros = '前<<<| catgodml | deepthink >>>中<<<| catgodml | setLastMessage: 剧情正文 >>>尾<<<| catgodml | registerPart:foo:描述 >>>'
+    const cleanedMacros = cleanTavernContent(macros)
+    expect(cleanedMacros).toContain('【深度思考要求')
+    expect(cleanedMacros).toContain('剧情正文')
+    expect(cleanedMacros).not.toContain('registerPart')
+    expect(cleanedMacros.startsWith('前')).toBe(true)
+    expect(cleanedMacros.endsWith('尾')).toBe(true)
+  })
+
+  it('解析带 UTF-8 BOM 的预设文件（与 AI 转换路径行为一致）', () => {
+    const json = '\uFEFF' + JSON.stringify({
+      name: 'BOM 预设',
+      prompts: [{ identifier: 'main', name: '主提示', role: 'system', content: '写小说', enabled: true }]
+    })
+    const preset = parseTavernPreset(json)
+    expect(preset.name).toBe('BOM 预设')
+    expect(preset.blocks.length).toBeGreaterThan(0)
+  })
+
   it('自动替换酒馆宏变量为小说语境', () => {
     const raw = `你是{{char}}，由{{user}}设定的助手。<world_info>\n<chat_history>\n请等待{{user}}的指令：<input>`
     const cleaned = cleanTavernContent(raw)

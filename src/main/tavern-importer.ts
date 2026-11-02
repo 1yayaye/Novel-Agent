@@ -8,6 +8,45 @@ import {
 } from '../shared/prompt-settings.js'
 import { ProjectError } from './project-store.js'
 
+const ANGLE_BLOCK_MAX_LENGTH = 262_144
+
+/**
+ * 单遍扫描并替换所有 `<<<...>>>` 宏块。
+ *
+ * 为什么不用正则：懒惰模式 `<<<[\s\S]*?>>>` 在没有闭合符的输入上是 O(n²)
+ * （1MB 的 `<<<` 洪水实测让主进程卡死数分钟），而预设内容来自用户导入的
+ * 不可信文件。这里用两个只前进的指针做线性扫描；单个块超过
+ * ANGLE_BLOCK_MAX_LENGTH 时按普通文本保留而不是吞掉后续内容。
+ * visit 返回替换文本，返回 null 表示保留原块。
+ */
+function replaceAngleBlocks(text: string, visit: (inner: string) => string | null): string {
+  let result = ''
+  let cursor = 0
+  let openIdx = text.indexOf('<<<')
+  let closeIdx = text.indexOf('>>>')
+  while (openIdx >= 0) {
+    while (closeIdx >= 0 && closeIdx < openIdx + 3) closeIdx = text.indexOf('>>>', closeIdx + 3)
+    if (closeIdx < 0) break // 闭符已耗尽，之后不会再有完整宏块
+    if (closeIdx + 3 - openIdx > ANGLE_BLOCK_MAX_LENGTH) {
+      result += text.slice(cursor, openIdx + 3)
+      cursor = openIdx + 3
+      openIdx = text.indexOf('<<<', cursor)
+      continue
+    }
+    result += text.slice(cursor, openIdx)
+    const inner = text.slice(openIdx + 3, closeIdx)
+    const replacement = visit(inner)
+    result += replacement === null ? text.slice(openIdx, closeIdx + 3) : replacement
+    cursor = closeIdx + 3
+    openIdx = text.indexOf('<<<', cursor)
+    closeIdx = text.indexOf('>>>', cursor)
+  }
+  result += text.slice(cursor)
+  return result
+}
+
+const DEEPTHINK_REPLACEMENT = '【深度思考要求：在输出正式内容之前，必须进行详尽充分的深入思考与剧情推演。】'
+
 /**
  * 清洗酒馆预设文本：替换宏并将单人角色扮演专有提示弱化/过滤为长篇小说创作语境。
  */
@@ -22,17 +61,18 @@ export function cleanTavernContent(rawText: string): string {
     .replace(/\{\{\s*random::([\s\S]*?)\s*\}\}/gi, (_, opts) => opts.split('::')[0] || '')
     .replace(/\{\{\s*roll(?:\s+[^}]+)?\s*\}\}/gi, '')
 
-  // 0.1 猫之神 / SPreset 宏处理与转换
+  // 0.1 猫之神 / SPreset 宏处理与转换。所有 `<<<...>>>` 块最终都被移除：
+  // deepthink 换成中文指令，setLastMessage 保留正文，其余（含 registerPart，另由
+  // collectRegisterPart 在清洗前收集）直接丢弃。
+  text = replaceAngleBlocks(text, (inner) => {
+    if (/^\|\s*catgodml\s*\|\s*deepthink\s*$/i.test(inner)) return DEEPTHINK_REPLACEMENT
+    const setLastMessage = inner.match(/^\|\s*catgodml\s*\|\s*setLastMessage:([\s\S]*)$/i)
+    return setLastMessage ? setLastMessage[1].replace(/^\s+/, '').replace(/\s+$/, '') : ''
+  })
   text = text
-    .replace(/<<<\|\s*catgodml\s*\|\s*deepthink\s*>>>/gi, '【深度思考要求：在输出正式内容之前，必须进行详尽充分的深入思考与剧情推演。】')
-    .replace(/<<<\|\s*catgodml\s*\|\s*setLastMessage:\s*([\s\S]*?)\s*>>>/gi, '$1')
-    .replace(/<<<\|\s*catgodml\s*\|\s*registerPart:[^:]+:([\s\S]*?)\s*>>>/gi, '')
-    .replace(/<<<\|\s*catgodml\s*\|[\s\S]*?>>>/gi, '')
-    .replace(/<<<\|\s*SPreset\s*\|[\s\S]*?>>>/gi, '')
-    .replace(/\{\{\s*SPreset::[\s\S]*?\}\}/gi, '')
+    .replace(/\{\{\s*SPreset::[^}]*?\}\}/gi, '')
     .replace(/<run_tool_replacement>/gi, '')
     .replace(/<\|sep\|>|<\|merge\|>/gi, '')
-    .replace(/<<<[\s\S]*?>>>/gi, '')
 
   // 1. 宏替换（支持带空格的 Mustache/Jinja 语法）
   text = text
@@ -64,19 +104,22 @@ export function cleanTavernContent(rawText: string): string {
   return text.replace(/\n{3,}/g, '\n\n').trim()
 }
 
-const REGISTER_PART_REGEX = /<<<\|\s*catgodml\s*\|\s*registerPart:([^:]+):([\s\S]*?)>>>/gi
-
 /**
  * 收集 prompt 正文中的 registerPart 工具部件声明（部件名 → 字段描述）。
  * 必须在 cleanTavernContent 剥离该宏之前调用；同名部件首个生效，
  * 与酒馆 FinalRequestProcessing 脚本的组装行为一致。
+ * 复用 replaceAngleBlocks 的线性扫描，避免对不可信文本跑懒惰正则。
  */
 function collectRegisterPart(text: string, parts: Map<string, string>): void {
   if (!text) return
-  for (const m of text.matchAll(REGISTER_PART_REGEX)) {
-    const name = m[1].trim()
-    if (name && !parts.has(name)) parts.set(name, m[2].trim())
-  }
+  replaceAngleBlocks(text, (inner) => {
+    const m = inner.match(/^\|\s*catgodml\s*\|\s*registerPart:([^:]+):([\s\S]*)$/i)
+    if (m) {
+      const name = m[1].trim()
+      if (name && !parts.has(name)) parts.set(name, m[2].trim())
+    }
+    return null // 只收集，不替换；剔除由 cleanTavernContent 完成
+  })
 }
 
 interface ToolBindingFormParam {
@@ -334,7 +377,8 @@ export function resolveTavernVariables(prompts: Array<{
 export function parseTavernPreset(jsonContent: string, fallbackName?: string): NovelPromptPreset {
   let parsed: any
   try {
-    parsed = JSON.parse(jsonContent)
+    // 去 BOM：Windows 导出的 JSON 常带 \uFEFF，AI 转换路径（preset-conversion）同样处理
+    parsed = JSON.parse(jsonContent.replace(/^\uFEFF/, ''))
   } catch {
     throw new ProjectError('VALIDATION_ERROR', '无效的 JSON 内容，无法解析预设文件')
   }

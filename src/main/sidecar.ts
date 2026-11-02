@@ -30,6 +30,8 @@ export interface SidecarOptions {
 export function createDefaultSidecarDeps(customDataPath?: string): ServiceRouterDependencies {
   const dataPath = customDataPath || process.env.NOVEL_AGENT_DATA_PATH || dataDirectory(process.execPath, false)
   ensureWritableDirectory(dataPath)
+  // 数据目录走 stderr（stdout 是 NDJSON 协议通道），便于排查双端数据目录分叉。
+  process.stderr.write(`[sidecar] data directory: ${dataPath}\n`)
   const promptStore = new PromptSettingsStore(dataPath)
   const store = new ProjectStore(dataPath)
   const connectionStore = new ConnectionStore(dataPath)

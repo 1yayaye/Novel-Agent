@@ -1,5 +1,5 @@
 import { createCipheriv, createDecipheriv, createHash, randomBytes, randomUUID } from 'node:crypto'
-import { existsSync, mkdirSync, readFileSync, rmSync, unlinkSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, readFileSync, renameSync, rmSync, unlinkSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { createRequire } from 'node:module'
 import {
@@ -384,18 +384,38 @@ export class ConnectionStore {
   }
 
   private readConnections(): StoredConnectionRecord[] {
+    if (!existsSync(this.configPath)) return []
     try {
-      if (!existsSync(this.configPath)) return []
-      const content = readFileSync(this.configPath, 'utf8')
-      const parsed = JSON.parse(content)
-      return Array.isArray(parsed) ? parsed : []
-    } catch {
+      const parsed: unknown = JSON.parse(readFileSync(this.configPath, 'utf8'))
+      if (Array.isArray(parsed)) return parsed
+      throw new Error('connections.json 顶层不是数组')
+    } catch (error) {
+      // Electron 主进程与 sidecar 可能写同一份文件；损坏的配置绝不能被下一次
+      // 写入静默覆盖——先改名保留现场供人工恢复，再从空列表重建。
+      const quarantinePath = `${this.configPath}.corrupt-${Date.now()}`
+      try {
+        renameSync(this.configPath, quarantinePath)
+      } catch {}
+      console.error(`[connection-store] connections.json 损坏，已隔离至 ${quarantinePath}`, error)
       return []
     }
   }
 
+  private writeFileAtomic(target: string, data: string | Buffer): void {
+    const temporaryPath = `${target}.tmp-${randomUUID().slice(0, 8)}`
+    try {
+      writeFileSync(temporaryPath, data)
+      renameSync(temporaryPath, target)
+    } catch (error) {
+      try {
+        rmSync(temporaryPath, { force: true })
+      } catch {}
+      throw error
+    }
+  }
+
   private writeConnections(connections: StoredConnectionRecord[]): void {
-    writeFileSync(this.configPath, JSON.stringify(connections, null, 2), 'utf8')
+    this.writeFileAtomic(this.configPath, JSON.stringify(connections, null, 2))
   }
 
   private readSecret(connectionId: string): StoredSecret {
@@ -414,7 +434,7 @@ export class ConnectionStore {
     const secretPath = join(this.secretsDir, `${connectionId}.enc`)
     const raw = JSON.stringify(secret)
     const encrypted = this.encrypt(raw)
-    writeFileSync(secretPath, encrypted)
+    this.writeFileAtomic(secretPath, encrypted)
   }
 
   private deleteSecret(connectionId: string): void {
@@ -441,7 +461,7 @@ export class ConnectionStore {
       throw new ProjectError('CONNECTION_FAILED', '系统加密存储不可用，无法保存连接凭据')
     }
     const newKey = randomBytes(32)
-    writeFileSync(this.fallbackKeyPath, newKey)
+    this.writeFileAtomic(this.fallbackKeyPath, newKey)
     this.fallbackMasterKey = newKey
     return newKey
   }
